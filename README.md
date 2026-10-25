@@ -1,6 +1,7 @@
 # Autonomic Delay Tolerant Network Management Framework (ADTNM)
 ### *A Decentralized, Policy-Governed Cognitive Routing and Management Architecture for Delay-Tolerant Networks*
 
+[![CI](https://github.com/nafisshahriar/ADTNM/actions/workflows/ci.yml/badge.svg)](https://github.com/nafisshahriar/ADTNM/actions)
 [![Standards](https://img.shields.io/badge/Standards-RFC%209675%20%7C%20RFC%207575%20%7C%20RFC%206693-blue.svg)](https://datatracker.ietf.org/doc/rfc9675/)
 [![Simulator](https://img.shields.io/badge/Simulator-The%20ONE%20v1.6.0-orange.svg)](https://github.com/akeranen/the-one)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -282,10 +283,29 @@ Across varying buffer sizes (5 MB to 80 MB) and message TTLs (50 to 300 minutes)
 
 ## 7. Contributing & Collaboration Guide
 
-We welcome contributions from thesis team members and external researchers:
-1. **Agile Issues:** Use the provided [User Story Template](.github/ISSUE_TEMPLATE/user-story.md) for features or bug reports.
-2. **Branching:** Create feature branches named `feature/<feature-name>` or `fix/<issue-name>`.
-3. **Verification Before Committing:** Run `verify_and_plot.py` before submitting a pull request to ensure that no regression violates the zero-drop invariant or replication bounds.
+We welcome contributions from thesis team members and external researchers. Please read the comprehensive [**Team Collaboration & Development Guide (CONTRIBUTING.md)**](CONTRIBUTING.md) for full workflows and best practices.
+
+### Development & Synchronization Workflows
+1. **Live-Link Mode (Recommended for IDEs):**
+   ```bash
+   python install.py --mode link --one-dir ../the-one
+   ```
+   Hard-links files so any edit in your IDE is instantly shared between `the-one` and `ADTNM`.
+2. **Sync-Back Mode (Pulling Simulator Edits):**
+   ```bash
+   python install.py --status --one-dir ../the-one      # Check diffs
+   python install.py --sync-back --one-dir ../the-one   # Pull simulator changes to repo
+   ```
+3. **Pulling Teammate Updates:**
+   ```bash
+   git pull origin main
+   install.bat ..\the-one                              # Re-deploys & recompiles in 2s
+   ```
+
+### Quality & Regression Assurance
+- **Automated CI:** Every push and pull request triggers a full build, simulation, and zero-drop regression check via [GitHub Actions CI](.github/workflows/ci.yml).
+- **Pre-Commit Verification:** Run `python verify_and_plot.py --assert-zero-drops` before committing to ensure the Inviolable Zero-Drop theorem holds.
+- **Agile Issues:** Use our [User Story Template](.github/ISSUE_TEMPLATE/user-story.md) for feature tracking and milestones.
 
 ---
 

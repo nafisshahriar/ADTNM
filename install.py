@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 """
-install.py - Autonomic DTNMA Framework Installer for The ONE Simulator
-======================================================================
-Automates the injection of the Autonomic DTNMA Framework (RFC 9675 / RFC 7575)
-into a fresh, standard clone of The ONE Simulator (https://github.com/akeranen/the-one).
+install.py - Autonomic DTNMA Framework Installer & Collaborative Sync Tool
+==========================================================================
+Provides seamless 2-way integration between the ADTNM research repository
+and The ONE Simulator (https://github.com/akeranen/the-one).
+
+Designed for iterative, collaborative multi-developer workflows:
+- Forward deployment: Inject or update ADTNM files in The ONE.
+- Live-Link mode: Hard-link / symlink files for instantaneous live editing across IDEs.
+- Sync-back mode: Automatically pull edits made in The ONE back into ADTNM for git commit.
+- Status audit: Compare file timestamps and hashes between ADTNM and The ONE.
 
 Usage:
-    python install.py --one-dir <path-to-the-one>
-    python install.py                              # Auto-detects ../the-one
+    python install.py --one-dir <path-to-the-one>            # Standard copy & compile
+    python install.py --mode link --one-dir <path>          # Live-link for simultaneous edits
+    python install.py --sync-back --one-dir <path>          # Pull changes from simulator into repo
+    python install.py --status --one-dir <path>             # Check sync status between repo & simulator
     python install.py --help
-
-What this installer does:
-1. Validates that the target directory is a valid ONE Simulator installation.
-2. Injects DTNMA router and report source files into src/routing/ and src/report/.
-3. Safely patches ActiveRouter.java and ProphetRouter.java with backups (.bak).
-4. Injects declarative rules and scenario configuration files into scenarios/.
-5. Deploys multi-threaded parallel batch runner, verification, and analysis tools.
-6. Optimizes one.bat and one.sh with production JVM memory flags (1G-4G, ParallelGC).
-7. Compiles the updated simulator and verifies clean compilation.
 """
 
 import os
 import sys
 import shutil
+import hashlib
 import argparse
 import subprocess
 from pathlib import Path
@@ -31,6 +31,7 @@ COLOR_GREEN = "\033[92m" if sys.platform != "win32" or "WT_SESSION" in os.enviro
 COLOR_YELLOW = "\033[93m" if sys.platform != "win32" or "WT_SESSION" in os.environ else ""
 COLOR_RED = "\033[91m" if sys.platform != "win32" or "WT_SESSION" in os.environ else ""
 COLOR_CYAN = "\033[96m" if sys.platform != "win32" or "WT_SESSION" in os.environ else ""
+COLOR_MAGENTA = "\033[95m" if sys.platform != "win32" or "WT_SESSION" in os.environ else ""
 COLOR_RESET = "\033[0m" if sys.platform != "win32" or "WT_SESSION" in os.environ else ""
 
 def log_info(msg):
@@ -44,6 +45,14 @@ def log_warn(msg):
 
 def log_error(msg):
     print(f"{COLOR_RED}[ERROR]{COLOR_RESET} {msg}")
+
+def file_hash(path: Path) -> str:
+    """Calculates SHA256 of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
 
 def validate_one_dir(one_dir: Path) -> bool:
     """Verifies that the target directory looks like The ONE Simulator."""
@@ -80,13 +89,35 @@ def patch_file(file_path: Path, old_str: str, new_str: str, description: str):
     log_success(f"Successfully patched {file_path.name}: {description}")
     return True
 
-def copy_tree_files(src_dir: Path, dest_dir: Path, pattern: str = "*"):
-    """Copies matching files from source to destination directory."""
+def link_or_copy(src_file: Path, dest_file: Path, mode: str):
+    """Copies or hardlinks/symlinks a file based on mode."""
+    dest_file.parent.mkdir(parents=True, exist_ok=True)
+    if dest_file.exists():
+        try:
+            dest_file.unlink()
+        except Exception:
+            pass
+
+    if mode == "link":
+        try:
+            # On Windows/POSIX, os.link creates a hard link (same inode/MFT entry)
+            os.link(src_file, dest_file)
+            return True
+        except Exception as e:
+            log_warn(f"Hard-link failed for {src_file.name} ({e}), falling back to copy.")
+            shutil.copy2(src_file, dest_file)
+            return True
+    else:
+        shutil.copy2(src_file, dest_file)
+        return True
+
+def deploy_tree(src_dir: Path, dest_dir: Path, pattern: str = "*", mode: str = "copy"):
+    """Copies or links matching files from source to destination directory."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     count = 0
     for src_file in src_dir.glob(pattern):
         if src_file.is_file():
-            shutil.copy2(src_file, dest_dir / src_file.name)
+            link_or_copy(src_file, dest_dir / src_file.name, mode)
             count += 1
     return count
 
@@ -165,15 +196,137 @@ def run_smoke_test(one_dir: Path) -> bool:
         log_warn(f"Could not execute smoke test: {e}")
         return False
 
+def get_tracked_file_pairs(repo_dir: Path, one_dir: Path):
+    """Returns mapping of (relative_path, repo_path, simulator_path) for tracked files."""
+    pairs = []
+
+    # Java routing files
+    for f in (repo_dir / "src" / "routing").glob("*.java"):
+        pairs.append((Path("src") / "routing" / f.name, f, one_dir / "src" / "routing" / f.name))
+
+    # Java report files
+    for f in (repo_dir / "src" / "report").glob("*.java"):
+        pairs.append((Path("src") / "report" / f.name, f, one_dir / "src" / "report" / f.name))
+
+    # Scenarios and rules
+    for f in (repo_dir / "scenarios").glob("*.txt"):
+        pairs.append((Path("scenarios") / f.name, f, one_dir / "scenarios" / f.name))
+
+    # Runner scripts
+    for name in ["parallel_batch_runner.py", "verify_and_plot.py"]:
+        rf = repo_dir / "tools" / name
+        if rf.is_file():
+            pairs.append((Path(name), rf, one_dir / name))
+
+    # OppNDA core
+    for f in (repo_dir / "tools" / "core").glob("*.py"):
+        pairs.append((Path("core") / f.name, f, one_dir / "core" / f.name))
+
+    # Automation configs
+    for f in (repo_dir / "tools" / "config").glob("*.json"):
+        pairs.append((Path("config") / f.name, f, one_dir / "config" / f.name))
+
+    return pairs
+
+def audit_status(repo_dir: Path, one_dir: Path):
+    """Compares files between ADTNM repo and The ONE simulator directory."""
+    pairs = get_tracked_file_pairs(repo_dir, one_dir)
+    print("\n" + "=" * 78)
+    print(f"{'FILE':<42} | {'STATUS':<15} | {'DIFF NOTE'}")
+    print("=" * 78)
+
+    in_sync = 0
+    sim_newer = 0
+    repo_newer = 0
+    missing = 0
+
+    for rel, repo_p, sim_p in pairs:
+        if not sim_p.is_file():
+            print(f"{str(rel):<42} | {COLOR_RED}MISSING IN SIM{COLOR_RESET} | Run install to deploy")
+            missing += 1
+        else:
+            h_repo = file_hash(repo_p)
+            h_sim = file_hash(sim_p)
+            if h_repo == h_sim:
+                print(f"{str(rel):<42} | {COLOR_GREEN}IN SYNC{COLOR_RESET}        | Hash match")
+                in_sync += 1
+            else:
+                m_repo = repo_p.stat().st_mtime
+                m_sim = sim_p.stat().st_mtime
+                if m_sim > m_repo:
+                    print(f"{str(rel):<42} | {COLOR_YELLOW}SIMULATOR NEWER{COLOR_RESET}| Needs sync-back to repo")
+                    sim_newer += 1
+                else:
+                    print(f"{str(rel):<42} | {COLOR_CYAN}REPO NEWER{COLOR_RESET}     | Needs install deploy to sim")
+                    repo_newer += 1
+
+    print("=" * 78)
+    print(f"Summary: {in_sync} in sync, {sim_newer} simulator newer, {repo_newer} repo newer, {missing} missing.")
+    if sim_newer > 0:
+        print(f"\n{COLOR_YELLOW}[TIP]{COLOR_RESET} Use 'python install.py --sync-back' to pull simulator changes into repo.")
+    if repo_newer > 0 or missing > 0:
+        print(f"\n{COLOR_CYAN}[TIP]{COLOR_RESET} Use 'python install.py' to deploy latest repo code into simulator.")
+    print("=" * 78 + "\n")
+
+def sync_back_to_repo(repo_dir: Path, one_dir: Path):
+    """Pulls updated files from The ONE back into ADTNM for git commit."""
+    pairs = get_tracked_file_pairs(repo_dir, one_dir)
+    print("\n" + "=" * 78)
+    print("  SYNC-BACK: PULLING MODIFICATIONS FROM THE ONE SIMULATOR INTO ADTNM REPO")
+    print("=" * 78)
+
+    synced_count = 0
+    for rel, repo_p, sim_p in pairs:
+        if sim_p.is_file():
+            h_repo = file_hash(repo_p)
+            h_sim = file_hash(sim_p)
+            if h_repo != h_sim:
+                m_repo = repo_p.stat().st_mtime
+                m_sim = sim_p.stat().st_mtime
+                if m_sim > m_repo:
+                    shutil.copy2(sim_p, repo_p)
+                    log_success(f"Synced back: {rel} (Simulator version -> Repo)")
+                    synced_count += 1
+                else:
+                    log_warn(f"Skipped {rel}: Repo version has newer timestamp than simulator.")
+
+    if synced_count == 0:
+        log_info("All tracked files are already up-to-date with ADTNM repo.")
+    else:
+        log_success(f"Successfully synced {synced_count} updated file(s) into ADTNM.")
+        print(f"\nYou can now commit the changes in ADTNM:")
+        print("  cd ADTNM")
+        print("  git status")
+        print("  git add .")
+        print("  git commit -m \"Update DTNMA framework components from simulation run\"")
+        print("  git push origin main")
+    print("=" * 78 + "\n")
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Install Autonomic DTNMA Framework into a fresh clone of The ONE Simulator."
+        description="Install & Sync Autonomic DTNMA Framework with The ONE Simulator."
     )
     parser.add_argument(
         "--one-dir", "-d",
         type=str,
         default=None,
-        help="Path to the directory of The ONE Simulator (default: checks '../the-one', '../the-one-master', './the-one')"
+        help="Path to The ONE Simulator directory (default: auto-detects '../the-one', etc.)"
+    )
+    parser.add_argument(
+        "--mode", "-m",
+        choices=["copy", "link"],
+        default="copy",
+        help="'copy' = regular file deployment; 'link' = hard-links files for instantaneous live editing across IDEs"
+    )
+    parser.add_argument(
+        "--sync-back", "-s",
+        action="store_true",
+        help="Pull updated files from The ONE simulator back into ADTNM repo for git committing."
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Display sync / comparison status between ADTNM repo and simulator."
     )
     parser.add_argument(
         "--no-compile",
@@ -189,10 +342,6 @@ def main():
     args = parser.parse_args()
 
     repo_dir = Path(__file__).resolve().parent
-
-    print("=" * 72)
-    print("  AUTONOMIC DTNMA FRAMEWORK INSTALLER (RFC 9675 / RFC 7575)")
-    print("=" * 72)
 
     # Locate ONE directory
     target_dir = None
@@ -224,18 +373,33 @@ def main():
             log_error(f"Invalid ONE Simulator directory: '{cand}'")
             sys.exit(1)
 
+    # Status check mode
+    if args.status:
+        audit_status(repo_dir, target_dir)
+        sys.exit(0)
+
+    # Sync-back mode
+    if args.sync_back:
+        sync_back_to_repo(repo_dir, target_dir)
+        sys.exit(0)
+
+    # Deploy mode
+    print("=" * 72)
+    print("  AUTONOMIC DTNMA FRAMEWORK INSTALLER & DEPLOYER")
+    print(f"  Mode: {args.mode.upper()} {'(Live-Linked Edits)' if args.mode == 'link' else '(File Copy)'}")
+    print("=" * 72)
     log_info(f"Target ONE Simulator directory: {target_dir}")
 
-    # 1. Inject Java Source Files
+    # 1. Deploy Java Source Files
     log_info("Deploying Java source code...")
     routing_src = repo_dir / "src" / "routing"
     routing_dest = target_dir / "src" / "routing"
-    c_routing = copy_tree_files(routing_src, routing_dest, "*.java")
+    c_routing = deploy_tree(routing_src, routing_dest, "*.java", mode=args.mode)
 
     report_src = repo_dir / "src" / "report"
     report_dest = target_dir / "src" / "report"
-    c_report = copy_tree_files(report_src, report_dest, "*.java")
-    log_success(f"Copied {c_routing} routing classes and {c_report} report classes.")
+    c_report = deploy_tree(report_src, report_dest, "*.java", mode=args.mode)
+    log_success(f"Deployed {c_routing} routing classes and {c_report} report classes.")
 
     # 2. Patch ActiveRouter.java and ProphetRouter.java
     log_info("Patching base ONE classes for DTNMA compatibility...")
@@ -259,8 +423,8 @@ def main():
     log_info("Deploying scenario configurations and declarative rules...")
     scenarios_src = repo_dir / "scenarios"
     scenarios_dest = target_dir / "scenarios"
-    c_scenarios = copy_tree_files(scenarios_src, scenarios_dest, "*.txt")
-    log_success(f"Copied {c_scenarios} scenario and rule configuration files.")
+    c_scenarios = deploy_tree(scenarios_src, scenarios_dest, "*.txt", mode=args.mode)
+    log_success(f"Deployed {c_scenarios} scenario and rule configuration files.")
 
     # 4. Deploy Tools, Core, and Config
     log_info("Deploying evaluation scripts and OppNDA analysis modules...")
@@ -268,21 +432,21 @@ def main():
     for tool_name in ["parallel_batch_runner.py", "verify_and_plot.py"]:
         tf = tools_src / tool_name
         if tf.is_file():
-            shutil.copy2(tf, target_dir / tool_name)
+            link_or_copy(tf, target_dir / tool_name, mode=args.mode)
             log_info(f"Installed {tool_name}")
 
     core_src = tools_src / "core"
     if core_src.is_dir():
         core_dest = target_dir / "core"
         core_dest.mkdir(parents=True, exist_ok=True)
-        copy_tree_files(core_src, core_dest, "*.py")
+        deploy_tree(core_src, core_dest, "*.py", mode=args.mode)
         log_info("Installed OppNDA core package.")
 
     config_src = tools_src / "config"
     if config_src.is_dir():
         config_dest = target_dir / "config"
         config_dest.mkdir(parents=True, exist_ok=True)
-        copy_tree_files(config_src, config_dest, "*.json")
+        deploy_tree(config_src, config_dest, "*.json", mode=args.mode)
         log_info("Installed automation configurations.")
 
     # 5. Optimize memory launch scripts
@@ -299,15 +463,11 @@ def main():
     print("\n" + "=" * 72)
     print("  INSTALLATION COMPLETE!")
     print("=" * 72)
-    print("You can now run simulations in The ONE with Autonomic DTNMA:")
-    print(f"  cd {target_dir}")
-    print("  # Run 1-hour DTNMA benchmark:")
-    print("  ./one.bat -b 1 scenarios/scenario_dtnma.txt        (Windows)")
-    print("  ./one.sh -b 1 scenarios/scenario_dtnma.txt         (Linux/macOS)")
-    print("\n  # Parse results & verify zero drops:")
-    print("  python verify_and_plot.py")
-    print("\n  # Run multi-core parallel batch parametric study:")
-    print("  python parallel_batch_runner.py --scenario scenarios/dtnma_batch_scenario.txt")
+    print("Workflow Tips:")
+    print("  - Check sync status:     python install.py --status")
+    print("  - Pull edits to repo:    python install.py --sync-back")
+    print("  - Run simulation:        ./one.bat -b 1 scenarios/scenario_dtnma.txt")
+    print("  - Verify 0-drop safety:  python verify_and_plot.py")
     print("=" * 72 + "\n")
 
 if __name__ == "__main__":

@@ -1,0 +1,57 @@
+name: ADTNM CI - Automated Verification & Regression Guard
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-verify:
+    name: Build & Empirical Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout ADTNM Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK (Temurin 17)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas matplotlib
+
+      - name: Clone Fresh The ONE Simulator
+        run: |
+          git clone --depth 1 https://github.com/akeranen/the-one.git ../the-one
+
+      - name: Deploy Autonomic DTNMA Framework into The ONE
+        run: |
+          python install.py --one-dir ../the-one
+
+      - name: Run 1-Hour Non-Terrestrial DTNMA Benchmark
+        run: |
+          cd ../the-one
+          bash one.sh -b 1 scenarios/scenario_dtnma.txt
+
+      - name: Execute 3-Tier Zero-Drop Regression Verification
+        run: |
+          cd ../the-one
+          python verify_and_plot.py --assert-zero-drops
+
+      - name: Upload Verification Plot Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-proof
+          path: ../the-one/reports/verification_proof.png
