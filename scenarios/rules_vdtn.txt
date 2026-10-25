@@ -1,0 +1,22 @@
+# ====================================================================
+# RFC 9675 DTNMA DECLARATIVE RULES: VEHICULAR DTN (VDTN / ITS)
+# Targeted for highway speeds, urban clusters, and road intersection dwell times
+# ====================================================================
+
+# Rule 1: Traffic Jam / Intersection Gridlock
+# High vehicle density with near-zero speed: heavy risk of buffer collapse
+RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 100 | DESC: High vehicle density stopped at intersection or jam
+IF: (EDD_NODE_DENSITY >= 5.0) && (EDD_NODE_SPEED < 2.0)
+THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 2: Highway High-Speed Transit
+# Moving at high speed (>= 15 m/s): brief encounter window with passing vehicles
+RULE: ARI://DTNMA/SRL/VDTN_HIGHWAY_PASS | PRIORITY: 50 | DESC: High-speed highway passing encounter
+IF: (EDD_NODE_SPEED >= 15.0) && (EDD_QUEUE_RATIO < 0.85)
+THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(false)
+
+# Rule 3: Urban Sparse Suburban Cruising
+# Moderate urban transit with low congestion
+RULE: ARI://DTNMA/SRL/VDTN_URBAN_NOMINAL | PRIORITY: 10 | DESC: Normal vehicular cruising in suburban area
+IF: (EDD_QUEUE_RATIO < 0.80) && (EDD_NODE_DENSITY < 4.0)
+THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)

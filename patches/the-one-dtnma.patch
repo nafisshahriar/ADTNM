@@ -1,0 +1,35 @@
+﻿diff --git a/one.bat b/one.bat
+index ece5f1a..db8a204 100644
+--- a/one.bat
++++ b/one.bat
+@@ -1 +1 @@
+-java -Xmx512M -cp target;lib/ECLA.jar;lib/DTNConsoleConnection.jar core.DTNSim %*
+\ No newline at end of file
++java -server -Xms1G -Xmx4G -XX:+UseParallelGC -cp target;lib/ECLA.jar;lib/DTNConsoleConnection.jar core.DTNSim %*
+\ No newline at end of file
+diff --git a/src/routing/ActiveRouter.java b/src/routing/ActiveRouter.java
+index 4c8a11f..6db65a5 100644
+--- a/src/routing/ActiveRouter.java
++++ b/src/routing/ActiveRouter.java
+@@ -47,7 +47,7 @@ public abstract class ActiveRouter extends MessageRouter {
+ 	private double lastTtlCheck;
+ 
+ 	private MessageTransferAcceptPolicy policy;
+-	private EnergyModel energy;
++	protected EnergyModel energy;
+ 
+ 	/**
+ 	 * Constructor. Creates a new message router based on the settings in
+diff --git a/src/routing/ProphetRouter.java b/src/routing/ProphetRouter.java
+index 69f9817..bdeb750 100644
+--- a/src/routing/ProphetRouter.java
++++ b/src/routing/ProphetRouter.java
+@@ -202,7 +202,7 @@ public class ProphetRouter extends ActiveRouter {
+ 	 * Returns a map of this router's delivery predictions
+ 	 * @return a map of this router's delivery predictions
+ 	 */
+-	private Map<DTNHost, Double> getDeliveryPreds() {
++	public Map<DTNHost, Double> getDeliveryPreds() {
+ 		ageDeliveryPreds(); // make sure the aging is done
+ 		return this.preds;
+ 	}

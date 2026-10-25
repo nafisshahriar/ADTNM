@@ -1,0 +1,66 @@
+# ====================================================================
+# SCENARIO C: DtnmaRouter (Autonomic Management - RFC 9675 / RFC 7575)
+# ====================================================================
+
+## Scenario settings
+Scenario.name = Dtnma_Benchmark
+Scenario.simulateConnections = true
+Scenario.updateInterval = 0.5
+Scenario.endTime = 3600
+
+## Interface settings
+wlanInterface.type = SimpleBroadcastInterface
+wlanInterface.transmitSpeed = 250k
+wlanInterface.transmitRange = 80
+
+## Host Group Settings
+Scenario.nrofHostGroups = 1
+
+Group.movementModel = RandomWaypoint
+Group.router = DtnmaRouter
+Group.bufferSize = 5M
+Group.waitTime = 5, 20
+Group.speed = 1.0, 3.0
+Group.nrofInterfaces = 1
+Group.interface1 = wlanInterface
+Group.msgTtl = 300
+Group.nrofHosts = 20
+
+Group1.groupID = n
+
+## Message creation parameters
+Events.nrof = 2
+
+# Event 1: Critical Fault Observability Telemetry
+Events1.class = MessageEventGenerator
+Events1.prefix = CRITICAL_FAULT_
+Events1.size = 10k, 25k
+Events1.interval = 40, 80
+Events1.hosts = 0, 19
+
+# Event 2: Bulk Science Data (Causes Buffer Contention)
+Events2.class = MessageEventGenerator
+Events2.prefix = SCIENCE_DATA_
+Events2.size = 500k, 1M
+Events2.interval = 12, 25
+Events2.hosts = 0, 19
+
+DtnmaRouter.rulesFile = scenarios/rules_ntn.txt
+
+## Movement Model
+MovementModel.rngSeed = 42
+MovementModel.worldSize = 1000, 1000
+MovementModel.warmup = 0
+
+## Reports
+Report.nrofReports = 4
+Report.warmup = 0
+Report.reportDir = reports/
+Report.report1 = MessageStatsReport
+Report.report2 = BufferOccupancyReport
+Report.report3 = DtnmaDecisionReport
+Report.report4 = DtnmaAuditReport
+
+## Optimization
+Optimization.cellSizeMult = 5
+Optimization.randomizeUpdateOrder = true

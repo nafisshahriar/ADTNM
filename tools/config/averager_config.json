@@ -1,0 +1,54 @@
+{
+  "folder": "reports/",
+  "file_filter": {
+    "extension": ".txt",
+    "contains": ""
+  },
+  "report_types": [
+    "MessageStatsReport",
+    "ContactTimesReport"
+  ],
+  "filename_pattern": {
+    "delimiter": "_",
+    "components": {
+      "scenario_name": 0,
+      "router": 1,
+      "seed": 2,
+      "ttl": 3,
+      "buffer": 4,
+      "report_type": 5
+    },
+    "extract": {
+      "ttl": "(\\d+)",
+      "seed": "(\\d+)",
+      "buffer": "(\\d+)"
+    }
+  },
+  "data_separator": ":",
+  "ignore_fields": [
+    "sim_time"
+  ],
+  "average_groups": [
+    {
+      "group_by": [
+        "router",
+        "ttl"
+      ],
+      "min_files": 2,
+      "name": "ttl_average",
+      "output_template": "{report_type}_{router}_{ttl}_ttl_average.txt"
+    },
+    {
+      "group_by": [
+        "router",
+        "buffer"
+      ],
+      "min_files": 2,
+      "name": "buffer_average",
+      "output_template": "{report_type}_{router}_{buffer}_buffer_average.txt"
+    }
+  ],
+  "output": {
+    "precision": 4
+  }
+}

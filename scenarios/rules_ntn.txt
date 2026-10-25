@@ -1,0 +1,22 @@
+# ====================================================================
+# RFC 9675 DTNMA DECLARATIVE RULES: NON-TERRESTRIAL NETWORKS (NTN)
+# Targeted for high-latency, asymmetric space links and orbital relays
+# ====================================================================
+
+# Rule 1: Critical Congestion & Emergency Failsafe
+# When queue is critically high or energy drops, prioritize critical telecommand/faults
+RULE: ARI://DTNMA/SRL/NTN_CRITICAL_FAILSAP | PRIORITY: 100 | DESC: Space node buffer saturation or solar occultation
+IF: (EDD_QUEUE_RATIO >= 0.92) || (EDD_ENERGY_SOC < 0.20)
+THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 2: Multi-Orbiter Dense Pass
+# When crossing orbital planes with multiple peers, balance spray to avoid collision
+RULE: ARI://DTNMA/SRL/NTN_ORBITAL_CLUSTER | PRIORITY: 50 | DESC: Orbital rendezvous or inter-satellite link cluster
+IF: (EDD_NODE_DENSITY >= 4.0) || (EDD_ACTIVE_CONNECTIONS >= 3.0)
+THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 3: Deep Space Sparse Exploration
+# Default deep-space regime: rare contacts require higher copy distribution
+RULE: ARI://DTNMA/SRL/NTN_DEEP_SPACE_SPARSE | PRIORITY: 10 | DESC: Isolated lunar or deep space exploratory regime
+IF: (EDD_QUEUE_RATIO < 0.85) && (EDD_NODE_DENSITY < 4.0)
+THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)

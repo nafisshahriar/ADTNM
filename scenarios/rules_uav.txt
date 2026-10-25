@@ -1,0 +1,28 @@
+# ====================================================================
+# RFC 9675 DTNMA DECLARATIVE RULES: UAV / DRONE SWARMS (FANET)
+# Targeted for battery decay, flight speed, and aerial relay coordination
+# ====================================================================
+
+# Rule 1: Drone Battery Failsafe
+# When flight battery is low, shut off third-party relaying to protect return-to-home
+RULE: ARI://DTNMA/SRL/UAV_BATTERY_FAILSAFE | PRIORITY: 100 | DESC: Critical flight battery state
+IF: (EDD_ENERGY_SOC < 0.25) || (EDD_QUEUE_RATIO >= 0.90)
+THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 2: High-Speed Flyby Transit
+# When drone is moving fast (speed >= 10 m/s), contacts are brief: keep copies lean
+RULE: ARI://DTNMA/SRL/UAV_RAPID_FLYBY | PRIORITY: 60 | DESC: High-speed aerial reconnaissance flyby
+IF: (EDD_NODE_SPEED >= 10.0) && (EDD_QUEUE_RATIO < 0.85)
+THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(false)
+
+# Rule 3: Aerial Swarm Cluster / Hovering Relay
+# When hovering over disaster area with multiple connected ground teams
+RULE: ARI://DTNMA/SRL/UAV_HOVER_CLUSTER | PRIORITY: 40 | DESC: Drone hovering over ground responder cluster
+IF: (EDD_ACTIVE_CONNECTIONS >= 3.0) || (EDD_NODE_DENSITY >= 4.0)
+THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 4: Sparse Long-Range Aerial Patrol
+# Solo aerial patrol with healthy battery
+RULE: ARI://DTNMA/SRL/UAV_PATROL_SPARSE | PRIORITY: 10 | DESC: Nominal long-range patrol
+IF: (EDD_QUEUE_RATIO < 0.80) && (EDD_NODE_DENSITY < 3.0)
+THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)
