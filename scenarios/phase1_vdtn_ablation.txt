@@ -1,7 +1,9 @@
 # ====================================================================
-# PHASE 1 FULL VDTN ABLATION SCENARIO (COPRIME VERIFIED)
+# PHASE 1 FULL VDTN ABLATION SCENARIO (210 COPRIME RUNS)
+# Aligned with The ONE default_settings.txt (12h = 43200s, Helsinki 6 groups)
+#
 # Swept Parameters:
-#   5 Routers  : DtnmaStaticRouter; DtnmaUnshieldedRLRouter; DtnmaShieldedRLRouter; DtnmaGossipRLRouter; DtnmaGossipAckRLRouter
+#   5 Routers  : DtnmaStaticRouter; DtnmaUnshieldedRLRouter; DtnmaShieldedRLRouter; DtnmaGossipRLRouter; DtnmaRouter (default Gossip+ACK)
 #   2 Seeds    : 49; 186
 #   3 TTLs     : 50; 150; 300
 #   7 Buffers  : 5M; 10M; 20M; 35M; 55M; 80M; 100M
@@ -9,11 +11,11 @@
 # ====================================================================
 
 ## Scenario settings
-Scenario.name = Phase1VDTN_%%Group.router%%_%%MovementModel.rngSeed%%_%%Group.msgTtl%%_%%Group.bufferSize%%
+Scenario.name = Phase1VDTN210_%%Group.router%%_%%MovementModel.rngSeed%%_%%Group.msgTtl%%_%%Group.bufferSize%%
 Scenario.simulateConnections = true
 Scenario.updateInterval = 0.1
-# 21600s == 6h
-Scenario.endTime = 21600
+# 43200s == 12h (matches The ONE default_settings.txt)
+Scenario.endTime = 43200
 
 ## Interface-specific settings:
 btInterface.type = SimpleBroadcastInterface
@@ -28,7 +30,7 @@ Scenario.nrofHostGroups = 6
 
 ## Common settings for all groups
 Group.movementModel = ShortestPathMapBasedMovement
-Group.router = [DtnmaStaticRouter; DtnmaUnshieldedRLRouter; DtnmaShieldedRLRouter; DtnmaGossipRLRouter; DtnmaGossipAckRLRouter]
+Group.router = [DtnmaStaticRouter; DtnmaUnshieldedRLRouter; DtnmaShieldedRLRouter; DtnmaGossipRLRouter; DtnmaRouter]
 Group.bufferSize = [5M; 10M; 20M; 35M; 55M; 80M; 100M]
 Group.waitTime = 0, 120
 Group.nrofInterfaces = 1
@@ -48,7 +50,7 @@ Group2.speed = 2.7, 13.9
 # Group 3: Pedestrians
 Group3.groupID = w
 
-# Groups 4, 5, 6: City Trams
+# Groups 4, 5, 6: City Trams (High-speed mobile backbones)
 Group4.groupID = t
 Group4.bufferSize = 50M
 Group4.movementModel = MapRouteMovement
@@ -79,9 +81,9 @@ Group6.waitTime = 10, 30
 Group6.speed = 7, 10
 Group6.nrofHosts = 2
 
-## DTNMA Autonomic Router Settings (RFC 9675 VDTN Profile)
+## DTNMA Autonomic Router Settings (RFC 9675 VDTN Profile + GossipAckRL Default)
 DtnmaRouter.rulesFile = scenarios/rules_vdtn.txt
-DtnmaRouter.rlEpochInterval = 15.0
+DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
 
 ## Movement Model & Map Settings (Helsinki city area)
 MovementModel.rngSeed = [49; 186]
@@ -111,10 +113,10 @@ Events2.size = 500k, 1M
 Events2.interval = 12, 25
 Events2.hosts = 0, 126
 
-## Reports (Isolated to reports/phase1_vdtn/ for clean OppNDA ingestion)
+## Reports (Isolated to reports/phase1_vdtn_210/ for clean OppNDA ingestion)
 Report.nrofReports = 3
 Report.warmup = 0
-Report.reportDir = reports/phase1_vdtn/
+Report.reportDir = reports/phase1_vdtn_210/
 Report.report1 = MessageStatsReport
 Report.report2 = DtnmaDecisionReport
 Report.report3 = DtnmaRlMetricsReport

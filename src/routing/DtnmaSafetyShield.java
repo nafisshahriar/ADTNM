@@ -2,8 +2,8 @@
  * DtnmaSafetyShield.java
  * Formal RFC 9675 Safety Shield wrapping the RL intelligence engine.
  * Combines Pre-Action Safety Masking, Post-Action Override Fallback,
- * Rule Sanitization, and Conditional Safety Internalization Auditing
- * (measuring early vs late intervention rates strictly across constrained regimes).
+ * Rule Sanitization, and Conditional Safety Internalization Auditing.
+ * All threshold bounds are configurable via DtnmaConfig.
  */
 package routing;
 
@@ -39,12 +39,18 @@ public class DtnmaSafetyShield {
         public boolean[] getSafeMask() { return safeMask; }
     }
 
+    private final DtnmaConfig cfg;
     private long totalDecisions = 0;
     private long totalInterventions = 0;
-
-    // Tracks constrained-regime decisions (where at least one action was masked)
-    // to compare early 40% vs late 40% intervention rate apples-to-apples.
     private final List<Boolean> constrainedInterventionHistory = new ArrayList<Boolean>();
+
+    public DtnmaSafetyShield() {
+        this(new DtnmaConfig());
+    }
+
+    public DtnmaSafetyShield(DtnmaConfig config) {
+        this.cfg = (config != null) ? config : new DtnmaConfig();
+    }
 
     /**
      * Sanitizes user-authored declarative rules at load time so invalid quotas,
@@ -88,12 +94,12 @@ public class DtnmaSafetyShield {
         boolean constrained = false;
 
         // Invariant S1: Buffer Criticality Protection
-        if (q >= 0.94) {
+        if (q >= cfg.shieldCriticalQueue) {
             restrictToMaxIndex(mask, 0); // Only {0}
             primaryAri = "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
-            if (reasonOut != null) reasonOut.append(String.format("Q=%.2f>=0.94 ", q));
+            if (reasonOut != null) reasonOut.append(String.format("Q=%.2f>=%.2f ", q, cfg.shieldCriticalQueue));
             constrained = true;
-        } else if (q >= 0.90 || (q >= 0.82 && drift > 0.015)) {
+        } else if (q >= cfg.shieldCongestionQueue || (q >= cfg.shieldSurgeQueue && drift > cfg.shieldSurgeDrift)) {
             restrictToMaxIndex(mask, 1); // Only {0, 1}
             primaryAri = "ARI://DTNMA/SHIELD/BUF_CONGESTION_SURGE";
             if (reasonOut != null) reasonOut.append(String.format("Q=%.2f,dQ=%.3f ", q, drift));
@@ -101,17 +107,17 @@ public class DtnmaSafetyShield {
         }
 
         // Invariant S2: Energy Survival Failsafe
-        if (soc < 0.20) {
+        if (soc < cfg.shieldEnergyMin) {
             restrictToMaxIndex(mask, 1); // Only {0, 1}
             if (!constrained) {
                 primaryAri = "ARI://DTNMA/SHIELD/ENERGY_CRITICAL";
             }
-            if (reasonOut != null) reasonOut.append(String.format("SoC=%.2f<0.20 ", soc));
+            if (reasonOut != null) reasonOut.append(String.format("SoC=%.2f<%.2f ", soc, cfg.shieldEnergyMin));
             constrained = true;
         }
 
         // Invariant S3: Dense VDTN Broadcast Storm Guard (only under actual buffer pressure)
-        if (q >= 0.78 && density >= 5.0) {
+        if (q >= cfg.shieldStormQueue && density >= cfg.shieldStormDensity) {
             mask[6] = false;
             mask[7] = false;
             if (!constrained) {
@@ -159,9 +165,6 @@ public class DtnmaSafetyShield {
         return mask;
     }
 
-    /**
-     * Returns true if at least one profile is blocked by the safety mask.
-     */
     public static boolean isConstrained(boolean[] mask) {
         if (mask == null) return false;
         for (boolean b : mask) {
@@ -170,10 +173,6 @@ public class DtnmaSafetyShield {
         return false;
     }
 
-    /**
-     * Enforces the safety mask against a proposed RL action, selecting an optional
-     * RL-preferred safe fallback or monotonic safe fallback if the proposal is unsafe.
-     */
     public ShieldDecision enforce(int proposedAction, int preferredSafeAction,
                                   EddTelemetrySampler sampler, List<StateBasedRule> rules) {
         int clampedProposal = Math.max(0, Math.min(DtnmaPolicyProfile.NUM_ACTIONS - 1, proposedAction));
@@ -235,10 +234,12 @@ public class DtnmaSafetyShield {
         double density = sampler.getEddValue(EddTelemetrySampler.EDD_NODE_DENSITY);
         double soc = sampler.getEddValue(EddTelemetrySampler.EDD_ENERGY_SOC);
 
-        if (q >= 0.94) return "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
-        if (q >= 0.90 || (q >= 0.82 && drift > 0.015)) return "ARI://DTNMA/SHIELD/BUF_CONGESTION_SURGE";
-        if (soc < 0.20) return "ARI://DTNMA/SHIELD/ENERGY_CRITICAL";
-        if (q >= 0.78 && density >= 5.0) return "ARI://DTNMA/SHIELD/DENSE_STORM_GUARD";
+        if (q >= cfg.shieldCriticalQueue) return "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
+        if (q >= cfg.shieldCongestionQueue || (q >= cfg.shieldSurgeQueue && drift > cfg.shieldSurgeDrift)) {
+            return "ARI://DTNMA/SHIELD/BUF_CONGESTION_SURGE";
+        }
+        if (soc < cfg.shieldEnergyMin) return "ARI://DTNMA/SHIELD/ENERGY_CRITICAL";
+        if (q >= cfg.shieldStormQueue && density >= cfg.shieldStormDensity) return "ARI://DTNMA/SHIELD/DENSE_STORM_GUARD";
         if (rules != null) {
             for (StateBasedRule r : rules) {
                 if (r.getPriority() >= 100 && r.isTriggered(sampler)) {
@@ -256,9 +257,6 @@ public class DtnmaSafetyShield {
         return totalDecisions > 0 ? (double) totalInterventions / totalDecisions : 0.0;
     }
 
-    /**
-     * Conditional intervention rate over the first 40% of constrained-regime decisions.
-     */
     public double getEarlyInterventionRate() {
         int n = constrainedInterventionHistory.size();
         if (n < 2) {
@@ -272,9 +270,6 @@ public class DtnmaSafetyShield {
         return (double) hits / end;
     }
 
-    /**
-     * Conditional intervention rate over the final 40% of constrained-regime decisions.
-     */
     public double getLateInterventionRate() {
         int n = constrainedInterventionHistory.size();
         if (n < 2) {

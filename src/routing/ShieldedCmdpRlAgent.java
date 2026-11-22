@@ -2,6 +2,7 @@
  * ShieldedCmdpRlAgent.java
  * Primal-Dual Constrained Linear Expected SARSA with State-Localized Dual-Update
  * Shielded Learning and Opportunistic Mobility-Class Peer Gossip Consensus.
+ * All hyperparameters are externally configurable via DtnmaConfig.
  */
 package routing;
 
@@ -12,19 +13,10 @@ public class ShieldedCmdpRlAgent {
     public static final int NUM_ACTIONS = DtnmaPolicyProfile.NUM_ACTIONS;
     public static final int NUM_FEATURES = 20;
 
-    // RL & CMDP Hyperparameters
-    private static final double ALPHA = 0.10;
-    private static final double GAMMA = 0.90;
-    private static final double WEIGHT_DECAY = 1e-4;
-    private static final double ETA_LAMBDA = 0.02;
-    private static final double D_TARGET = 0.15;
-    private static final double LAMBDA_INIT = 0.25;
-    private static final double LAMBDA_MAX = 5.0;
-    private static final double OPTIMISTIC_INIT_R = 0.30;
-
+    private final DtnmaConfig cfg;
     private final double[][] wReward;
     private final double[][] wCost;
-    private double lambda = LAMBDA_INIT;
+    private double lambda;
     private final Random rng;
 
     // Tracking & Metrics
@@ -35,11 +27,17 @@ public class ShieldedCmdpRlAgent {
     private double lastCost = 0.0;
 
     public ShieldedCmdpRlAgent(long rngSeed, int hostAddress) {
+        this(rngSeed, hostAddress, new DtnmaConfig());
+    }
+
+    public ShieldedCmdpRlAgent(long rngSeed, int hostAddress, DtnmaConfig config) {
+        this.cfg = (config != null) ? config : new DtnmaConfig();
+        this.lambda = this.cfg.rlLambdaInit;
         this.wReward = new double[NUM_ACTIONS][NUM_FEATURES];
         this.wCost = new double[NUM_ACTIONS][NUM_FEATURES];
         // Uniform Optimistic Initial Values on bias weight only (zero prior bias toward any profile)
         for (int a = 0; a < NUM_ACTIONS; a++) {
-            this.wReward[a][0] = OPTIMISTIC_INIT_R;
+            this.wReward[a][0] = this.cfg.rlOptimisticInit;
         }
         long seed = rngSeed * 131L + (long) hostAddress * 31L + 17L;
         this.rng = new Random(seed);
@@ -111,7 +109,7 @@ public class ShieldedCmdpRlAgent {
     }
 
     public double getEpsilon(double simTime) {
-        return Math.max(0.01, 0.25 * Math.exp(-simTime / 1000.0));
+        return Math.max(cfg.rlEpsilonMin, cfg.rlEpsilonStart * Math.exp(-simTime / cfg.rlEpsilonDecay));
     }
 
     /**
@@ -187,7 +185,7 @@ public class ShieldedCmdpRlAgent {
         if (unsafeAction < 0 || unsafeAction >= NUM_ACTIONS) return;
         int safeIdx = Math.max(0, Math.min(NUM_ACTIONS - 1, safeAction));
         double[] phi = extractFeatures(stateVec);
-        double step = (3.0 * ALPHA) / normSqLocalized(phi);
+        double step = (3.0 * cfg.rlAlpha) / normSqLocalized(phi);
 
         double qRSafe = dot(wReward[safeIdx], phi);
         double qCSafe = dot(wCost[safeIdx], phi);
@@ -200,8 +198,8 @@ public class ShieldedCmdpRlAgent {
         double errC = clamp(targetC - curC, -12.0, 12.0);
 
         for (int k = 1; k < NUM_FEATURES; k++) {
-            wReward[unsafeAction][k] = (1.0 - WEIGHT_DECAY) * wReward[unsafeAction][k] + step * errR * phi[k];
-            wCost[unsafeAction][k]   = (1.0 - WEIGHT_DECAY) * wCost[unsafeAction][k]   + step * errC * phi[k];
+            wReward[unsafeAction][k] = (1.0 - cfg.rlWeightDecay) * wReward[unsafeAction][k] + step * errR * phi[k];
+            wCost[unsafeAction][k]   = (1.0 - cfg.rlWeightDecay) * wCost[unsafeAction][k]   + step * errC * phi[k];
         }
     }
 
@@ -239,8 +237,8 @@ public class ShieldedCmdpRlAgent {
             expectedNextC += prob * dot(wCost[a], phiNext);
         }
 
-        double targetR = reward + GAMMA * expectedNextR;
-        double targetC = cost + GAMMA * expectedNextC;
+        double targetR = reward + cfg.rlGamma * expectedNextR;
+        double targetC = cost + cfg.rlGamma * expectedNextC;
 
         double predR = dot(wReward[executedAction], phiPrev);
         double predC = dot(wCost[executedAction], phiPrev);
@@ -248,14 +246,14 @@ public class ShieldedCmdpRlAgent {
         double deltaR = clamp(targetR - predR, -5.0, 5.0);
         double deltaC = clamp(targetC - predC, -5.0, 5.0);
 
-        double step = ALPHA / normSq(phiPrev);
+        double step = cfg.rlAlpha / normSq(phiPrev);
         for (int k = 0; k < NUM_FEATURES; k++) {
-            wReward[executedAction][k] = (1.0 - WEIGHT_DECAY) * wReward[executedAction][k] + step * deltaR * phiPrev[k];
-            wCost[executedAction][k]   = (1.0 - WEIGHT_DECAY) * wCost[executedAction][k]   + step * deltaC * phiPrev[k];
+            wReward[executedAction][k] = (1.0 - cfg.rlWeightDecay) * wReward[executedAction][k] + step * deltaR * phiPrev[k];
+            wCost[executedAction][k]   = (1.0 - cfg.rlWeightDecay) * wCost[executedAction][k]   + step * deltaC * phiPrev[k];
         }
 
         // Dual Lagrange multiplier update
-        this.lambda = clamp(this.lambda + ETA_LAMBDA * (cost - D_TARGET), 0.0, LAMBDA_MAX);
+        this.lambda = clamp(this.lambda + cfg.rlEtaLambda * (cost - cfg.rlTargetCost), 0.0, cfg.rlLambdaMax);
 
         this.epochCount++;
         this.lastReward = reward;
@@ -265,21 +263,25 @@ public class ShieldedCmdpRlAgent {
     }
 
     /**
-     * Opportunistic Same-Mobility-Class Gossip Consensus averaging.
+     * Opportunistic Mobility-Class Gossip Consensus averaging.
      */
     public boolean gossipMerge(ShieldedCmdpRlAgent peer, int myClass, int peerClass) {
-        if (peer == null || myClass != peerClass || peer.epochCount <= 0) {
+        if (peer == null || peer.epochCount <= 0) {
+            return false;
+        }
+        if (cfg.gossipSameClassOnly && myClass != peerClass) {
             return false;
         }
 
-        double alphaG = clamp(0.20 * peer.epochCount / (this.epochCount + peer.epochCount + 1.0), 0.05, 0.25);
+        double rawAlphaG = cfg.gossipWeightMax * peer.epochCount / (this.epochCount + peer.epochCount + 1.0);
+        double alphaG = clamp(rawAlphaG, cfg.gossipWeightMin, cfg.gossipWeightMax);
         for (int a = 0; a < NUM_ACTIONS; a++) {
             for (int k = 0; k < NUM_FEATURES; k++) {
                 this.wReward[a][k] = (1.0 - alphaG) * this.wReward[a][k] + alphaG * peer.wReward[a][k];
                 this.wCost[a][k]   = (1.0 - alphaG) * this.wCost[a][k]   + alphaG * peer.wCost[a][k];
             }
         }
-        this.lambda = clamp((1.0 - alphaG) * this.lambda + alphaG * peer.lambda, 0.0, LAMBDA_MAX);
+        this.lambda = clamp((1.0 - alphaG) * this.lambda + alphaG * peer.lambda, 0.0, cfg.rlLambdaMax);
         return true;
     }
 

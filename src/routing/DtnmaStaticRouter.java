@@ -13,6 +13,9 @@ public class DtnmaStaticRouter extends DtnmaRouter {
         this.intelligenceMode = IntelligenceMode.STATIC_RULES;
         this.gossipEnabled = false;
         this.ackFeedbackEnabled = false;
+        this.config.intelligenceMode = this.intelligenceMode;
+        this.config.gossipEnabled = false;
+        this.config.ackFeedbackEnabled = false;
     }
 
     protected DtnmaStaticRouter(DtnmaStaticRouter r) {

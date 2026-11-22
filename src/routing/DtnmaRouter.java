@@ -65,16 +65,13 @@ public class DtnmaRouter extends ActiveRouter {
     public static final String RL_EPOCH_INTERVAL_SETTING = "rlEpochInterval";
 
     // Control Plane Bounds
-    private static final double BEACON_REFRESH_SEC = 5.0;
-    private static final double GOSSIP_COOLDOWN_SEC = 60.0;
-    private static final int MAX_ACK_CACHE = 512;
     private static final int MAX_FWD_CREDIT_CACHE = 256;
-    private static final int MAX_ACKS_PER_CONTACT = 32;
 
-    // Configuration Fields
+    // Configuration Fields (Default: Gossip + Delayed ACK Shielded CMDP RL)
+    protected DtnmaConfig config;
     protected IntelligenceMode intelligenceMode = IntelligenceMode.SHIELDED_CMDP_RL;
     protected boolean gossipEnabled = true;
-    protected boolean ackFeedbackEnabled = false;
+    protected boolean ackFeedbackEnabled = true;
     protected double rlEpochInterval = 15.0;
     protected long scenarioRngSeed = 0L;
 
@@ -162,13 +159,11 @@ public class DtnmaRouter extends ActiveRouter {
         }
         DtnmaSafetyShield.sanitizeRules(this.ruleDatabase);
 
-        String modeStr = getSettingString(s, dtnmaSettings, INTELLIGENCE_MODE_SETTING, null);
-        if (modeStr != null) {
-            this.intelligenceMode = parseIntelligenceMode(modeStr);
-        }
-        this.gossipEnabled = getSettingBoolean(s, dtnmaSettings, GOSSIP_ENABLED_SETTING, true);
-        this.ackFeedbackEnabled = getSettingBoolean(s, dtnmaSettings, ACK_FEEDBACK_SETTING, false);
-        this.rlEpochInterval = getSettingDouble(s, dtnmaSettings, RL_EPOCH_INTERVAL_SETTING, 15.0);
+        this.config = DtnmaConfig.load(s, dtnmaSettings);
+        this.intelligenceMode = this.config.intelligenceMode;
+        this.gossipEnabled = this.config.gossipEnabled;
+        this.ackFeedbackEnabled = this.config.ackFeedbackEnabled;
+        this.rlEpochInterval = this.config.rlEpochInterval;
 
         Settings mmSettings = new Settings("MovementModel");
         if (mmSettings.contains("rngSeed")) {
@@ -183,6 +178,7 @@ public class DtnmaRouter extends ActiveRouter {
     protected DtnmaRouter(DtnmaRouter r) {
         super(r);
         this.ruleDatabase = new ArrayList<StateBasedRule>(r.ruleDatabase);
+        this.config = new DtnmaConfig(r.config);
         this.intelligenceMode = r.intelligenceMode;
         this.gossipEnabled = r.gossipEnabled;
         this.ackFeedbackEnabled = r.ackFeedbackEnabled;
@@ -211,7 +207,7 @@ public class DtnmaRouter extends ActiveRouter {
         // Fresh per-host mutable maps & subsystems
         this.neighborBeacons = new HashMap<Integer, DtnmaContactBeacon>();
         this.gossipLastExchange = new HashMap<Integer, Double>();
-        this.deliveredAckSet = createLruMap(MAX_ACK_CACHE);
+        this.deliveredAckSet = createLruMap(this.config.ackCacheSize);
         this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
     }
 
@@ -225,49 +221,22 @@ public class DtnmaRouter extends ActiveRouter {
         };
     }
 
-    private static String getSettingString(Settings s1, Settings s2, String key, String def) {
-        if (s1.contains(key)) return s1.getSetting(key);
-        if (s2.contains(key)) return s2.getSetting(key);
-        return def;
-    }
-
-    private static boolean getSettingBoolean(Settings s1, Settings s2, String key, boolean def) {
-        if (s1.contains(key)) return s1.getBoolean(key);
-        if (s2.contains(key)) return s2.getBoolean(key);
-        return def;
-    }
-
-    private static double getSettingDouble(Settings s1, Settings s2, String key, double def) {
-        if (s1.contains(key)) return s1.getDouble(key);
-        if (s2.contains(key)) return s2.getDouble(key);
-        return def;
-    }
-
-    private static IntelligenceMode parseIntelligenceMode(String val) {
-        if (val == null) return IntelligenceMode.SHIELDED_CMDP_RL;
-        String clean = val.trim().toUpperCase();
-        try {
-            return IntelligenceMode.valueOf(clean);
-        } catch (IllegalArgumentException e) {
-            return IntelligenceMode.SHIELDED_CMDP_RL;
-        }
-    }
-
     private void ensureSubsystemsInitialized() {
         if (getHost() == null) return;
+        if (this.config == null) this.config = new DtnmaConfig();
         if (this.neighborBeacons == null) this.neighborBeacons = new HashMap<Integer, DtnmaContactBeacon>();
         if (this.gossipLastExchange == null) this.gossipLastExchange = new HashMap<Integer, Double>();
-        if (this.deliveredAckSet == null) this.deliveredAckSet = createLruMap(MAX_ACK_CACHE);
+        if (this.deliveredAckSet == null) this.deliveredAckSet = createLruMap(this.config.ackCacheSize);
         if (this.forwardedCreditMap == null) this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
 
         if (this.eddSampler == null) {
             this.eddSampler = new EddTelemetrySampler(getHost(), this);
         }
         if (this.safetyShield == null) {
-            this.safetyShield = new DtnmaSafetyShield();
+            this.safetyShield = new DtnmaSafetyShield(this.config);
         }
         if (this.rlAgent == null) {
-            this.rlAgent = new ShieldedCmdpRlAgent(this.scenarioRngSeed, getHost().getAddress());
+            this.rlAgent = new ShieldedCmdpRlAgent(this.scenarioRngSeed, getHost().getAddress(), this.config);
         }
     }
 
@@ -336,7 +305,7 @@ public class DtnmaRouter extends ActiveRouter {
                 // 2. Opportunistic Same-Mobility-Class Gossip Weight Sharing
                 if (this.gossipEnabled && this.intelligenceMode != IntelligenceMode.STATIC_RULES) {
                     Double lastG = this.gossipLastExchange.get(other.getAddress());
-                    if (lastG == null || (now - lastG) >= GOSSIP_COOLDOWN_SEC) {
+                    if (lastG == null || (now - lastG) >= this.config.gossipCooldown) {
                         peer.ensureSubsystemsInitialized();
                         if (this.rlAgent != null && peer.getRlAgent() != null
                                 && this.eddSampler != null && peer.getEddSampler() != null) {
@@ -389,7 +358,7 @@ public class DtnmaRouter extends ActiveRouter {
             DTNHost other = con.getOtherNode(getHost());
             if (other != null && other.getRouter() instanceof DtnmaRouter) {
                 DtnmaContactBeacon existing = neighborBeacons.get(other.getAddress());
-                if (existing == null || existing.isStale(now, BEACON_REFRESH_SEC)) {
+                if (existing == null || existing.isStale(now, this.config.beaconRefreshInterval)) {
                     DtnmaRouter peer = (DtnmaRouter) other.getRouter();
                     neighborBeacons.put(other.getAddress(), peer.getBeaconSnapshot(now));
                     beaconOverheadBytes += DtnmaContactBeacon.BEACON_SIZE_BYTES;
@@ -412,7 +381,7 @@ public class DtnmaRouter extends ActiveRouter {
                 if (hasMessage(msgId) && !isSending(msgId)) {
                     deleteMessage(msgId, false);
                 }
-                if (learned >= MAX_ACKS_PER_CONTACT) {
+                if (learned >= this.config.ackMaxPerContact) {
                     break;
                 }
             }
@@ -596,14 +565,14 @@ public class DtnmaRouter extends ActiveRouter {
 
     private double computeLocalEpochReward(double qNow) {
         double bufPenalty = 1.5 * Math.pow(Math.max(0.0, qNow - 0.80), 2);
-        return 2.5 * epochDirectDeliveries
-             + 1.2 * epochAckDeliveries
-             + 1.5 * epochPredProgressSum
-             + 1.0 * epochCoverageGain
-             - 0.8 * epochBulkDrops
+        return config.rewardDirectDelivery * epochDirectDeliveries
+             + config.rewardAckDelivery * epochAckDeliveries
+             + config.rewardPredProgress * epochPredProgressSum
+             + config.rewardCoverageGain * epochCoverageGain
+             - config.penaltyBulkDrop * epochBulkDrops
              - 2.5 * epochCritDrops
              - 0.30 * epochRedundantForwards
-             - 0.05 * epochRelayTransfers
+             - config.penaltyRelayCost * epochRelayTransfers
              - bufPenalty;
     }
 

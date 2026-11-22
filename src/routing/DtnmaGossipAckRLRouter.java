@@ -13,6 +13,9 @@ public class DtnmaGossipAckRLRouter extends DtnmaRouter {
         this.intelligenceMode = IntelligenceMode.SHIELDED_CMDP_RL;
         this.gossipEnabled = true;
         this.ackFeedbackEnabled = true;
+        this.config.intelligenceMode = this.intelligenceMode;
+        this.config.gossipEnabled = true;
+        this.config.ackFeedbackEnabled = true;
     }
 
     protected DtnmaGossipAckRLRouter(DtnmaGossipAckRLRouter r) {

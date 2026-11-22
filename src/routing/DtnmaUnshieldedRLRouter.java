@@ -13,6 +13,9 @@ public class DtnmaUnshieldedRLRouter extends DtnmaRouter {
         this.intelligenceMode = IntelligenceMode.UNSHIELDED_RL;
         this.gossipEnabled = false;
         this.ackFeedbackEnabled = false;
+        this.config.intelligenceMode = this.intelligenceMode;
+        this.config.gossipEnabled = false;
+        this.config.ackFeedbackEnabled = false;
     }
 
     protected DtnmaUnshieldedRLRouter(DtnmaUnshieldedRLRouter r) {
