@@ -31,32 +31,32 @@ public class DtnmaConfig {
     public double rlEpochInterval = 15.0;
 
     // Primal-Dual CMDP RL Hyperparameters
-    public double rlAlpha = 0.10;
+    public double rlAlpha = 0.15;
     public double rlGamma = 0.90;
     public double rlWeightDecay = 1e-4;
-    public double rlEpsilonStart = 0.25;
-    public double rlEpsilonMin = 0.02;
-    public double rlEpsilonDecay = 2000.0;
+    public double rlEpsilonStart = 0.15;
+    public double rlEpsilonMin = 0.01;
+    public double rlEpsilonDecay = 900.0;
     public double rlLambdaInit = 0.25;
     public double rlEtaLambda = 0.02;
-    public double rlTargetCost = 0.15;
+    public double rlTargetCost = 0.30;
     public double rlLambdaMax = 5.0;
-    public double rlOptimisticInit = 0.30;
+    public double rlOptimisticInit = 0.0;
 
     // Local-Only Reward / Cost Weights
     public double rewardDirectDelivery = 2.5;
-    public double rewardAckDelivery = 1.2;
+    public double rewardAckDelivery = 1.5;
     public double rewardPredProgress = 1.5;
     public double rewardCoverageGain = 1.0;
-    public double penaltyBulkDrop = 0.8;
-    public double penaltyRelayCost = 0.05;
+    public double penaltyBulkDrop = 0.35;
+    public double penaltyRelayCost = 0.02;
 
     // Gossip, Beacon & ACK Control Plane
     public double gossipCooldown = 120.0;
     public double gossipWeightMin = 0.05;
     public double gossipWeightMax = 0.25;
     public boolean gossipSameClassOnly = true;
-    public int gossipMinEpochs = 15;
+    public int gossipMinEpochs = 8;
     public double beaconRefreshInterval = 5.0;
     public int ackCacheSize = 512;
     public int ackMaxPerContact = 32;

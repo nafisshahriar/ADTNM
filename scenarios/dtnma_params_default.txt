@@ -18,32 +18,32 @@ ackFeedbackEnabled = true
 rlEpochInterval = 15.0
 
 # --- 2. Primal-Dual CMDP RL Hyperparameters ---
-rlAlpha = 0.10
+rlAlpha = 0.15
 rlGamma = 0.90
 rlWeightDecay = 0.0001
-rlEpsilonStart = 0.25
-rlEpsilonMin = 0.02
-rlEpsilonDecay = 2000.0
+rlEpsilonStart = 0.15
+rlEpsilonMin = 0.01
+rlEpsilonDecay = 900.0
 rlLambdaInit = 0.25
 rlEtaLambda = 0.02
-rlTargetCost = 0.15
+rlTargetCost = 0.30
 rlLambdaMax = 5.0
-rlOptimisticInit = 0.30
+rlOptimisticInit = 0.0
 
 # --- 3. Local-Only Reward & Cost Weights ---
 rewardDirectDelivery = 2.5
-rewardAckDelivery = 1.2
+rewardAckDelivery = 1.5
 rewardPredProgress = 1.5
 rewardCoverageGain = 1.0
-penaltyBulkDrop = 0.8
-penaltyRelayCost = 0.05
+penaltyBulkDrop = 0.35
+penaltyRelayCost = 0.02
 
 # --- 4. Gossip, Contact Beacon & Delayed ACK Control Plane ---
 gossipCooldown = 120.0
 gossipWeightMin = 0.05
 gossipWeightMax = 0.25
 gossipSameClassOnly = true
-gossipMinEpochs = 15
+gossipMinEpochs = 8
 beaconRefreshInterval = 5.0
 ackCacheSize = 512
 ackMaxPerContact = 32

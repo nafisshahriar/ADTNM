@@ -15,10 +15,12 @@ public class ShieldedCmdpRlAgent {
 
     /**
      * Hazard-localized feature indices updated during counterfactual shield shaping:
-     * phi[1]=queueRatio, phi[6]=energyDepletion(1-soc), phi[7]=Q^2, phi[8]=Q*drift,
-     * phi[9]=Q*density, phi[11]=Q*grad, phi[16]=(Q>=0.85), phi[17]=(drift>0.55).
+     * phi[6]=energyDepletion(1-soc) [S2],
+     * phi[15]=(Q>=shieldStormQueue && Q<shieldCongestionQueue && Density>=shieldStormDensity) [S3],
+     * phi[16]=(Q>=shieldCongestionQueue) [S1/S4],
+     * phi[17]=(Q>=0.80 && drift>0.55) [S1 surge].
      */
-    private static final int[] HAZARD_FEATURE_INDICES = { 1, 6, 7, 8, 9, 11, 16, 17 };
+    private static final int[] HAZARD_FEATURE_INDICES = { 6, 15, 16, 17 };
 
     private final DtnmaConfig cfg;
     private final double[][] wReward;
@@ -81,10 +83,11 @@ public class ShieldedCmdpRlAgent {
         // Localized coarse-tile indicators over (Q, Density, Drift, Speed)
         phi[12] = (z0 < 0.50 && z2 < 0.35) ? 1.0 : 0.0;
         phi[13] = (z0 < 0.50 && z2 >= 0.35) ? 1.0 : 0.0;
-        phi[14] = (z0 >= 0.50 && z0 < 0.85 && z2 < 0.35) ? 1.0 : 0.0;
-        phi[15] = (z0 >= 0.50 && z0 < 0.85 && z2 >= 0.35) ? 1.0 : 0.0;
-        phi[16] = (z0 >= 0.85) ? 1.0 : 0.0;
-        phi[17] = (z1 > 0.55) ? 1.0 : 0.0;
+        double stormDensNorm = (cfg.shieldStormDensity / 15.0) - 1e-6;
+        phi[14] = (z0 >= 0.50 && z0 < cfg.shieldCongestionQueue && z2 < 0.35) ? 1.0 : 0.0;
+        phi[15] = (z0 >= cfg.shieldStormQueue && z0 < cfg.shieldCongestionQueue && z2 >= stormDensNorm) ? 1.0 : 0.0;
+        phi[16] = (z0 >= cfg.shieldCongestionQueue) ? 1.0 : 0.0;
+        phi[17] = (z0 >= 0.80 && z1 > 0.55) ? 1.0 : 0.0;
         phi[18] = (z3 < 0.15) ? 1.0 : 0.0;
         phi[19] = (z3 >= 0.50) ? 1.0 : 0.0;
 

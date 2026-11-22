@@ -267,7 +267,7 @@ public class DtnmaRouter extends ActiveRouter {
      */
     private void initDefaultRuleDatabase() {
         PredicateExpression pCrit = new PredicateExpression(false); // OR
-        pCrit.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.92);
+        pCrit.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.95);
         pCrit.addClause(EddTelemetrySampler.EDD_ENERGY_SOC, PredicateExpression.Operator.LESS_THAN, 0.20);
         StateBasedRule rCrit = new StateBasedRule("ARI://DTNMA/SRL/CRITICAL_CONGESTION",
                 "Severe queue congestion or low energy: Restrict quota to 2 and enable backpressure", 100, pCrit);
@@ -277,10 +277,11 @@ public class DtnmaRouter extends ActiveRouter {
         rCrit.addAction(ControlAction.setBackpressure(true));
         this.ruleDatabase.add(rCrit);
 
-        PredicateExpression pDense = new PredicateExpression(false);
+        PredicateExpression pDense = new PredicateExpression(true); // AND
+        pDense.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.65);
         pDense.addClause(EddTelemetrySampler.EDD_NODE_DENSITY, PredicateExpression.Operator.GREATER_EQUAL, 4.0);
         StateBasedRule rDense = new StateBasedRule("ARI://DTNMA/SRL/DENSE_CLUSTER",
-                "High density cluster: Set balanced spray quota to 3", 50, pDense);
+                "Congested high-density cluster: Set balanced spray quota to 3", 50, pDense);
         rDense.addAction(ControlAction.setSprayQuota(3));
         rDense.addAction(ControlAction.setIngressMode(INGRESS_ACCEPT_ALL));
         rDense.addAction(ControlAction.setTelemetryInterval(300.0));
@@ -555,6 +556,14 @@ public class DtnmaRouter extends ActiveRouter {
                 }
                 updateAuditState(prevExecutedAction, safeAct, true, dec.getTriggerAri(), dec.getExplanation());
                 this.prevExecutedAction = safeAct;
+            } else if (lastShieldIntervened && !DtnmaSafetyShield.isConstrained(safeMask) && rlAgent != null) {
+                double[] currentState = eddSampler.getNormalizedStateVector();
+                int recovered = rlAgent.selectBestSafeAction(currentState, safeMask, now, false);
+                applyPolicyProfile(recovered);
+                updateAuditState(recovered, recovered, false,
+                        DtnmaPolicyProfile.get(recovered).getAri(),
+                        "SHIELD_RELEASE(" + DtnmaPolicyProfile.get(recovered).getName() + ")");
+                this.prevExecutedAction = recovered;
             }
         }
     }
@@ -620,7 +629,7 @@ public class DtnmaRouter extends ActiveRouter {
 
     private double computeLocalEpochReward(double qNow) {
         double bufPenalty = 1.5 * Math.pow(Math.max(0.0, qNow - 0.80), 2);
-        double starvePenalty = 0.25 * Math.min(2, epochStarvationCount);
+        double starvePenalty = 0.35 * Math.min(3, epochStarvationCount);
         return config.rewardPredProgress * epochPredProgressSum
              + config.rewardCoverageGain * epochCoverageGain
              - config.penaltyBulkDrop * epochBulkDrops
@@ -632,9 +641,9 @@ public class DtnmaRouter extends ActiveRouter {
     }
 
     private double computeLocalEpochCost(double qNow) {
-        double dropCost = 0.45 * epochBulkDrops + 1.0 * epochCritDrops;
-        double bufCost = 0.80 * Math.max(0.0, qNow - 0.78) / 0.22;
-        double redCost = 0.25 * epochRedundantForwards + 0.02 * epochRelayTransfers;
+        double dropCost = 0.15 * epochBulkDrops + 1.0 * epochCritDrops;
+        double bufCost = 0.80 * Math.max(0.0, qNow - 0.90) / 0.10;
+        double redCost = 0.20 * epochRedundantForwards + 0.01 * epochRelayTransfers;
         return Math.min(2.0, dropCost + bufCost + redCost);
     }
 
@@ -751,21 +760,18 @@ public class DtnmaRouter extends ActiveRouter {
                 // 2. SPRAY PHASE (copies > 1)
                 if (copies > 1) {
                     if (!isCritical && backpressureEnabled && peerRouters[i] != null) {
-                        if (peerQueue >= myQueueRatio + currentBackpressureDelta) {
+                        if (peerQueue >= 0.65 && peerQueue >= myQueueRatio + currentBackpressureDelta) {
                             continue;
                         }
                     }
 
-                    if (!isCritical && peerQueue >= 0.95) {
-                        continue;
-                    }
-
                     int toSend = computeRelaySplit(copies, this.currentSprayQuota, isCritical);
+                    int naturalSplit = Math.max(1, (int) Math.floor(copies / 2.0));
+                    if (!isCritical && myQueueRatio < 0.65 && peerQueue < 0.65 && toSend < naturalSplit) {
+                        this.epochStarvationCount++;
+                        this.epochActivityCount++;
+                    }
                     if (toSend <= 0) {
-                        if (!isCritical && myQueueRatio < 0.70 && peerQueue < 0.65) {
-                            this.epochStarvationCount++;
-                            this.epochActivityCount++;
-                        }
                         continue;
                     }
 
@@ -789,9 +795,9 @@ public class DtnmaRouter extends ActiveRouter {
                             peerPred = prophetRouters[i].getPredFor(dest);
                         }
 
-                        double minAbsolutePred = isCritical ? 0.35 : this.currentFocusMinPred;
-                        double requiredAdvantage = isCritical ? 0.20 : this.currentFocusMargin;
-                        double maxPeerQ = isCritical ? 0.90 : 0.80;
+                        double minAbsolutePred = isCritical ? 0.35 : Math.max(0.60, this.currentFocusMinPred);
+                        double requiredAdvantage = isCritical ? 0.20 : Math.max(0.30, this.currentFocusMargin);
+                        double maxPeerQ = isCritical ? 0.90 : 0.70;
                         if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < maxPeerQ) {
                             m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                             if (startTransfer(m, con) == RCV_OK) {
@@ -907,8 +913,16 @@ public class DtnmaRouter extends ActiveRouter {
         int initialCopies = isCrit ? DEFAULT_CRITICAL_QUOTA : this.currentSprayQuota;
         msg.addProperty(MSG_COPIES_PROPERTY, initialCopies);
         addToMessages(msg, true);
+        double qNow = getBufferOccupancyRatio();
+        if (!isCrit && qNow < 0.72) {
+            this.epochCoverageGain += 0.50 * (1.0 - qNow) * Math.sqrt(initialCopies);
+        }
+        if (!isCrit && this.ackFeedbackEnabled && this.forwardedCreditMap != null && eddSampler != null) {
+            this.forwardedCreditMap.put(msg.getId(), new ForwardedCreditRecord(
+                    eddSampler.getNormalizedStateVector(), this.lastExecutedProfile, SimClock.getTime()));
+        }
         this.epochActivityCount++;
-        this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, getBufferOccupancyRatio());
+        this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, qNow);
         return true;
     }
 
@@ -1043,12 +1057,22 @@ public class DtnmaRouter extends ActiveRouter {
         }
 
         double occ = getBufferOccupancyRatio();
+        double critOcc = getCriticalOccupancyRatio();
+        Integer cProp = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+        boolean singleCopyBulk = (cProp != null && cProp <= 1);
+        boolean finiteTtl = (this.msgTtl > 0 && this.msgTtl != Message.INFINITE_TTL);
         if (!isCrit) {
-            if (currentIngressMode == INGRESS_CRITICAL_ONLY && occ > 0.92) {
-                return MessageRouter.DENIED_NO_SPACE;
+            if (currentIngressMode == INGRESS_CRITICAL_ONLY) {
+                if (critOcc >= 0.40
+                        || (occ > 0.92 && (singleCopyBulk || (finiteTtl && m.getTtl() < 0.75 * this.msgTtl)))) {
+                    return MessageRouter.DENIED_NO_SPACE;
+                }
             }
-            if (currentIngressMode == INGRESS_THROTTLE_BULK && occ > 0.94) {
-                return MessageRouter.DENIED_NO_SPACE;
+            if (currentIngressMode == INGRESS_THROTTLE_BULK) {
+                if (critOcc >= 0.55
+                        || (occ > 0.94 && (singleCopyBulk || (finiteTtl && m.getTtl() < 0.50 * this.msgTtl)))) {
+                    return MessageRouter.DENIED_NO_SPACE;
+                }
             }
         }
 
@@ -1056,7 +1080,8 @@ public class DtnmaRouter extends ActiveRouter {
     }
 
     /**
-     * Buffer Eviction: Protects Critical Fault telemetry inviolably in Static and Shielded modes.
+     * Buffer Eviction: Protects Critical Fault telemetry inviolably in Static and Shielded modes,
+     * and applies Protected FIFO across non-critical bulk bundles (matching PrioritySnW fairness).
      */
     @Override
     protected Message getNextMessageToRemove(boolean excludeMsgBeingSent) {
@@ -1068,48 +1093,29 @@ public class DtnmaRouter extends ActiveRouter {
             if (excludeMsgBeingSent && isSending(m.getId())) continue;
             if (enforceSafetyLock && isCriticalMessage(m)) continue;
 
-            if (candidate == null) {
+            if (candidate == null || m.getReceiveTime() < candidate.getReceiveTime()) {
                 candidate = m;
-            } else {
-                Integer cCopies = (Integer) candidate.getProperty(MSG_COPIES_PROPERTY);
-                Integer mCopies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-                int cVal = cCopies != null ? cCopies : 1;
-                int mVal = mCopies != null ? mCopies : 1;
-
-                if (mVal < cVal || (mVal == cVal && m.getTtl() < candidate.getTtl())) {
-                    candidate = m;
-                }
             }
         }
 
         return candidate;
     }
 
+    private int getForwardTier(Message m) {
+        boolean isCritical = isCriticalMessage(m);
+        Integer prop = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+        int copies = (prop != null) ? prop : (isCritical ? DEFAULT_CRITICAL_QUOTA : currentSprayQuota);
+        if (isCritical) {
+            return (copies > 1) ? 0 : 1;
+        }
+        return (copies > 1) ? 2 : 3;
+    }
+
     private void sortMessagesDualTier(List<Message> list) {
+        super.sortByQueueMode(list);
         Collections.sort(list, new Comparator<Message>() {
             public int compare(Message m1, Message m2) {
-                boolean c1 = isCriticalMessage(m1);
-                boolean c2 = isCriticalMessage(m2);
-
-                if (c1 && !c2) return -1;
-                if (!c1 && c2) return 1;
-
-                Integer p1 = (Integer) m1.getProperty(MSG_COPIES_PROPERTY);
-                Integer p2 = (Integer) m2.getProperty(MSG_COPIES_PROPERTY);
-                int v1 = (p1 != null) ? p1 : (c1 ? DEFAULT_CRITICAL_QUOTA : currentSprayQuota);
-                int v2 = (p2 != null) ? p2 : (c2 ? DEFAULT_CRITICAL_QUOTA : currentSprayQuota);
-
-                boolean s1 = (v1 > 1);
-                boolean s2 = (v2 > 1);
-                if (s1 != s2) {
-                    return s1 ? -1 : 1; // Spray (copies > 1) strictly before Focus (copies == 1)
-                }
-
-                if (s1 && v1 != v2) {
-                    return Integer.compare(v2, v1); // Higher copies first within Spray
-                }
-
-                return Double.compare(m2.getTtl(), m1.getTtl()); // Larger remaining TTL (fresher) first
+                return Integer.compare(getForwardTier(m1), getForwardTier(m2));
             }
         });
     }
@@ -1186,6 +1192,18 @@ public class DtnmaRouter extends ActiveRouter {
         long bSize = getBufferSize();
         if (bSize <= 0) return 0.0;
         return (double) (bSize - getFreeBufferSize()) / bSize;
+    }
+
+    public double getCriticalOccupancyRatio() {
+        long bSize = getBufferSize();
+        if (bSize <= 0) return 0.0;
+        long critBytes = 0L;
+        for (Message m : getMessageCollection()) {
+            if (isCriticalMessage(m)) {
+                critBytes += m.getSize();
+            }
+        }
+        return (double) critBytes / bSize;
     }
 
     // Legacy & Audit Getters

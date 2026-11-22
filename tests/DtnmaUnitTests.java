@@ -230,8 +230,8 @@ public class DtnmaUnitTests {
     private static void test6BinaryTokenConservationAtRelay() {
         boolean ok = true;
         String err = "";
-        for (int copies = 2; copies <= 8; copies++) {
-            for (int quota = 1; quota <= 8; quota++) {
+        for (int copies = 2; copies <= 12; copies++) {
+            for (int quota = 1; quota <= 12; quota++) {
                 int bulkSend = DtnmaRouter.computeRelaySplit(copies, quota, false);
                 int bulkRemain = copies - bulkSend;
                 if (quota == 1 && bulkSend != 0) {
@@ -345,6 +345,63 @@ public class DtnmaUnitTests {
                         r0.getLocalCreationRejected(), psOk1, psOk2, psBlkBulk, psOccOk, ackRlFlagsOk));
     }
 
+    private static void test9ProtectedFifoEvictionAndCriticalOccupancy() {
+        String cfgText =
+                "Scenario.endTime = 100\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "Group.bufferSize = 40000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 2\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfgText.getBytes(StandardCharsets.UTF_8)));
+        Settings groupSettings = new Settings("Group");
+        MovementModel mm = new StationaryMovement(groupSettings);
+        DtnmaRouter proto = new DtnmaRouter(groupSettings);
+        List<NetworkInterface> ifaces = new ArrayList<NetworkInterface>();
+
+        DTNHost h0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "n", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "n", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DtnmaRouter r0 = (DtnmaRouter) h0.getRouter();
+
+        Message crit = new Message(h0, h1, "CRITICAL_FAULT_PFIFO", 20000);
+        crit.setReceiveTime(1.0);
+        boolean okCrit = r0.createNewMessage(crit);
+        double critOccHalf = r0.getCriticalOccupancyRatio();
+
+        Message bOld = new Message(h0, h1, "SCIENCE_DATA_OLD", 10000);
+        bOld.setReceiveTime(5.0);
+        boolean okOld = r0.createNewMessage(bOld);
+
+        Message bNew = new Message(h0, h1, "SCIENCE_DATA_NEW", 10000);
+        bNew.setReceiveTime(10.0);
+        boolean okNew = r0.createNewMessage(bNew);
+        bNew.updateProperty(DtnmaRouter.MSG_COPIES_PROPERTY, 1);
+
+        Message bThird = new Message(h0, h1, "SCIENCE_DATA_THIRD", 10000);
+        bThird.setReceiveTime(15.0);
+        boolean okThird = r0.createNewMessage(bThird);
+
+        boolean critOccOk = Math.abs(critOccHalf - 0.50) < 1e-6
+                && Math.abs(r0.getCriticalOccupancyRatio() - 0.50) < 1e-6;
+        boolean fifoOk = okCrit && okOld && okNew && okThird
+                && r0.hasMessage("CRITICAL_FAULT_PFIFO")
+                && !r0.hasMessage("SCIENCE_DATA_OLD")
+                && r0.hasMessage("SCIENCE_DATA_NEW")
+                && r0.hasMessage("SCIENCE_DATA_THIRD")
+                && r0.getBufferOccupancyRatio() <= 1.000001;
+
+        check(critOccOk && fifoOk,
+                "Test9: Protected FIFO evicts oldest bulk before copies=1 while protecting critical & reporting critical occupancy",
+                String.format("critOccHalf=%.4f fifoOk=%s hasCrit=%s hasOld=%s hasNew=%s hasThird=%s occ=%.4f",
+                        critOccHalf, fifoOk, r0.hasMessage("CRITICAL_FAULT_PFIFO"),
+                        r0.hasMessage("SCIENCE_DATA_OLD"), r0.hasMessage("SCIENCE_DATA_NEW"),
+                        r0.hasMessage("SCIENCE_DATA_THIRD"), r0.getBufferOccupancyRatio()));
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM PHASE 1 JAVA UNIT TEST SUITE");
@@ -356,6 +413,7 @@ public class DtnmaUnitTests {
         test5BeaconQuantizationAndWireSizes();
         test6BinaryTokenConservationAtRelay();
         test7AllCriticalFullBufferZeroOvershoot();
+        test9ProtectedFifoEvictionAndCriticalOccupancy();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");
