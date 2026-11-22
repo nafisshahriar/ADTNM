@@ -5,7 +5,7 @@
  *
  * Hardened for Phase 1:
  * - EWMA smoothing for Queue Drift and Node Speed (eliminates burst spikes).
- * - Strictly Zero-Oracle neighbor queue sensing via DtnmaContactBeacon.
+ * - Decentralized local-only & contact-handshake neighbor sensing via DtnmaContactBeacon.
  * - Normalized [0, 1] state vector export for Shielded CMDP RL.
  */
 package routing;
@@ -301,7 +301,7 @@ public class EddTelemetrySampler {
 
     /**
      * Computes minimum queue ratio across currently connected peers strictly from
-     * explicit Contact Beacons (Zero-Oracle neighbor awareness).
+     * explicit Contact Beacons (decentralized contact-handshake awareness).
      */
     public double getMinNeighborQueueRatio() {
         if (host == null || host.getConnections().isEmpty() || router == null) {

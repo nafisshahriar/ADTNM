@@ -21,14 +21,14 @@ public class DtnmaPolicyProfile {
     private final boolean backpressureEnabled;
 
     private static final DtnmaPolicyProfile[] PROFILES = new DtnmaPolicyProfile[] {
-        new DtnmaPolicyProfile(0, "ARI://DTNMA/ACT/SAFE_EMERGENCY_HOLD",    "SAFE_EMERGENCY_HOLD",    1, 0.05, 0.20, 0.35, 2, true),
-        new DtnmaPolicyProfile(1, "ARI://DTNMA/ACT/SAFE_THROTTLE_STRICT",   "SAFE_THROTTLE_STRICT",   2, 0.06, 0.15, 0.30, 1, true),
-        new DtnmaPolicyProfile(2, "ARI://DTNMA/ACT/BALANCED_CONSERVATIVE",  "BALANCED_CONSERVATIVE",  3, 0.10, 0.12, 0.30, 0, true),
-        new DtnmaPolicyProfile(3, "ARI://DTNMA/ACT/BALANCED_AGILE_FOCUS",   "BALANCED_AGILE_FOCUS",   4, 0.10, 0.08, 0.25, 0, true),
-        new DtnmaPolicyProfile(4, "ARI://DTNMA/ACT/STANDARD_SPRAY_FOCUS",   "STANDARD_SPRAY_FOCUS",   6, 0.15, 0.10, 0.28, 0, true),
-        new DtnmaPolicyProfile(5, "ARI://DTNMA/ACT/EXPLORE_AGILE_SPRAY",    "EXPLORE_AGILE_SPRAY",    6, 0.25, 0.06, 0.22, 0, false),
-        new DtnmaPolicyProfile(6, "ARI://DTNMA/ACT/HIGH_SPRAY_BACKPRESSURE","HIGH_SPRAY_BACKPRESSURE",8, 0.15, 0.10, 0.28, 0, true),
-        new DtnmaPolicyProfile(7, "ARI://DTNMA/ACT/HIGH_SPRAY_OPEN",        "HIGH_SPRAY_OPEN",        8, 0.30, 0.06, 0.22, 0, false)
+        new DtnmaPolicyProfile(0, "ARI://DTNMA/ACT/SAFE_EMERGENCY_HOLD",    "SAFE_EMERGENCY_HOLD",    1, 0.05, 0.35, 0.60, 2, true),
+        new DtnmaPolicyProfile(1, "ARI://DTNMA/ACT/SAFE_THROTTLE_STRICT",   "SAFE_THROTTLE_STRICT",   2, 0.08, 0.30, 0.55, 1, true),
+        new DtnmaPolicyProfile(2, "ARI://DTNMA/ACT/BALANCED_CONSERVATIVE",  "BALANCED_CONSERVATIVE",  3, 0.10, 0.28, 0.50, 0, true),
+        new DtnmaPolicyProfile(3, "ARI://DTNMA/ACT/BALANCED_AGILE_FOCUS",   "BALANCED_AGILE_FOCUS",   4, 0.12, 0.25, 0.45, 0, true),
+        new DtnmaPolicyProfile(4, "ARI://DTNMA/ACT/STANDARD_SPRAY_FOCUS",   "STANDARD_SPRAY_FOCUS",   6, 0.15, 0.25, 0.45, 0, true),
+        new DtnmaPolicyProfile(5, "ARI://DTNMA/ACT/EXPLORE_AGILE_SPRAY",    "EXPLORE_AGILE_SPRAY",    6, 0.25, 0.20, 0.40, 0, false),
+        new DtnmaPolicyProfile(6, "ARI://DTNMA/ACT/HIGH_SPRAY_BACKPRESSURE","HIGH_SPRAY_BACKPRESSURE",8, 0.15, 0.25, 0.45, 0, true),
+        new DtnmaPolicyProfile(7, "ARI://DTNMA/ACT/HIGH_SPRAY_OPEN",        "HIGH_SPRAY_OPEN",        8, 0.30, 0.20, 0.40, 0, false)
     };
 
     private DtnmaPolicyProfile(int index, String ari, String name, int sprayQuota,

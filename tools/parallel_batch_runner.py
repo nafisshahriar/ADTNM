@@ -204,7 +204,8 @@ def main():
         "-XX:+UseParallelGC",
         "-XX:+TieredCompilation",
         "-XX:TieredStopAtLevel=4",
-        "-Djava.awt.headless=true"
+        "-Djava.awt.headless=true",
+        "-Djava.util.Arrays.useLegacyMergeSort=true"
     ]
 
     total_to_run = len(run_list)

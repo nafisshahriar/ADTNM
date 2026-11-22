@@ -13,6 +13,13 @@ public class ShieldedCmdpRlAgent {
     public static final int NUM_ACTIONS = DtnmaPolicyProfile.NUM_ACTIONS;
     public static final int NUM_FEATURES = 20;
 
+    /**
+     * Hazard-localized feature indices updated during counterfactual shield shaping:
+     * phi[1]=queueRatio, phi[6]=energyDepletion(1-soc), phi[7]=Q^2, phi[8]=Q*drift,
+     * phi[9]=Q*density, phi[11]=Q*grad, phi[16]=(Q>=0.85), phi[17]=(drift>0.55).
+     */
+    private static final int[] HAZARD_FEATURE_INDICES = { 1, 6, 7, 8, 9, 11, 16, 17 };
+
     private final DtnmaConfig cfg;
     private final double[][] wReward;
     private final double[][] wCost;
@@ -62,7 +69,7 @@ public class ShieldedCmdpRlAgent {
         phi[3] = z2;
         phi[4] = z3;
         phi[5] = z4;
-        phi[6] = z5;
+        phi[6] = 1.0 - z5; // Energy depletion (0.0 at full battery; rises during low-SoC occultation)
 
         // Quadratic & cross-subsystem interaction terms
         phi[7]  = z0 * z0;
@@ -100,16 +107,33 @@ public class ShieldedCmdpRlAgent {
         return Math.max(1.0, sum);
     }
 
-    private double normSqLocalized(double[] phi) {
+    private double normSqHazard(double[] phi) {
         double sum = 0.0;
-        for (int k = 1; k < NUM_FEATURES; k++) {
-            sum += phi[k] * phi[k];
+        for (int idx : HAZARD_FEATURE_INDICES) {
+            sum += phi[idx] * phi[idx];
         }
-        return Math.max(1.0, sum);
+        return Math.max(0.5, sum);
     }
 
     public double getEpsilon(double simTime) {
         return Math.max(cfg.rlEpsilonMin, cfg.rlEpsilonStart * Math.exp(-simTime / cfg.rlEpsilonDecay));
+    }
+
+    /**
+     * Returns deterministic (epsilon = 0) greedy Lagrangian action over all 0..7 profiles.
+     */
+    public int proposeGreedyAction(double[] stateVec) {
+        double[] phi = extractFeatures(stateVec);
+        return selectGreedyAction(phi, null);
+    }
+
+    /**
+     * Returns Lagrangian value Q_lambda(s, a) = Q_R(s, a) - lambda * Q_C(s, a).
+     */
+    public double getLagrangianValue(double[] stateVec, int action) {
+        int a = Math.max(0, Math.min(NUM_ACTIONS - 1, action));
+        double[] phi = extractFeatures(stateVec);
+        return dot(wReward[a], phi) - lambda * dot(wCost[a], phi);
     }
 
     /**
@@ -179,13 +203,14 @@ public class ShieldedCmdpRlAgent {
      * Safe-Anchored Counterfactual Dual-Update Shielded Learning penalty:
      * Anchors the counterfactual target strictly below the executed safe action's actual
      * (Q_R(s, a_safe), Q_C(s, a_safe)) with margin, guaranteeing Q_lambda(s, unsafe) < Q_lambda(s, safe)
-     * for all lambda >= 0 while staying localized to congested state features (k = 1..NUM_FEATURES-1).
+     * for all lambda >= 0 while updating ONLY hazard-localized state features so healthy
+     * uncongested regimes remain unaffected.
      */
     public void applyShieldPenaltyUpdate(double[] stateVec, int unsafeAction, int safeAction) {
         if (unsafeAction < 0 || unsafeAction >= NUM_ACTIONS) return;
         int safeIdx = Math.max(0, Math.min(NUM_ACTIONS - 1, safeAction));
         double[] phi = extractFeatures(stateVec);
-        double step = (3.0 * cfg.rlAlpha) / normSqLocalized(phi);
+        double step = (3.0 * cfg.rlAlpha) / normSqHazard(phi);
 
         double qRSafe = dot(wReward[safeIdx], phi);
         double qCSafe = dot(wCost[safeIdx], phi);
@@ -197,9 +222,23 @@ public class ShieldedCmdpRlAgent {
         double errR = clamp(targetR - curR, -12.0, 12.0);
         double errC = clamp(targetC - curC, -12.0, 12.0);
 
-        for (int k = 1; k < NUM_FEATURES; k++) {
+        for (int k : HAZARD_FEATURE_INDICES) {
             wReward[unsafeAction][k] = (1.0 - cfg.rlWeightDecay) * wReward[unsafeAction][k] + step * errR * phi[k];
             wCost[unsafeAction][k]   = (1.0 - cfg.rlWeightDecay) * wCost[unsafeAction][k]   + step * errC * phi[k];
+        }
+    }
+
+    /**
+     * Causal Delayed-ACK Eligibility Credit: credits the specific (forwardState, forwardAction)
+     * pair responsible for forwarding a bundle whose delivery ACK later returns.
+     */
+    public void applyDelayedAckCredit(double[] forwardStateVec, int forwardAction, double ackReward) {
+        if (forwardStateVec == null || forwardAction < 0 || forwardAction >= NUM_ACTIONS) return;
+        double[] phi = extractFeatures(forwardStateVec);
+        double step = (0.5 * cfg.rlAlpha) / normSq(phi);
+        double err = clamp(ackReward, 0.0, 3.0);
+        for (int k = 0; k < NUM_FEATURES; k++) {
+            wReward[forwardAction][k] += step * err * phi[k];
         }
     }
 
@@ -263,18 +302,101 @@ public class ShieldedCmdpRlAgent {
     }
 
     /**
-     * Opportunistic Mobility-Class Gossip Consensus averaging.
+     * Atomic, order-independent Same-Mobility-Class Gossip Consensus averaging.
+     * Snapshots both agents before writing so merge outcomes are strictly symmetric
+     * and immune to connection iteration order; guards against early herd-lock via gossipMinEpochs.
+     */
+    public static boolean gossipMergeSymmetric(ShieldedCmdpRlAgent a, ShieldedCmdpRlAgent b,
+                                              int classA, int classB) {
+        if (a == null || b == null) {
+            return false;
+        }
+        if ((a.cfg.gossipSameClassOnly || b.cfg.gossipSameClassOnly) && classA != classB) {
+            return false;
+        }
+        int minEpochs = Math.max(a.cfg.gossipMinEpochs, b.cfg.gossipMinEpochs);
+        if (a.epochCount < minEpochs && b.epochCount < minEpochs) {
+            return false;
+        }
+
+        double alphaA;
+        if (b.epochCount < minEpochs) {
+            alphaA = 0.0;
+        } else if (a.epochCount < minEpochs) {
+            alphaA = Math.min(0.15, a.cfg.gossipWeightMax);
+        } else {
+            double rawA = a.cfg.gossipWeightMax * b.epochCount / (a.epochCount + b.epochCount + 1.0);
+            alphaA = clamp(rawA, a.cfg.gossipWeightMin, a.cfg.gossipWeightMax);
+        }
+
+        double alphaB;
+        if (a.epochCount < minEpochs) {
+            alphaB = 0.0;
+        } else if (b.epochCount < minEpochs) {
+            alphaB = Math.min(0.15, b.cfg.gossipWeightMax);
+        } else {
+            double rawB = b.cfg.gossipWeightMax * a.epochCount / (b.epochCount + a.epochCount + 1.0);
+            alphaB = clamp(rawB, b.cfg.gossipWeightMin, b.cfg.gossipWeightMax);
+        }
+
+        if (alphaA <= 0.0 && alphaB <= 0.0) {
+            return false;
+        }
+
+        double[][] snapAR = new double[NUM_ACTIONS][NUM_FEATURES];
+        double[][] snapAC = new double[NUM_ACTIONS][NUM_FEATURES];
+        double[][] snapBR = new double[NUM_ACTIONS][NUM_FEATURES];
+        double[][] snapBC = new double[NUM_ACTIONS][NUM_FEATURES];
+        for (int act = 0; act < NUM_ACTIONS; act++) {
+            System.arraycopy(a.wReward[act], 0, snapAR[act], 0, NUM_FEATURES);
+            System.arraycopy(a.wCost[act],   0, snapAC[act], 0, NUM_FEATURES);
+            System.arraycopy(b.wReward[act], 0, snapBR[act], 0, NUM_FEATURES);
+            System.arraycopy(b.wCost[act],   0, snapBC[act], 0, NUM_FEATURES);
+        }
+        double snapLamA = a.lambda;
+        double snapLamB = b.lambda;
+
+        if (alphaA > 0.0) {
+            for (int act = 0; act < NUM_ACTIONS; act++) {
+                for (int k = 0; k < NUM_FEATURES; k++) {
+                    a.wReward[act][k] = (1.0 - alphaA) * snapAR[act][k] + alphaA * snapBR[act][k];
+                    a.wCost[act][k]   = (1.0 - alphaA) * snapAC[act][k] + alphaA * snapBC[act][k];
+                }
+            }
+            a.lambda = clamp((1.0 - alphaA) * snapLamA + alphaA * snapLamB, 0.0, a.cfg.rlLambdaMax);
+        }
+
+        if (alphaB > 0.0) {
+            for (int act = 0; act < NUM_ACTIONS; act++) {
+                for (int k = 0; k < NUM_FEATURES; k++) {
+                    b.wReward[act][k] = (1.0 - alphaB) * snapBR[act][k] + alphaB * snapAR[act][k];
+                    b.wCost[act][k]   = (1.0 - alphaB) * snapBC[act][k] + alphaB * snapAC[act][k];
+                }
+            }
+            b.lambda = clamp((1.0 - alphaB) * snapLamB + alphaB * snapLamA, 0.0, b.cfg.rlLambdaMax);
+        }
+
+        return true;
+    }
+
+    /**
+     * Single-sided opportunistic Mobility-Class Gossip Consensus averaging (backward compatibility).
      */
     public boolean gossipMerge(ShieldedCmdpRlAgent peer, int myClass, int peerClass) {
-        if (peer == null || peer.epochCount <= 0) {
+        if (peer == null || peer.epochCount < Math.max(this.cfg.gossipMinEpochs, peer.cfg.gossipMinEpochs)) {
             return false;
         }
         if (cfg.gossipSameClassOnly && myClass != peerClass) {
             return false;
         }
 
-        double rawAlphaG = cfg.gossipWeightMax * peer.epochCount / (this.epochCount + peer.epochCount + 1.0);
-        double alphaG = clamp(rawAlphaG, cfg.gossipWeightMin, cfg.gossipWeightMax);
+        double alphaG;
+        if (this.epochCount < cfg.gossipMinEpochs) {
+            alphaG = Math.min(0.15, cfg.gossipWeightMax);
+        } else {
+            double rawAlphaG = cfg.gossipWeightMax * peer.epochCount / (this.epochCount + peer.epochCount + 1.0);
+            alphaG = clamp(rawAlphaG, cfg.gossipWeightMin, cfg.gossipWeightMax);
+        }
         for (int a = 0; a < NUM_ACTIONS; a++) {
             for (int k = 0; k < NUM_FEATURES; k++) {
                 this.wReward[a][k] = (1.0 - alphaG) * this.wReward[a][k] + alphaG * peer.wReward[a][k];

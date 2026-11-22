@@ -237,15 +237,18 @@ class SmartFileParser:
             for component, pos in positions.items():
                 if pos < len(parts):
                     value = parts[pos]
-                    # Try to extract numbers
-                    match = re.search(r'(\d+)', value)
-                    if match:
-                        try:
-                            parsed[component] = int(match.group(1))
-                        except:
-                            parsed[component] = value
-                    else:
+                    if component in ('prefix', 'router', 'report_type', 'scenario_name'):
                         parsed[component] = value
+                    else:
+                        # Extract numbers for numeric swept components (seed, ttl, buffer)
+                        match = re.search(r'(\d+)', value)
+                        if match:
+                            try:
+                                parsed[component] = int(match.group(1))
+                            except Exception:
+                                parsed[component] = value
+                        else:
+                            parsed[component] = value
             
             return parsed
         except Exception as e:
@@ -451,7 +454,7 @@ class DataOrganizer:
             print(f"Loaded {len(df)} raw files")
             print(f"Report types: {dict(report_type_counts)}")
             if 'router' in df.columns:
-                print(f"Routers: {', '.join(df['router'].unique().tolist())}")
+                print(f"Routers: {', '.join(str(x) for x in df['router'].unique().tolist())}")
             return df
         
         print("No raw files found")

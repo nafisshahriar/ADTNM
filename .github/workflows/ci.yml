@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-verify:
-    name: Build & Empirical Verification
+    name: Build, Unit Tests & Empirical Verification
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +29,7 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas matplotlib
+          pip install pandas matplotlib seaborn numpy
 
       - name: Clone Fresh The ONE Simulator
         run: |
@@ -39,7 +39,12 @@ jobs:
         run: |
           python install.py --one-dir ../the-one
 
-      - name: Run 1-Hour Non-Terrestrial DTNMA Benchmark
+      - name: Compile & Run ADTNM Phase 1 Java Unit Tests
+        run: |
+          javac -cp "../the-one/target:../the-one/lib/ECLA.jar:../the-one/lib/DTNConsoleConnection.jar" -d ../the-one/target tests/DtnmaUnitTests.java
+          java -cp "../the-one/target:../the-one/lib/ECLA.jar:../the-one/lib/DTNConsoleConnection.jar" DtnmaUnitTests
+
+      - name: Run 1-Hour DTNMA Benchmark
         run: |
           cd ../the-one
           bash one.sh -b 1 scenarios/scenario_dtnma.txt

@@ -22,15 +22,15 @@ rlAlpha = 0.10
 rlGamma = 0.90
 rlWeightDecay = 0.0001
 rlEpsilonStart = 0.25
-rlEpsilonMin = 0.01
-rlEpsilonDecay = 1000.0
+rlEpsilonMin = 0.02
+rlEpsilonDecay = 2000.0
 rlLambdaInit = 0.25
 rlEtaLambda = 0.02
 rlTargetCost = 0.15
 rlLambdaMax = 5.0
 rlOptimisticInit = 0.30
 
-# --- 3. Zero-Oracle Local Reward & Cost Weights ---
+# --- 3. Local-Only Reward & Cost Weights ---
 rewardDirectDelivery = 2.5
 rewardAckDelivery = 1.2
 rewardPredProgress = 1.5
@@ -39,10 +39,11 @@ penaltyBulkDrop = 0.8
 penaltyRelayCost = 0.05
 
 # --- 4. Gossip, Contact Beacon & Delayed ACK Control Plane ---
-gossipCooldown = 60.0
+gossipCooldown = 120.0
 gossipWeightMin = 0.05
 gossipWeightMax = 0.25
 gossipSameClassOnly = true
+gossipMinEpochs = 15
 beaconRefreshInterval = 5.0
 ackCacheSize = 512
 ackMaxPerContact = 32

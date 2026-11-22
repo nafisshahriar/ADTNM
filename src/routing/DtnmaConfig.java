@@ -35,15 +35,15 @@ public class DtnmaConfig {
     public double rlGamma = 0.90;
     public double rlWeightDecay = 1e-4;
     public double rlEpsilonStart = 0.25;
-    public double rlEpsilonMin = 0.01;
-    public double rlEpsilonDecay = 1000.0;
+    public double rlEpsilonMin = 0.02;
+    public double rlEpsilonDecay = 2000.0;
     public double rlLambdaInit = 0.25;
     public double rlEtaLambda = 0.02;
     public double rlTargetCost = 0.15;
     public double rlLambdaMax = 5.0;
     public double rlOptimisticInit = 0.30;
 
-    // Local Zero-Oracle Reward / Cost Weights
+    // Local-Only Reward / Cost Weights
     public double rewardDirectDelivery = 2.5;
     public double rewardAckDelivery = 1.2;
     public double rewardPredProgress = 1.5;
@@ -52,10 +52,11 @@ public class DtnmaConfig {
     public double penaltyRelayCost = 0.05;
 
     // Gossip, Beacon & ACK Control Plane
-    public double gossipCooldown = 60.0;
+    public double gossipCooldown = 120.0;
     public double gossipWeightMin = 0.05;
     public double gossipWeightMax = 0.25;
     public boolean gossipSameClassOnly = true;
+    public int gossipMinEpochs = 15;
     public double beaconRefreshInterval = 5.0;
     public int ackCacheSize = 512;
     public int ackMaxPerContact = 32;
@@ -101,6 +102,7 @@ public class DtnmaConfig {
         this.gossipWeightMin = o.gossipWeightMin;
         this.gossipWeightMax = o.gossipWeightMax;
         this.gossipSameClassOnly = o.gossipSameClassOnly;
+        this.gossipMinEpochs = o.gossipMinEpochs;
         this.beaconRefreshInterval = o.beaconRefreshInterval;
         this.ackCacheSize = o.ackCacheSize;
         this.ackMaxPerContact = o.ackMaxPerContact;
@@ -219,6 +221,7 @@ public class DtnmaConfig {
         gossipWeightMin = parseDouble(params, "gossipWeightMin", gossipWeightMin);
         gossipWeightMax = parseDouble(params, "gossipWeightMax", gossipWeightMax);
         gossipSameClassOnly = parseBool(params, "gossipSameClassOnly", gossipSameClassOnly);
+        gossipMinEpochs = parseInt(params, "gossipMinEpochs", gossipMinEpochs);
         beaconRefreshInterval = parseDouble(params, "beaconRefreshInterval", beaconRefreshInterval);
         ackCacheSize = parseInt(params, "ackCacheSize", ackCacheSize);
         ackMaxPerContact = parseInt(params, "ackMaxPerContact", ackMaxPerContact);
@@ -263,6 +266,7 @@ public class DtnmaConfig {
         if (s.contains("gossipWeightMin")) gossipWeightMin = s.getDouble("gossipWeightMin");
         if (s.contains("gossipWeightMax")) gossipWeightMax = s.getDouble("gossipWeightMax");
         if (s.contains("gossipSameClassOnly")) gossipSameClassOnly = s.getBoolean("gossipSameClassOnly");
+        if (s.contains("gossipMinEpochs")) gossipMinEpochs = s.getInt("gossipMinEpochs");
         if (s.contains("beaconRefreshInterval")) beaconRefreshInterval = s.getDouble("beaconRefreshInterval");
         if (s.contains("ackCacheSize")) ackCacheSize = s.getInt("ackCacheSize");
         if (s.contains("ackMaxPerContact")) ackMaxPerContact = s.getInt("ackMaxPerContact");
@@ -299,6 +303,7 @@ public class DtnmaConfig {
         gossipCooldown = Math.max(1.0, gossipCooldown);
         gossipWeightMin = Math.max(0.0, Math.min(0.5, gossipWeightMin));
         gossipWeightMax = Math.max(gossipWeightMin, Math.min(0.5, gossipWeightMax));
+        gossipMinEpochs = Math.max(1, Math.min(500, gossipMinEpochs));
         beaconRefreshInterval = Math.max(0.5, beaconRefreshInterval);
         ackCacheSize = Math.max(32, Math.min(10000, ackCacheSize));
         ackMaxPerContact = Math.max(1, Math.min(512, ackMaxPerContact));

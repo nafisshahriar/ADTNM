@@ -43,6 +43,9 @@ public class DtnmaSafetyShield {
     private long totalDecisions = 0;
     private long totalInterventions = 0;
     private final List<Boolean> constrainedInterventionHistory = new ArrayList<Boolean>();
+    private long totalGreedyConstrainedDecisions = 0;
+    private long totalGreedyInterventions = 0;
+    private final List<Boolean> constrainedGreedyInterventionHistory = new ArrayList<Boolean>();
 
     public DtnmaSafetyShield() {
         this(new DtnmaConfig());
@@ -175,7 +178,13 @@ public class DtnmaSafetyShield {
 
     public ShieldDecision enforce(int proposedAction, int preferredSafeAction,
                                   EddTelemetrySampler sampler, List<StateBasedRule> rules) {
+        return enforce(proposedAction, proposedAction, preferredSafeAction, sampler, rules);
+    }
+
+    public ShieldDecision enforce(int proposedAction, int greedyAction, int preferredSafeAction,
+                                  EddTelemetrySampler sampler, List<StateBasedRule> rules) {
         int clampedProposal = Math.max(0, Math.min(DtnmaPolicyProfile.NUM_ACTIONS - 1, proposedAction));
+        int clampedGreedy = Math.max(0, Math.min(DtnmaPolicyProfile.NUM_ACTIONS - 1, greedyAction));
         StringBuilder reasonBuf = new StringBuilder();
         boolean[] safeMask = computeSafeActionMask(sampler, rules, reasonBuf);
 
@@ -194,7 +203,8 @@ public class DtnmaSafetyShield {
             }
         }
 
-        recordAuditStats(intervened, isConstrained(safeMask));
+        boolean greedyIntervened = !safeMask[clampedGreedy];
+        recordAuditStats(intervened, greedyIntervened, isConstrained(safeMask));
 
         String expl = intervened
                 ? "SHIELD_OVERRIDE(" + DtnmaPolicyProfile.get(clampedProposal).getName()
@@ -204,13 +214,18 @@ public class DtnmaSafetyShield {
         return new ShieldDecision(clampedProposal, executed, intervened, triggerAri, expl, safeMask);
     }
 
-    private void recordAuditStats(boolean intervened, boolean regimeConstrained) {
+    private void recordAuditStats(boolean intervened, boolean greedyIntervened, boolean regimeConstrained) {
         totalDecisions++;
         if (intervened) {
             totalInterventions++;
         }
         if (regimeConstrained) {
             constrainedInterventionHistory.add(intervened);
+            totalGreedyConstrainedDecisions++;
+            if (greedyIntervened) {
+                totalGreedyInterventions++;
+            }
+            constrainedGreedyInterventionHistory.add(greedyIntervened);
         }
     }
 
@@ -258,28 +273,37 @@ public class DtnmaSafetyShield {
     }
 
     public double getEarlyInterventionRate() {
-        int n = constrainedInterventionHistory.size();
-        if (n < 2) {
-            return n == 1 && constrainedInterventionHistory.get(0) ? 1.0 : 0.0;
-        }
-        int end = Math.max(1, (int) Math.floor(0.40 * n));
-        int hits = 0;
-        for (int i = 0; i < end; i++) {
-            if (constrainedInterventionHistory.get(i)) hits++;
-        }
-        return (double) hits / end;
+        return computeWindowRate(constrainedInterventionHistory, true);
     }
 
     public double getLateInterventionRate() {
-        int n = constrainedInterventionHistory.size();
+        return computeWindowRate(constrainedInterventionHistory, false);
+    }
+
+    public double getGreedyInterventionRate() {
+        return totalGreedyConstrainedDecisions > 0
+                ? (double) totalGreedyInterventions / totalGreedyConstrainedDecisions : 0.0;
+    }
+
+    public double getGreedyEarlyInterventionRate() {
+        return computeWindowRate(constrainedGreedyInterventionHistory, true);
+    }
+
+    public double getGreedyLateInterventionRate() {
+        return computeWindowRate(constrainedGreedyInterventionHistory, false);
+    }
+
+    private static double computeWindowRate(List<Boolean> history, boolean earlyWindow) {
+        int n = history.size();
         if (n < 2) {
-            return n == 1 && constrainedInterventionHistory.get(0) ? 1.0 : 0.0;
+            return n == 1 && history.get(0) ? 1.0 : 0.0;
         }
-        int start = Math.min(n - 1, (int) Math.floor(0.60 * n));
-        int count = n - start;
+        int start = earlyWindow ? 0 : Math.min(n - 1, (int) Math.floor(0.60 * n));
+        int end = earlyWindow ? Math.max(1, (int) Math.floor(0.40 * n)) : n;
+        int count = end - start;
         int hits = 0;
-        for (int i = start; i < n; i++) {
-            if (constrainedInterventionHistory.get(i)) hits++;
+        for (int i = start; i < end; i++) {
+            if (history.get(i)) hits++;
         }
         return count > 0 ? (double) hits / count : 0.0;
     }

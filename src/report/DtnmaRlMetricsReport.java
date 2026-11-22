@@ -5,13 +5,16 @@
  */
 package report;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import core.DTNHost;
 import core.Message;
 import core.MessageListener;
 import core.SimScenario;
+import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
 import routing.ShieldedCmdpRlAgent;
@@ -27,6 +30,10 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
     private int bulkDelivered = 0;
     private int bulkBufferDropped = 0;
     private int bulkTtlExpired = 0;
+
+    private Set<String> criticalDeliveredIds = new HashSet<String>();
+    private Set<String> criticalBufferDroppedIds = new HashSet<String>();
+    private long deliveredPayloadBytes = 0;
 
     public DtnmaRlMetricsReport() {
         super();
@@ -44,6 +51,11 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         this.bulkDelivered = 0;
         this.bulkBufferDropped = 0;
         this.bulkTtlExpired = 0;
+        if (this.criticalDeliveredIds == null) this.criticalDeliveredIds = new HashSet<String>();
+        else this.criticalDeliveredIds.clear();
+        if (this.criticalBufferDroppedIds == null) this.criticalBufferDroppedIds = new HashSet<String>();
+        else this.criticalBufferDroppedIds.clear();
+        this.deliveredPayloadBytes = 0;
     }
 
     @Override
@@ -65,8 +77,10 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
             return;
         }
         if (finalTarget) {
+            deliveredPayloadBytes += m.getSize();
             if (DtnmaRouter.isCriticalMessage(m)) {
                 criticalDelivered++;
+                criticalDeliveredIds.add(m.getId());
             } else {
                 bulkDelivered++;
             }
@@ -82,8 +96,12 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
             boolean isCrit = DtnmaRouter.isCriticalMessage(m);
             boolean isTtlExpired = (m.getTtl() <= 0);
             if (isCrit) {
-                if (isTtlExpired) criticalTtlExpired++;
-                else criticalBufferDropped++;
+                if (isTtlExpired) {
+                    criticalTtlExpired++;
+                } else {
+                    criticalBufferDropped++;
+                    criticalBufferDroppedIds.add(m.getId());
+                }
             } else {
                 if (isTtlExpired) bulkTtlExpired++;
                 else bulkBufferDropped++;
@@ -103,6 +121,9 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         long shieldInterventionsTotal = 0;
         double shieldEarlySum = 0.0;
         double shieldLateSum = 0.0;
+        double shieldGreedySum = 0.0;
+        double shieldGreedyEarlySum = 0.0;
+        double shieldGreedyLateSum = 0.0;
         int shieldNodes = 0;
 
         double rlAvgRewardSum = 0.0;
@@ -117,7 +138,10 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         long ackOverheadBytes = 0;
 
         double energySocSum = 0.0;
+        double maxBufferOccupancy = 0.0;
         int dtnmaNodes = 0;
+        long[] profileCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
+        long totalProfileExecs = 0;
 
         List<DTNHost> hosts = SimScenario.getInstance().getHosts();
         if (hosts != null) {
@@ -126,11 +150,22 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
                     DtnmaRouter r = (DtnmaRouter) h.getRouter();
                     dtnmaNodes++;
                     energySocSum += r.getEnergySoc();
+                    if (r.getMaxBufferOccupancy() > maxBufferOccupancy) {
+                        maxBufferOccupancy = r.getMaxBufferOccupancy();
+                    }
                     beaconOverheadBytes += r.getBeaconOverheadBytes();
                     gossipExchanges += r.getGossipExchanges();
                     gossipOverheadBytes += r.getGossipOverheadBytes();
                     ackExchanges += r.getAckExchanges();
                     ackOverheadBytes += r.getAckOverheadBytes();
+
+                    long[] pCounts = r.getProfileExecCounts();
+                    if (pCounts != null) {
+                        for (int a = 0; a < DtnmaPolicyProfile.NUM_ACTIONS && a < pCounts.length; a++) {
+                            profileCounts[a] += pCounts[a];
+                            totalProfileExecs += pCounts[a];
+                        }
+                    }
 
                     DtnmaSafetyShield shield = r.getSafetyShield();
                     if (shield != null) {
@@ -139,6 +174,9 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
                         if (shield.getTotalDecisions() > 0) {
                             shieldEarlySum += shield.getEarlyInterventionRate();
                             shieldLateSum += shield.getLateInterventionRate();
+                            shieldGreedySum += shield.getGreedyInterventionRate();
+                            shieldGreedyEarlySum += shield.getGreedyEarlyInterventionRate();
+                            shieldGreedyLateSum += shield.getGreedyLateInterventionRate();
                             shieldNodes++;
                         }
                     }
@@ -154,14 +192,26 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
             }
         }
 
+        int uniqueCriticalLost = 0;
+        for (String droppedId : criticalBufferDroppedIds) {
+            if (!criticalDeliveredIds.contains(droppedId)) {
+                uniqueCriticalLost++;
+            }
+        }
+
         double critDeliveryProb = criticalCreated > 0 ? (double) criticalDelivered / criticalCreated : 0.0;
         double shieldIntRate = rlDecisionsTotal > 0 ? (double) shieldInterventionsTotal / rlDecisionsTotal : 0.0;
         double shieldEarlyRate = shieldNodes > 0 ? shieldEarlySum / shieldNodes : 0.0;
         double shieldLateRate = shieldNodes > 0 ? shieldLateSum / shieldNodes : 0.0;
+        double shieldGreedyRate = shieldNodes > 0 ? shieldGreedySum / shieldNodes : 0.0;
+        double shieldGreedyEarlyRate = shieldNodes > 0 ? shieldGreedyEarlySum / shieldNodes : 0.0;
+        double shieldGreedyLateRate = shieldNodes > 0 ? shieldGreedyLateSum / shieldNodes : 0.0;
         double rlAvgReward = rlNodes > 0 ? rlAvgRewardSum / rlNodes : 0.0;
         double rlAvgCost = rlNodes > 0 ? rlAvgCostSum / rlNodes : 0.0;
         double dualLambdaAvg = rlNodes > 0 ? dualLambdaSum / rlNodes : 0.0;
         double avgEnergySoc = dtnmaNodes > 0 ? energySocSum / dtnmaNodes : 1.0;
+        long totalCtrlBytes = beaconOverheadBytes + gossipOverheadBytes + ackOverheadBytes;
+        double ctrlToPayloadRatio = (double) totalCtrlBytes / Math.max(1.0, (double) deliveredPayloadBytes);
 
         StringBuilder sb = new StringBuilder();
         sb.append("RL metrics for scenario ").append(getScenarioName()).append("\n");
@@ -169,17 +219,23 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         sb.append("critical_created: ").append(criticalCreated).append("\n");
         sb.append("critical_delivered: ").append(criticalDelivered).append("\n");
         sb.append("critical_buffer_dropped: ").append(criticalBufferDropped).append("\n");
+        sb.append("unique_critical_lost: ").append(uniqueCriticalLost).append("\n");
         sb.append("critical_ttl_expired: ").append(criticalTtlExpired).append("\n");
         sb.append(String.format(Locale.US, "critical_delivery_prob: %.4f\n", critDeliveryProb));
         sb.append("bulk_created: ").append(bulkCreated).append("\n");
         sb.append("bulk_delivered: ").append(bulkDelivered).append("\n");
         sb.append("bulk_buffer_dropped: ").append(bulkBufferDropped).append("\n");
         sb.append("bulk_ttl_expired: ").append(bulkTtlExpired).append("\n");
+        sb.append("delivered_payload_bytes: ").append(deliveredPayloadBytes).append("\n");
+        sb.append(String.format(Locale.US, "max_buffer_occupancy: %.4f\n", maxBufferOccupancy));
         sb.append("rl_decisions_total: ").append(rlDecisionsTotal).append("\n");
         sb.append("shield_interventions_total: ").append(shieldInterventionsTotal).append("\n");
         sb.append(String.format(Locale.US, "shield_intervention_rate: %.4f\n", shieldIntRate));
         sb.append(String.format(Locale.US, "shield_early_rate: %.4f\n", shieldEarlyRate));
         sb.append(String.format(Locale.US, "shield_late_rate: %.4f\n", shieldLateRate));
+        sb.append(String.format(Locale.US, "shield_greedy_intervention_rate: %.4f\n", shieldGreedyRate));
+        sb.append(String.format(Locale.US, "shield_greedy_early_rate: %.4f\n", shieldGreedyEarlyRate));
+        sb.append(String.format(Locale.US, "shield_greedy_late_rate: %.4f\n", shieldGreedyLateRate));
         sb.append(String.format(Locale.US, "rl_avg_reward: %.4f\n", rlAvgReward));
         sb.append(String.format(Locale.US, "rl_avg_cost: %.4f\n", rlAvgCost));
         sb.append(String.format(Locale.US, "dual_lambda_avg: %.4f\n", dualLambdaAvg));
@@ -188,6 +244,11 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         sb.append("gossip_overhead_bytes: ").append(gossipOverheadBytes).append("\n");
         sb.append("ack_exchanges: ").append(ackExchanges).append("\n");
         sb.append("ack_overhead_bytes: ").append(ackOverheadBytes).append("\n");
+        sb.append(String.format(Locale.US, "control_to_payload_ratio: %.6f\n", ctrlToPayloadRatio));
+        for (int a = 0; a < DtnmaPolicyProfile.NUM_ACTIONS; a++) {
+            double frac = totalProfileExecs > 0 ? (double) profileCounts[a] / totalProfileExecs : 0.0;
+            sb.append(String.format(Locale.US, "profile_%d_frac: %.4f\n", a, frac));
+        }
         sb.append(String.format(Locale.US, "avg_energy_remaining_soc: %.4f", avgEnergySoc));
 
         write(sb.toString());

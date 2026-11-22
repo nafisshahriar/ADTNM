@@ -13,15 +13,16 @@
 
 Delay- and Disruption-Tolerant Networks (DTNs) deployed in deep space (e.g., lunar/Martian exploration, interplanetary relays) and tactical non-terrestrial mesh environments face high propagation latencies, intermittent orbital contact windows, and extreme buffer contention. Centralized management protocols (e.g., SNMP, NETCONF) fail catastrophically in these regimes due to the absence of continuous end-to-end paths.
 
-**ADTNM** is an autonomic, decentralized network management and routing framework designed to operate within **The ONE Simulator** (Opportunistic Network Environment). Grounded in the **IETF DTNMA (RFC 9675)** standard and **Autonomic Networking Principles (RFC 7575)**, ADTNM implements a self-governing **MAPE-K (Monitor, Analyze, Plan, Execute, Knowledge)** closed-loop engine.
+**ADTNM** is an autonomic, decentralized network management and routing framework designed to operate within **The ONE Simulator** (Opportunistic Network Environment). Adopting an **RFC 9675-inspired declarative policy architecture** and **Autonomic Networking Principles (RFC 7575)** — using human-readable State-Based Rule Language (SRL) text files as a lightweight simulation abstraction of AMM/ARI policies — ADTNM pairs a self-governing **MAPE-K (Monitor, Analyze, Plan, Execute, Knowledge)** closed-loop engine with a **Shielded Constrained MDP Reinforcement Learning** layer and **Opportunistic Mobility-Class Peer Gossip**.
 
 ### Key Capabilities & Invariants
-- **Autonomous MAPE-K Engine:** Replaces static flooding with decentralized state estimation, evaluating declarative State-Based Rules (SRLs) in real time.
-- **Strongly-Typed Telemetry (RFC 9675 EDDs):** Continuously samples queue ratios, queue fill rates ($\dot{Q}$), neighbor contact density, node mobility speeds, residual energy SoC, and PRoPHET delivery predictabilities.
-- **Dual-Tier Priority Queuing:** Enforces strict Head-of-Line (HoL) preemption for mission-critical telecommand and fault telemetry over bulk science payloads.
-- **Inviolable Zero-Drop Guarantee:** Formally proven constructive admission and buffer protection theorem guaranteeing **0 critical telemetry bundle drops** even under severe buffer saturation.
-- **Two-Phase Spray-and-Focus Forwarding:** Conserves token replicas during multi-copy spraying ($C > 1$) and transitions seamlessly into predictive PRoPHET single-copy handoff ($C = 1$) without replication explosion.
-- **Backpressure Queue Gradient Gating:** Prevents buffer blowout by suppressing bundle transfers into peers whose queue congestion exceeds a dynamically calculated gradient threshold.
+- **RFC 9675-Inspired Autonomic MAPE-K Engine:** Evaluates declarative State-Based Rules (SRL) over local EDD telemetry with safety sanitization and priority arbitration.
+- **Shielded CMDP RL & Counterfactual Safety Learning:** Combines 20-D Primal-Dual Linear Expected SARSA over 8 operating profiles with Pre-/Post-Action Safety Masking and Hazard-Localized Counterfactual Shaping.
+- **Explicit Contact-Handshake & Gossip Control Plane:** Uses compact 16-byte contact beacons, class-gated symmetric RL weight gossip (1,292 B), and optional delayed ACK pruning with causal eligibility credit.
+- **Strongly-Typed Telemetry (EDD Sampler):** Samples queue ratios, EWMA-smoothed queue fill rates ($\dot{Q}$), contact density, EWMA node speeds, normalized residual energy SoC, and PRoPHET delivery predictabilities.
+- **Dual-Tier Priority Queuing & Buffer Cap Lock:** Enforces Head-of-Line (HoL) preemption for critical fault telemetry, Spray-before-Focus ordering, and physical buffer-cap zero-overshoot eviction protection.
+- **Two-Phase Spray-and-Focus Forwarding:** Dynamically throttles relay spray quotas while strictly conserving binary copy tokens and transitioning into predictive PRoPHET single-copy handoff ($C = 1$).
+- **Backpressure Queue Gradient Gating:** Suppresses bulk transfers into congested peers using explicit 16-byte beacon occupancy gradients.
 
 ---
 
@@ -98,17 +99,28 @@ cd ../the-one
 ./one.sh -b 1 scenarios/scenario_dtnma.txt
 ```
 
-#### B. Verify Zero-Drop Invariant & Generate Plots
-After the simulation finishes, execute the verification suite:
+#### B. Run Phase 1 Java Unit Tests & Zero-Drop Verification
 ```bash
-python verify_and_plot.py
-```
-This parses `DtnmaDecisionReport.txt` and `MessageStatsReport.txt`, confirms that **0 critical fault bundles were dropped**, and generates `verification_proof.png`.
+# 1. Compile and execute standalone Phase 1 Java unit tests
+javac -cp "../the-one/target:../the-one/lib/ECLA.jar:../the-one/lib/DTNConsoleConnection.jar" -d ../the-one/target tests/DtnmaUnitTests.java
+java -cp "../the-one/target:../the-one/lib/ECLA.jar:../the-one/lib/DTNConsoleConnection.jar" DtnmaUnitTests
 
-#### C. Run High-Throughput Multi-Core Parametric Sweeps
-To execute the full 210-run parametric Helsinki evaluation across all available CPU cores:
+# 2. Verify 0 critical drops on the 1-hour benchmark
+cd ../the-one
+python verify_and_plot.py --assert-zero-drops
+```
+`verify_and_plot.py` parses `DtnmaDecisionReport.txt` and `MessageStatsReport.txt`, confirms **0 critical fault bundles dropped**, and generates `verification_proof.png`.
+
+#### C. Multi-Core Batch Sweeps & OppNDA Post-Processing
 ```bash
-python parallel_batch_runner.py --scenario scenarios/dtnma_batch_scenario.txt --start 1 --end 210
+# Run the 105-run multi-seed VDTN sanity & SOTA ablation suite
+python parallel_batch_runner.py --scenario scenarios/phase1_vdtn_sanity.txt --start 1 --end 105
+python run_phase1_oppnda.py --report-dir reports/phase1_sanity --plots-dir plots/phase1_sanity
+
+# Run the 15-run non-stationary congestion-shock sweep & plot online adaptation
+python parallel_batch_runner.py --scenario scenarios/phase1_vdtn_shock.txt --start 1 --end 15
+python run_phase1_oppnda.py --report-dir reports/phase1_shock --plots-dir plots/phase1_shock
+python plot_adaptation_trace.py --audit-dir reports/phase1_shock --out plots/phase1_shock/adaptation_trace.png
 ```
 
 ---
@@ -143,49 +155,59 @@ git apply ../ADTNM/patches/the-one-dtnma.patch
 ```text
 ADTNM/
 ├── .github/
-│   └── ISSUE_TEMPLATE/
-│       └── user-story.md            # Agile / Thesis user story issue template
-├── docs/                            # Specifications, handbooks, and paper preprints
-│   ├── NASA_Cognitive_DTNMA_Training_Handbook.pdf  # Publication-grade training handbook
-│   ├── dtnma_mathematical_formulation.pdf          # IEEE preprint paper PDF
-│   ├── dtnma_mathematical_formulation.tex          # IEEE LaTeX source code
-│   ├── DTNMA_Framework_Implementation_and_Router_Architecture.md # Technical guide
-│   ├── DTNMA_Autonomic_Framework_Mathematical_Derivations_and_Formulations.md
-│   └── verification_proof.png       # 3-tier empirical proof chart
-├── patches/                         # Compatibility patches for stock ONE simulator
-│   ├── the-one-dtnma.patch          # Git unified diff patch
-│   ├── ActiveRouter.java            # Drop-in replacement with protected energy
-│   └── ProphetRouter.java           # Drop-in replacement with public getDeliveryPreds
-├── scenarios/                       # Simulation configs and policy rule sets
-│   ├── dtnma_batch_scenario.txt     # 210-run parametric Helsinki batch configuration
-│   ├── scenario_dtnma.txt           # 1-hour primary DTNMA benchmark scenario
-│   ├── scenario_epidemic.txt        # Epidemic baseline scenario
-│   ├── scenario_snw.txt             # Spray-and-Wait baseline scenario
-│   ├── rules_ntn.txt                # Declarative rules: Non-Terrestrial Networks (NTN)
-│   ├── rules_vdtn.txt               # Declarative rules: Vehicular DTN (VDTN)
-│   └── rules_uav.txt                # Declarative rules: UAV & Aerial Swarms
-├── src/                             # DTNMA Core Java Implementations
+│   ├── ISSUE_TEMPLATE/
+│   │   └── user-story.md              # Agile / Thesis user story issue template
+│   └── workflows/
+│       └── ci.yml                     # Build, unit test & zero-drop CI pipeline
+├── docs/                              # Architecture & formulation notes
+├── patches/                           # Compatibility patches for stock ONE simulator
+│   ├── the-one-dtnma.patch            # Git unified diff patch
+│   ├── ActiveRouter.java              # Drop-in replacement with protected energy
+│   └── ProphetRouter.java             # Drop-in replacement with public getDeliveryPreds
+├── scenarios/                         # Simulation configs, tunable params & rules
+│   ├── dtnma_params_default.txt       # Tunable Shielded CMDP RL & control-plane params
+│   ├── dtnma_batch_scenario.txt       # 210-run Helsinki VDTN vs baseline sweep
+│   ├── phase1_vdtn_quick.txt          # 30-run quick Phase 1 component ablation
+│   ├── phase1_vdtn_sanity.txt         # 105-run 5-seed SOTA + control ablation sweep
+│   ├── phase1_vdtn_shock.txt          # 15-run non-stationary burst-shock trace scenario
+│   ├── phase1_vdtn_ablation.txt       # 210-run full Phase 1 component ablation
+│   ├── scenario_dtnma.txt             # 1-hour smoke benchmark scenario
+│   ├── rules_ntn.txt                  # Declarative rules: Non-Terrestrial Networks (NTN)
+│   ├── rules_vdtn.txt                 # Declarative rules: Vehicular DTN (VDTN)
+│   └── rules_uav.txt                  # Declarative rules: UAV & Aerial Swarms
+├── src/                               # DTNMA Core Java Implementations
 │   ├── report/
-│   │   ├── DtnmaAuditReport.java    # RFC 9675 execution audit trail report
-│   │   └── DtnmaDecisionReport.java # Real-time state transition & drop event logger
+│   │   ├── DtnmaAuditReport.java      # Forensic explainability log (lambda, shield, ARI)
+│   │   ├── DtnmaDecisionReport.java   # Legacy decision & drop-event logger
+│   │   └── DtnmaRlMetricsReport.java  # OppNDA metrics, greedy shield & profile fractions
 │   └── routing/
-│       ├── ControlAction.java       # Structured actuator controls (quotas, ingress, HoL)
-│       ├── DtnmaRouter.java         # Main MAPE-K autonomic router engine
-│       ├── DtnmaRuleParser.java     # Fast tokenizer & parser for declarative rules
-│       ├── EddTelemetrySampler.java # Strongly-typed RFC 9675 EDD state sampler
-│       ├── PredicateExpression.java # Boolean predicate evaluation engine
-│       └── StateBasedRule.java      # Declarative State-Based Rule (SRL) representation
-├── tools/                           # Runners and analysis suite
-│   ├── config/                      # Visualization and report aggregation configs
-│   ├── core/                        # OppNDA automation modules (analysis, averager)
-│   ├── parallel_batch_runner.py     # Multi-threaded parallel batch execution tool
-│   └── verify_and_plot.py           # Verification parser and matplotlib visualizer
-├── .gitignore                       # Standard Java/Python/ONE ignore rules
-├── install.bat                      # Windows 1-click installer
-├── install.py                       # Cross-platform automated injector script
-├── install.sh                       # Linux / macOS 1-click installer
-├── LICENSE                          # MIT License
-└── README.md                        # Master repository documentation
+│       ├── ControlAction.java         # Sanitized autonomic actuator controls
+│       ├── DtnmaConfig.java           # External parameter loader & safe bounds clamp
+│       ├── DtnmaContactBeacon.java    # Quantized 16B contact beacon & overhead constants
+│       ├── DtnmaPolicyProfile.java    # 8-profile autonomic action space (0..7)
+│       ├── DtnmaRouter.java           # Main MAPE-K + Shielded CMDP RL router engine
+│       ├── DtnmaRuleParser.java       # Parser for declarative SRL text rules
+│       ├── DtnmaSafetyShield.java     # Pre-/post-action safety mask & greedy auditing
+│       ├── EddTelemetrySampler.java   # EWMA EDD state sampler & mobility classifier
+│       ├── PredicateExpression.java   # Boolean predicate evaluation engine
+│       ├── ShieldedCmdpRlAgent.java   # Primal-Dual Expected SARSA + gossip + shaping
+│       ├── StateBasedRule.java        # Declarative rule representation
+│       └── *Router.java presets       # Static, StaticAck, Unshielded, ShieldedPassive, Shielded, Gossip, GossipAck
+├── tests/
+│   └── DtnmaUnitTests.java            # Standalone Phase 1 Java unit test suite
+├── tools/                             # Runners and OppNDA analysis suite
+│   ├── config/                        # Visualization and OppNDA aggregation configs
+│   ├── core/                          # OppNDA automation modules (analysis, averager)
+│   ├── parallel_batch_runner.py       # Coprime-guarded multi-core batch accelerator
+│   ├── plot_adaptation_trace.py       # Non-stationary lambda/quota/shield timeline plot
+│   ├── run_phase1_oppnda.py           # OppNDA Phase 1 diagnostics & 95% CI verifier
+│   └── verify_and_plot.py             # 1-hour smoke verification script
+├── .gitignore
+├── install.bat
+├── install.py
+├── install.sh
+├── LICENSE
+└── README.md
 ```
 
 ---
@@ -315,8 +337,7 @@ We welcome contributions from thesis team members and external researchers. Plea
 2. **RFC 7575:** *Operational Features and Principles of Autonomic Networks*, IETF, 2015.
 3. **RFC 6693:** *Probabilistic Routing Protocol using History of Encounters and Transitivity (PRoPHET)*, IETF, 2012.
 4. **RFC 9171:** *Bundle Protocol Version 7 (BPv7)*, IETF, 2022.
-5. Detailed mathematical formulations and proofs: [`docs/DTNMA_Autonomic_Framework_Mathematical_Derivations_and_Formulations.md`](docs/DTNMA_Autonomic_Framework_Mathematical_Derivations_and_Formulations.md)
-6. NASA Training Handbook: [`docs/NASA_Cognitive_DTNMA_Training_Handbook.pdf`](docs/NASA_Cognitive_DTNMA_Training_Handbook.pdf)
+5. Technical implementation overview: [`docs/DTNMA_Framework_Implementation_and_Router_Architecture.md`](docs/DTNMA_Framework_Implementation_and_Router_Architecture.md)
 
 ---
 

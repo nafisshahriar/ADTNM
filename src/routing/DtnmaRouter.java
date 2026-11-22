@@ -1,16 +1,17 @@
 /*
  * DtnmaRouter.java
- * Phase 1 Autonomic DTNMA Router implementing RFC 9675 (DTNMA) & RFC 7575 (Autonomic Networking)
- * fused with Two-Tier Shielded CMDP Reinforcement Learning & Opportunistic Peer Gossip.
+ * Phase 1 Autonomic DTNMA Router implementing RFC 9675-inspired declarative policy
+ * management & RFC 7575 autonomic closed-loop principles fused with Two-Tier
+ * Shielded CMDP Reinforcement Learning & Opportunistic Peer Gossip.
  *
  * Key Architecture & Ablation Support:
- * 1. Strongly-typed RFC 9675 EDD Telemetry Sampler with EWMA smoothing & normalized Energy SoC.
- * 2. Zero-Oracle explicit neighbor telemetry via DtnmaContactBeacon.
+ * 1. Strongly-typed EDD Telemetry Sampler with EWMA smoothing & normalized Energy SoC.
+ * 2. Decentralized local-only & explicit contact-handshake neighbor state via DtnmaContactBeacon.
  * 3. Primal-Dual Constrained Linear Expected SARSA RL Agent + Mobility-Class Gossip.
- * 4. Pre-Action & Post-Action RFC 9675 Safety Shield with State-Localized Dual-Update Shaping.
- * 5. Event-Gated SMDP transitions with zero-oracle local coverage utility.
- * 6. Optional Delayed Delivery ACK Feedback ("Vaccine" copy pruning & delayed credit).
- * 7. Dual-Tier HoL Priority Scheduling & Inviolable Zero-Drop Protection (when shielded/static).
+ * 4. Pre-Action & Post-Action Safety Shield with Hazard-Localized Counterfactual Shaping.
+ * 5. Event-Gated SMDP transitions with local coverage utility & causal delayed-ACK credit.
+ * 6. Optional Delayed Delivery ACK Feedback ("Vaccine" copy pruning & causal credit).
+ * 7. Dual-Tier HoL Priority Scheduling & Physical-Cap Zero-Drop Protection (when shielded/static).
  */
 package routing;
 
@@ -41,6 +42,19 @@ public class DtnmaRouter extends ActiveRouter {
 
     public static final String DTNMA_NS = "DtnmaRouter";
     public static final String MSG_COPIES_PROPERTY = "Dtnma_Copies";
+    public static final String MSG_SPLIT_PROPERTY = "Dtnma_PendingSplit";
+
+    private static final class ForwardedCreditRecord {
+        final double[] stateVec;
+        final int actionIndex;
+        final double forwardTime;
+
+        ForwardedCreditRecord(double[] stateVec, int actionIndex, double forwardTime) {
+            this.stateVec = stateVec;
+            this.actionIndex = actionIndex;
+            this.forwardTime = forwardTime;
+        }
+    }
 
     // Ingress Control Modes
     public static final int INGRESS_ACCEPT_ALL = 0;
@@ -84,13 +98,13 @@ public class DtnmaRouter extends ActiveRouter {
     // Normalized Energy Reference (captured on host instantiation)
     private double initialEnergy = 1.0;
 
-    // Zero-Oracle Neighbor Contact Beacons & Gossip State
+    // Decentralized Contact Beacons & Gossip State
     private Map<Integer, DtnmaContactBeacon> neighborBeacons;
     private Map<Integer, Double> gossipLastExchange;
 
     // Optional Delayed Delivery Receipt (ACK) Caches (LRU bounded)
     private Map<String, Boolean> deliveredAckSet;
-    private Map<String, Double> forwardedCreditMap;
+    private Map<String, ForwardedCreditRecord> forwardedCreditMap;
 
     // Audit & Explainability State (defaults to healthy Profile 4: STANDARD_SPRAY_FOCUS, L=6)
     private String activeRuleAri = "ARI://DTNMA/SRL/BOOTSTRAP";
@@ -100,15 +114,17 @@ public class DtnmaRouter extends ActiveRouter {
     private int lastExecutedProfile = 4;
     private boolean lastShieldIntervened = false;
     private String shieldTriggerAri = "ARI://DTNMA/SHIELD/PASS";
+    private long[] profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
+    private double maxBufferOccupancy = 0.0;
 
-    // Dynamic Policy Variables (Adjusted via Profile / RFC 9675 Controls)
+    // Dynamic Policy Variables (Adjusted via Profile / Control Actions)
     private int currentSprayQuota = DEFAULT_SPARSE_QUOTA;
     private int currentIngressMode = INGRESS_ACCEPT_ALL;
     private double routineTelemetryInterval = 60.0;
     private boolean backpressureEnabled = true;
     private double currentBackpressureDelta = 0.15;
-    private double currentFocusMinPred = 0.28;
-    private double currentFocusMargin = 0.10;
+    private double currentFocusMinPred = 0.45;
+    private double currentFocusMargin = 0.25;
 
     // Autonomy & RL Epoch Timing
     private double lastAutonomyEvalTime = -1.0;
@@ -117,7 +133,7 @@ public class DtnmaRouter extends ActiveRouter {
     private double[] prevEpochState = null;
     private int prevExecutedAction = -1;
 
-    // Local Epoch Telemetry Accumulators (Zero-Oracle SMDP Reward & Cost)
+    // Local Epoch Telemetry Accumulators (Local-Only SMDP Reward & Cost)
     private int epochDirectDeliveries = 0;
     private int epochAckDeliveries = 0;
     private double epochPredProgressSum = 0.0;
@@ -126,6 +142,7 @@ public class DtnmaRouter extends ActiveRouter {
     private int epochRelayTransfers = 0;
     private int epochBulkDrops = 0;
     private int epochCritDrops = 0;
+    private int epochStarvationCount = 0;
     private int epochActivityCount = 0;
 
     // Protocol Control Overhead & Interaction Counters
@@ -209,6 +226,8 @@ public class DtnmaRouter extends ActiveRouter {
         this.gossipLastExchange = new HashMap<Integer, Double>();
         this.deliveredAckSet = createLruMap(this.config.ackCacheSize);
         this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
+        this.profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
+        this.maxBufferOccupancy = 0.0;
     }
 
     private static <V> Map<String, V> createLruMap(final int maxSize) {
@@ -228,6 +247,7 @@ public class DtnmaRouter extends ActiveRouter {
         if (this.gossipLastExchange == null) this.gossipLastExchange = new HashMap<Integer, Double>();
         if (this.deliveredAckSet == null) this.deliveredAckSet = createLruMap(this.config.ackCacheSize);
         if (this.forwardedCreditMap == null) this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
+        if (this.profileExecCounts == null) this.profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
 
         if (this.eddSampler == null) {
             this.eddSampler = new EddTelemetrySampler(getHost(), this);
@@ -297,25 +317,33 @@ public class DtnmaRouter extends ActiveRouter {
                 DtnmaRouter peer = (DtnmaRouter) other.getRouter();
                 double now = SimClock.getTime();
 
-                // 1. Explicit Contact Beacon Exchange (Zero-Oracle neighbor queue/state awareness)
+                // 1. Explicit Contact Beacon Exchange (Decentralized local-only handshake)
                 DtnmaContactBeacon beacon = peer.getBeaconSnapshot(now);
                 this.neighborBeacons.put(other.getAddress(), beacon);
                 this.beaconOverheadBytes += DtnmaContactBeacon.BEACON_SIZE_BYTES;
 
-                // 2. Opportunistic Same-Mobility-Class Gossip Weight Sharing
-                if (this.gossipEnabled && this.intelligenceMode != IntelligenceMode.STATIC_RULES) {
-                    Double lastG = this.gossipLastExchange.get(other.getAddress());
-                    if (lastG == null || (now - lastG) >= this.config.gossipCooldown) {
-                        peer.ensureSubsystemsInitialized();
-                        if (this.rlAgent != null && peer.getRlAgent() != null
-                                && this.eddSampler != null && peer.getEddSampler() != null) {
-                            int myClass = this.eddSampler.getMobilityClass();
-                            int peerClass = peer.getEddSampler().getMobilityClass();
-                            if (this.rlAgent.gossipMerge(peer.getRlAgent(), myClass, peerClass)) {
-                                this.gossipLastExchange.put(other.getAddress(), now);
-                                this.gossipExchanges++;
-                                this.gossipOverheadBytes += DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES;
-                            }
+                // 2. Opportunistic Same-Mobility-Class Symmetric Gossip Weight Sharing
+                // Initiated once per contact pair (smaller host address) for order-independence
+                if (this.gossipEnabled && this.intelligenceMode != IntelligenceMode.STATIC_RULES
+                        && peer.gossipEnabled && peer.intelligenceMode != IntelligenceMode.STATIC_RULES
+                        && getHost().getAddress() < other.getAddress()) {
+                    peer.ensureSubsystemsInitialized();
+                    int myAddr = getHost().getAddress();
+                    int peerAddr = other.getAddress();
+                    Double lastSelf = this.gossipLastExchange.get(peerAddr);
+                    Double lastPeer = peer.gossipLastExchange.get(myAddr);
+                    boolean readySelf = (lastSelf == null || (now - lastSelf) >= this.config.gossipCooldown);
+                    boolean readyPeer = (lastPeer == null || (now - lastPeer) >= peer.config.gossipCooldown);
+                    if (readySelf && readyPeer && this.rlAgent != null && peer.getRlAgent() != null
+                            && this.eddSampler != null && peer.getEddSampler() != null) {
+                        int myClass = this.eddSampler.getMobilityClass();
+                        int peerClass = peer.getEddSampler().getMobilityClass();
+                        if (ShieldedCmdpRlAgent.gossipMergeSymmetric(
+                                this.rlAgent, peer.getRlAgent(), myClass, peerClass)) {
+                            this.gossipLastExchange.put(peerAddr, now);
+                            this.gossipExchanges++;
+                            this.gossipOverheadBytes += DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES;
+                            peer.recordSymGossipExchange(myAddr, now);
                         }
                     }
                 }
@@ -326,6 +354,14 @@ public class DtnmaRouter extends ActiveRouter {
                 }
             }
         }
+    }
+
+    private void recordSymGossipExchange(int peerAddr, double now) {
+        if (this.gossipLastExchange != null) {
+            this.gossipLastExchange.put(peerAddr, now);
+        }
+        this.gossipExchanges++;
+        this.gossipOverheadBytes += DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES;
     }
 
     /**
@@ -344,7 +380,7 @@ public class DtnmaRouter extends ActiveRouter {
     }
 
     /**
-     * Returns peer queue ratio strictly from cached Contact Beacons (Zero-Oracle).
+     * Returns peer queue ratio strictly from cached Contact Beacons (local handshake).
      */
     public double getBeaconNeighborQueueRatio(DTNHost peer) {
         if (peer == null || neighborBeacons == null) return 0.5;
@@ -374,9 +410,16 @@ public class DtnmaRouter extends ActiveRouter {
             if (!this.deliveredAckSet.containsKey(msgId)) {
                 this.deliveredAckSet.put(msgId, Boolean.TRUE);
                 learned++;
-                if (this.forwardedCreditMap != null && this.forwardedCreditMap.remove(msgId) != null) {
-                    this.epochAckDeliveries++;
-                    this.epochActivityCount++;
+                if (this.forwardedCreditMap != null) {
+                    ForwardedCreditRecord rec = this.forwardedCreditMap.remove(msgId);
+                    if (rec != null) {
+                        this.epochAckDeliveries++;
+                        this.epochActivityCount++;
+                        if (this.rlAgent != null && this.intelligenceMode != IntelligenceMode.STATIC_RULES) {
+                            this.rlAgent.applyDelayedAckCredit(
+                                    rec.stateVec, rec.actionIndex, this.config.rewardAckDelivery);
+                        }
+                    }
                 }
                 if (hasMessage(msgId) && !isSending(msgId)) {
                     deleteMessage(msgId, false);
@@ -457,6 +500,7 @@ public class DtnmaRouter extends ActiveRouter {
 
             // 2. Propose new macro-epoch profile
             int proposed = (rlAgent != null) ? rlAgent.proposeRawAction(currentState, now) : 4;
+            int greedy = (rlAgent != null) ? rlAgent.proposeGreedyAction(currentState) : proposed;
             int executed = proposed;
             boolean intervened = false;
             String trigAri = "ARI://DTNMA/RL/DIRECT";
@@ -466,7 +510,8 @@ public class DtnmaRouter extends ActiveRouter {
                 int rlSafeFallback = (rlAgent != null)
                         ? rlAgent.selectBestSafeAction(currentState, nextMask, now, false)
                         : 0;
-                DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(proposed, rlSafeFallback, eddSampler, ruleDatabase);
+                DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(
+                        proposed, greedy, rlSafeFallback, eddSampler, ruleDatabase);
                 executed = dec.getExecutedAction();
                 intervened = dec.isIntervened();
                 trigAri = intervened ? dec.getTriggerAri() : DtnmaPolicyProfile.get(executed).getAri();
@@ -479,6 +524,9 @@ public class DtnmaRouter extends ActiveRouter {
             }
 
             applyPolicyProfile(executed);
+            if (profileExecCounts != null && executed >= 0 && executed < profileExecCounts.length) {
+                profileExecCounts[executed]++;
+            }
             updateAuditState(proposed, executed, intervened, trigAri, expl);
             this.prevEpochState = currentState;
             this.prevExecutedAction = executed;
@@ -489,15 +537,20 @@ public class DtnmaRouter extends ActiveRouter {
             boolean[] safeMask = safetyShield.computeSafeActionMask(eddSampler, ruleDatabase, maskReason);
             if (!safeMask[prevExecutedAction]) {
                 double[] currentState = eddSampler.getNormalizedStateVector();
+                int greedy = (rlAgent != null) ? rlAgent.proposeGreedyAction(currentState) : prevExecutedAction;
                 int rlSafeFallback = (rlAgent != null)
                         ? rlAgent.selectBestSafeAction(currentState, safeMask, now, false)
                         : 0;
-                DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(prevExecutedAction, rlSafeFallback, eddSampler, ruleDatabase);
+                DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(
+                        prevExecutedAction, greedy, rlSafeFallback, eddSampler, ruleDatabase);
                 int safeAct = dec.getExecutedAction();
                 if (intelligenceMode == IntelligenceMode.SHIELDED_CMDP_RL && rlAgent != null) {
                     rlAgent.applyShieldPenaltyUpdate(currentState, prevExecutedAction, safeAct);
                 }
                 applyPolicyProfile(safeAct);
+                if (profileExecCounts != null && safeAct >= 0 && safeAct < profileExecCounts.length) {
+                    profileExecCounts[safeAct]++;
+                }
                 updateAuditState(prevExecutedAction, safeAct, true, dec.getTriggerAri(), dec.getExplanation());
                 this.prevExecutedAction = safeAct;
             }
@@ -516,18 +569,18 @@ public class DtnmaRouter extends ActiveRouter {
                 if (rule.getPriority() >= 100) {
                     this.activeRegime = REGIME_CONGESTED_SAFE;
                     this.currentBackpressureDelta = 0.08;
-                    this.currentFocusMinPred = 0.35;
-                    this.currentFocusMargin = 0.15;
+                    this.currentFocusMinPred = 0.45;
+                    this.currentFocusMargin = 0.25;
                 } else if (rule.getPriority() >= 50) {
                     this.activeRegime = REGIME_DENSE_BALANCED;
                     this.currentBackpressureDelta = 0.15;
-                    this.currentFocusMinPred = 0.35;
-                    this.currentFocusMargin = 0.15;
+                    this.currentFocusMinPred = 0.45;
+                    this.currentFocusMargin = 0.25;
                 } else {
                     this.activeRegime = REGIME_SPARSE_NOMINAL;
                     this.currentBackpressureDelta = 0.15;
-                    this.currentFocusMinPred = 0.35;
-                    this.currentFocusMargin = 0.15;
+                    this.currentFocusMinPred = 0.45;
+                    this.currentFocusMargin = 0.25;
                 }
                 break;
             }
@@ -565,21 +618,21 @@ public class DtnmaRouter extends ActiveRouter {
 
     private double computeLocalEpochReward(double qNow) {
         double bufPenalty = 1.5 * Math.pow(Math.max(0.0, qNow - 0.80), 2);
-        return config.rewardDirectDelivery * epochDirectDeliveries
-             + config.rewardAckDelivery * epochAckDeliveries
-             + config.rewardPredProgress * epochPredProgressSum
+        double starvePenalty = 0.25 * Math.min(2, epochStarvationCount);
+        return config.rewardPredProgress * epochPredProgressSum
              + config.rewardCoverageGain * epochCoverageGain
              - config.penaltyBulkDrop * epochBulkDrops
              - 2.5 * epochCritDrops
              - 0.30 * epochRedundantForwards
              - config.penaltyRelayCost * epochRelayTransfers
-             - bufPenalty;
+             - bufPenalty
+             - starvePenalty;
     }
 
     private double computeLocalEpochCost(double qNow) {
-        double dropCost = 0.35 * epochBulkDrops + 1.0 * epochCritDrops;
-        double bufCost = 0.80 * Math.max(0.0, qNow - 0.75) / 0.25;
-        double redCost = 0.20 * epochRedundantForwards + 0.02 * epochRelayTransfers;
+        double dropCost = 0.45 * epochBulkDrops + 1.0 * epochCritDrops;
+        double bufCost = 0.80 * Math.max(0.0, qNow - 0.78) / 0.22;
+        double redCost = 0.25 * epochRedundantForwards + 0.02 * epochRelayTransfers;
         return Math.min(2.0, dropCost + bufCost + redCost);
     }
 
@@ -592,7 +645,25 @@ public class DtnmaRouter extends ActiveRouter {
         this.epochRelayTransfers = 0;
         this.epochBulkDrops = 0;
         this.epochCritDrops = 0;
+        this.epochStarvationCount = 0;
         this.epochActivityCount = 0;
+    }
+
+    /**
+     * Computes exact relay-time copy split respecting active spray quota while conserving tokens.
+     */
+    public static int computeRelaySplit(int copies, int activeQuota, boolean isCritical) {
+        if (copies <= 1) {
+            return 0;
+        }
+        if (isCritical) {
+            return Math.max(1, (int) Math.floor(copies / 2.0));
+        }
+        if (activeQuota <= 1) {
+            return 0;
+        }
+        int eff = Math.min(copies, activeQuota);
+        return Math.max(1, Math.min(copies - 1, (int) Math.floor(eff / 2.0)));
     }
 
     /**
@@ -644,6 +715,10 @@ public class DtnmaRouter extends ActiveRouter {
 
         for (Message m : messages) {
             if (isSending(m.getId())) continue;
+            if (this.ackFeedbackEnabled && this.deliveredAckSet != null
+                    && this.deliveredAckSet.containsKey(m.getId())) {
+                continue;
+            }
 
             boolean isCritical = isCriticalMessage(m);
             Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
@@ -662,6 +737,7 @@ public class DtnmaRouter extends ActiveRouter {
 
                 // 1. Direct delivery to final recipient always executes immediately
                 if (dest == other) {
+                    m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                     if (startTransfer(m, con) == RCV_OK) {
                         return;
                     }
@@ -682,12 +758,26 @@ public class DtnmaRouter extends ActiveRouter {
                         continue;
                     }
 
+                    int toSend = computeRelaySplit(copies, this.currentSprayQuota, isCritical);
+                    if (toSend <= 0) {
+                        if (!isCritical && myQueueRatio < 0.70 && peerQueue < 0.65) {
+                            this.epochStarvationCount++;
+                            this.epochActivityCount++;
+                        }
+                        continue;
+                    }
+
+                    m.updateProperty(MSG_SPLIT_PROPERTY, toSend);
                     if (startTransfer(m, con) == RCV_OK) {
                         return;
                     }
+                    m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                 }
                 // 3. COGNITIVE FOCUS HANDOFF PHASE (copies == 1)
                 else {
+                    if (!isCritical && m.getTtl() < 15) {
+                        continue;
+                    }
                     int maxHops = isCritical ? 3 : 2;
                     if (m.getHopCount() < maxHops) {
                         double peerPred = 0.0;
@@ -697,9 +787,11 @@ public class DtnmaRouter extends ActiveRouter {
                             peerPred = prophetRouters[i].getPredFor(dest);
                         }
 
-                        double minAbsolutePred = isCritical ? 0.25 : this.currentFocusMinPred;
-                        double requiredAdvantage = isCritical ? 0.10 : this.currentFocusMargin;
-                        if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < 0.90) {
+                        double minAbsolutePred = isCritical ? 0.35 : this.currentFocusMinPred;
+                        double requiredAdvantage = isCritical ? 0.20 : this.currentFocusMargin;
+                        double maxPeerQ = isCritical ? 0.90 : 0.80;
+                        if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < maxPeerQ) {
+                            m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                             if (startTransfer(m, con) == RCV_OK) {
                                 return;
                             }
@@ -710,15 +802,85 @@ public class DtnmaRouter extends ActiveRouter {
         }
     }
 
+    /**
+     * Returns total bytes belonging to active non-sending incoming transfers on this host
+     * that are not destined for this host (i.e., will be buffered upon transfer completion).
+     */
+    private long getReservedIncomingBytes() {
+        if (getHost() == null) return 0L;
+        long reserved = 0L;
+        for (Connection con : getConnections()) {
+            if (con != null && con.isUp() && con.getMessage() != null
+                    && !this.sendingConnections.contains(con)
+                    && con.getMessage().getTo() != getHost()) {
+                reserved += con.getMessage().getSize();
+            }
+        }
+        return reserved;
+    }
+
     @Override
     public boolean createNewMessage(Message msg) {
-        makeRoomForNewMessage(msg.getSize());
+        long neededLong = (long) msg.getSize() + getReservedIncomingBytes();
+        if (neededLong > this.getBufferSize()) {
+            return false;
+        }
+        int needed = (int) neededLong;
+        if (!makeRoomForMessage(needed)) {
+            if (!isCriticalMessage(msg) || !makeRoomForCriticalEmergency(needed)) {
+                return false;
+            }
+        }
         msg.setTtl(this.msgTtl);
         boolean isCrit = isCriticalMessage(msg);
         int initialCopies = isCrit ? DEFAULT_CRITICAL_QUOTA : this.currentSprayQuota;
         msg.addProperty(MSG_COPIES_PROPERTY, initialCopies);
         addToMessages(msg, true);
         this.epochActivityCount++;
+        this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, getBufferOccupancyRatio());
+        return true;
+    }
+
+    /**
+     * Emergency room reclamation for critical creation under saturated all-critical buffers:
+     * evicts already-ACKed critical copies first, then highest redundant replica (copies > 1),
+     * never touching sole un-ACKed copies or exceeding physical buffer capacity.
+     */
+    private boolean makeRoomForCriticalEmergency(int size) {
+        if (size > this.getBufferSize()) {
+            return false;
+        }
+        while (this.getFreeBufferSize() < size) {
+            Message ackedCand = null;
+            Message redundantCand = null;
+            int highestRedundantCopies = 1;
+
+            for (Message m : getMessageCollection()) {
+                if (isSending(m.getId()) || !isCriticalMessage(m)) continue;
+                if (this.ackFeedbackEnabled && this.deliveredAckSet != null
+                        && this.deliveredAckSet.containsKey(m.getId())) {
+                    ackedCand = m;
+                    break;
+                }
+                Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+                int cVal = (copies != null) ? copies : 1;
+                if (cVal > 1) {
+                    if (redundantCand == null || cVal > highestRedundantCopies
+                            || (cVal == highestRedundantCopies && m.getTtl() < redundantCand.getTtl())) {
+                        redundantCand = m;
+                        highestRedundantCopies = cVal;
+                    }
+                }
+            }
+
+            if (ackedCand != null) {
+                deleteMessage(ackedCand.getId(), false);
+            } else if (redundantCand != null) {
+                deleteMessage(redundantCand.getId(), true);
+            } else {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -740,7 +902,7 @@ public class DtnmaRouter extends ActiveRouter {
     }
 
     /**
-     * Binary spray quota update, cognitive focus finalization, and local RL progress/coverage logging.
+     * Binary spray quota update, cognitive focus finalization, and causal local progress/coverage logging.
      */
     @Override
     protected void transferDone(Connection con) {
@@ -754,9 +916,24 @@ public class DtnmaRouter extends ActiveRouter {
             if (this.deliveredAckSet != null) {
                 this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
             }
+            m.updateProperty(MSG_SPLIT_PROPERTY, 0);
             return;
         }
         this.epochRelayTransfers++;
+
+        Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+        Integer splitProp = (Integer) m.getProperty(MSG_SPLIT_PROPERTY);
+        int actualSent = 0;
+        if (copies != null && copies > 1) {
+            actualSent = (splitProp != null && splitProp > 0)
+                    ? Math.max(1, Math.min(copies - 1, splitProp))
+                    : Math.max(1, (int) Math.floor(copies / 2.0));
+            m.updateProperty(MSG_COPIES_PROPERTY, Math.max(1, copies - actualSent));
+        } else if (copies != null && copies == 1) {
+            // Focus handoff: delete local copy to strictly conserve network copies to 1
+            deleteMessage(m.getId(), false);
+        }
+        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
 
         // Local RL reward progress & beacon-aware coverage tracking on completed relay forward
         if (eddSampler != null && recipient != null) {
@@ -774,28 +951,21 @@ public class DtnmaRouter extends ActiveRouter {
             double deltaP = Math.max(0.0, peerPred - myPred);
             double peerQ = getBeaconNeighborQueueRatio(recipient);
 
-            if (peerQ < 0.75) {
-                this.epochCoverageGain += 0.35 * (1.0 - peerQ);
-            } else if (!isCriticalMessage(m) && deltaP <= 0.01) {
+            if (peerQ < 0.78) {
+                this.epochCoverageGain += 0.40 * (1.0 - peerQ) * Math.sqrt(Math.max(1, actualSent));
+            } else if (!isCriticalMessage(m) && deltaP <= 0.05) {
                 this.epochRedundantForwards++;
             }
 
-            if (deltaP > 0.02) {
+            if (deltaP > 0.05) {
                 this.epochPredProgressSum += deltaP;
             }
         }
 
-        if (this.ackFeedbackEnabled && this.forwardedCreditMap != null) {
-            this.forwardedCreditMap.put(m.getId(), SimClock.getTime());
-        }
-
-        Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-        if (copies != null && copies > 1) {
-            int remainingCopies = (int) Math.ceil(copies / 2.0);
-            m.updateProperty(MSG_COPIES_PROPERTY, Math.max(1, remainingCopies));
-        } else if (copies != null && copies == 1) {
-            // Focus handoff: delete local copy to strictly conserve network copies to 1
-            deleteMessage(m.getId(), false);
+        if (this.ackFeedbackEnabled && this.forwardedCreditMap != null
+                && !isCriticalMessage(m) && eddSampler != null) {
+            this.forwardedCreditMap.put(m.getId(), new ForwardedCreditRecord(
+                    eddSampler.getNormalizedStateVector(), this.lastExecutedProfile, SimClock.getTime()));
         }
     }
 
@@ -804,16 +974,33 @@ public class DtnmaRouter extends ActiveRouter {
         Message m = super.messageTransferred(id, from);
         if (m != null) {
             this.epochActivityCount++;
+            if (this.getFreeBufferSize() < 0) {
+                this.makeRoomForMessage(0);
+                if (this.getFreeBufferSize() < 0) {
+                    if (!isCriticalMessage(m) && hasMessage(m.getId())) {
+                        deleteMessage(m.getId(), true);
+                    } else if (isCriticalMessage(m)) {
+                        if (!makeRoomForCriticalEmergency(0) && hasMessage(m.getId())) {
+                            deleteMessage(m.getId(), true);
+                        }
+                    }
+                }
+            }
+            this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, getBufferOccupancyRatio());
             if (m.getTo() == getHost() && this.deliveredAckSet != null) {
                 this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
             }
             Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+            Integer splitProp = (Integer) m.getProperty(MSG_SPLIT_PROPERTY);
             if (copies != null && copies > 1) {
-                int peerCopies = (int) Math.floor(copies / 2.0);
-                m.updateProperty(MSG_COPIES_PROPERTY, Math.max(1, peerCopies));
+                int peerCopies = (splitProp != null && splitProp > 0)
+                        ? Math.max(1, Math.min(copies - 1, splitProp))
+                        : Math.max(1, (int) Math.floor(copies / 2.0));
+                m.updateProperty(MSG_COPIES_PROPERTY, peerCopies);
             } else {
                 m.updateProperty(MSG_COPIES_PROPERTY, 1);
             }
+            m.updateProperty(MSG_SPLIT_PROPERTY, 0);
         }
         return m;
     }
@@ -834,10 +1021,10 @@ public class DtnmaRouter extends ActiveRouter {
 
         double occ = getBufferOccupancyRatio();
         if (!isCrit) {
-            if (currentIngressMode == INGRESS_CRITICAL_ONLY && occ > 0.85) {
+            if (currentIngressMode == INGRESS_CRITICAL_ONLY && occ > 0.92) {
                 return MessageRouter.DENIED_NO_SPACE;
             }
-            if (currentIngressMode == INGRESS_THROTTLE_BULK && occ > 0.88) {
+            if (currentIngressMode == INGRESS_THROTTLE_BULK && occ > 0.94) {
                 return MessageRouter.DENIED_NO_SPACE;
             }
         }
@@ -884,7 +1071,22 @@ public class DtnmaRouter extends ActiveRouter {
                 if (c1 && !c2) return -1;
                 if (!c1 && c2) return 1;
 
-                return Double.compare(m1.getTtl(), m2.getTtl());
+                Integer p1 = (Integer) m1.getProperty(MSG_COPIES_PROPERTY);
+                Integer p2 = (Integer) m2.getProperty(MSG_COPIES_PROPERTY);
+                int v1 = (p1 != null) ? p1 : (c1 ? DEFAULT_CRITICAL_QUOTA : currentSprayQuota);
+                int v2 = (p2 != null) ? p2 : (c2 ? DEFAULT_CRITICAL_QUOTA : currentSprayQuota);
+
+                boolean s1 = (v1 > 1);
+                boolean s2 = (v2 > 1);
+                if (s1 != s2) {
+                    return s1 ? -1 : 1; // Spray (copies > 1) strictly before Focus (copies == 1)
+                }
+
+                if (s1 && v1 != v2) {
+                    return Integer.compare(v2, v1); // Higher copies first within Spray
+                }
+
+                return Double.compare(m2.getTtl(), m1.getTtl()); // Larger remaining TTL (fresher) first
             }
         });
     }
@@ -988,6 +1190,8 @@ public class DtnmaRouter extends ActiveRouter {
     public long getGossipOverheadBytes() { return gossipOverheadBytes; }
     public long getAckExchanges() { return ackExchanges; }
     public long getAckOverheadBytes() { return ackOverheadBytes; }
+    public double getMaxBufferOccupancy() { return maxBufferOccupancy; }
+    public long[] getProfileExecCounts() { return profileExecCounts; }
 
     @Override
     public MessageRouter replicate() {

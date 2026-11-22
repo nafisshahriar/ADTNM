@@ -213,7 +213,7 @@ def get_tracked_file_pairs(repo_dir: Path, one_dir: Path):
         pairs.append((Path("scenarios") / f.name, f, one_dir / "scenarios" / f.name))
 
     # Runner scripts
-    for name in ["parallel_batch_runner.py", "verify_and_plot.py", "run_phase1_oppnda.py"]:
+    for name in ["parallel_batch_runner.py", "verify_and_plot.py", "run_phase1_oppnda.py", "plot_adaptation_trace.py"]:
         rf = repo_dir / "tools" / name
         if rf.is_file():
             pairs.append((Path(name), rf, one_dir / name))
@@ -429,7 +429,7 @@ def main():
     # 4. Deploy Tools, Core, and Config
     log_info("Deploying evaluation scripts and OppNDA analysis modules...")
     tools_src = repo_dir / "tools"
-    for tool_name in ["parallel_batch_runner.py", "verify_and_plot.py", "run_phase1_oppnda.py"]:
+    for tool_name in ["parallel_batch_runner.py", "verify_and_plot.py", "run_phase1_oppnda.py", "plot_adaptation_trace.py"]:
         tf = tools_src / tool_name
         if tf.is_file():
             link_or_copy(tf, target_dir / tool_name, mode=args.mode)
