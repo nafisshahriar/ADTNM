@@ -1,7 +1,9 @@
 /*
  * ShieldedCmdpRlAgent.java
- * Primal-Dual Constrained Linear Expected SARSA with State-Localized Dual-Update
- * Shielded Learning and Opportunistic Mobility-Class Peer Gossip Consensus.
+ * Single-Critic Shielded Counterfactual Linear Expected SARSA with State-Localized
+ * Counterfactual Shaping and Opportunistic Mobility-Class Peer Gossip Consensus.
+ * Retires the slack primal-dual cost-critic / lambda loop in favor of direct
+ * S1-S4 invariant masking and hazard-localized counterfactual penalty shaping.
  * All hyperparameters are externally configurable via DtnmaConfig.
  */
 package routing;
@@ -24,11 +26,10 @@ public class ShieldedCmdpRlAgent {
 
     private final DtnmaConfig cfg;
     private final double[][] wReward;
-    private final double[][] wCost;
-    private double lambda;
+    private final double lambda = 0.0; // Retired slack multiplier (kept as 0.0 for log/API compatibility)
     private final Random rng;
 
-    // Tracking & Metrics
+    // Tracking & Diagnostic Audit Counters
     private long epochCount = 0;
     private double rewardSum = 0.0;
     private double costSum = 0.0;
@@ -41,9 +42,7 @@ public class ShieldedCmdpRlAgent {
 
     public ShieldedCmdpRlAgent(long rngSeed, int hostAddress, DtnmaConfig config) {
         this.cfg = (config != null) ? config : new DtnmaConfig();
-        this.lambda = this.cfg.rlLambdaInit;
         this.wReward = new double[NUM_ACTIONS][NUM_FEATURES];
-        this.wCost = new double[NUM_ACTIONS][NUM_FEATURES];
         // Uniform Optimistic Initial Values on bias weight only (zero prior bias toward any profile)
         for (int a = 0; a < NUM_ACTIONS; a++) {
             this.wReward[a][0] = this.cfg.rlOptimisticInit;
@@ -123,7 +122,7 @@ public class ShieldedCmdpRlAgent {
     }
 
     /**
-     * Returns deterministic (epsilon = 0) greedy Lagrangian action over all 0..7 profiles.
+     * Returns deterministic (epsilon = 0) greedy action value over all 0..7 profiles.
      */
     public int proposeGreedyAction(double[] stateVec) {
         double[] phi = extractFeatures(stateVec);
@@ -131,17 +130,18 @@ public class ShieldedCmdpRlAgent {
     }
 
     /**
-     * Returns Lagrangian value Q_lambda(s, a) = Q_R(s, a) - lambda * Q_C(s, a).
+     * Returns single-critic Expected SARSA state-action value Q(s, a).
+     * Method name retained for backward API compatibility.
      */
     public double getLagrangianValue(double[] stateVec, int action) {
         int a = Math.max(0, Math.min(NUM_ACTIONS - 1, action));
         double[] phi = extractFeatures(stateVec);
-        return dot(wReward[a], phi) - lambda * dot(wCost[a], phi);
+        return dot(wReward[a], phi);
     }
 
     /**
      * Proposes an unconstrained RL action over all 0..7 profiles using decaying
-     * epsilon-greedy on Lagrangian value Q_lambda(s, a) = Q_R(s, a) - lambda * Q_C(s, a).
+     * epsilon-greedy on Q(s, a).
      */
     public int proposeRawAction(double[] stateVec, double simTime) {
         double eps = getEpsilon(simTime);
@@ -184,15 +184,13 @@ public class ShieldedCmdpRlAgent {
 
         for (int a = 0; a < NUM_ACTIONS; a++) {
             if (mask != null && !mask[a]) continue;
-            double qR = dot(wReward[a], phi);
-            double qC = dot(wCost[a], phi);
-            double qLam = qR - lambda * qC;
+            double qVal = dot(wReward[a], phi);
 
-            if (qLam > bestVal + 1e-9) {
-                bestVal = qLam;
+            if (qVal > bestVal + 1e-9) {
+                bestVal = qVal;
                 bestAct = a;
                 ties = 1;
-            } else if (Math.abs(qLam - bestVal) <= 1e-9) {
+            } else if (Math.abs(qVal - bestVal) <= 1e-9) {
                 ties++;
                 if (rng.nextInt(ties) == 0) {
                     bestAct = a;
@@ -203,11 +201,10 @@ public class ShieldedCmdpRlAgent {
     }
 
     /**
-     * Safe-Anchored Counterfactual Dual-Update Shielded Learning penalty:
+     * Safe-Anchored Counterfactual Shielded Learning penalty:
      * Anchors the counterfactual target strictly below the executed safe action's actual
-     * (Q_R(s, a_safe), Q_C(s, a_safe)) with margin, guaranteeing Q_lambda(s, unsafe) < Q_lambda(s, safe)
-     * for all lambda >= 0 while updating ONLY hazard-localized state features so healthy
-     * uncongested regimes remain unaffected.
+     * Q(s, a_safe) with margin, driving Q(s, unsafe) < Q(s, safe) while updating ONLY
+     * hazard-localized state features so healthy uncongested regimes remain unaffected.
      */
     public void applyShieldPenaltyUpdate(double[] stateVec, int unsafeAction, int safeAction) {
         if (unsafeAction < 0 || unsafeAction >= NUM_ACTIONS) return;
@@ -215,19 +212,14 @@ public class ShieldedCmdpRlAgent {
         double[] phi = extractFeatures(stateVec);
         double step = (3.0 * cfg.rlAlpha) / normSqHazard(phi);
 
-        double qRSafe = dot(wReward[safeIdx], phi);
-        double qCSafe = dot(wCost[safeIdx], phi);
-        double targetR = Math.min(-1.5, qRSafe - 1.5);
-        double targetC = Math.max(1.5, qCSafe + 2.0);
-
+        double qSafe = dot(wReward[safeIdx], phi);
+        double targetR = Math.min(-1.5, qSafe - 1.5);
         double curR = dot(wReward[unsafeAction], phi);
-        double curC = dot(wCost[unsafeAction], phi);
         double errR = clamp(targetR - curR, -12.0, 12.0);
-        double errC = clamp(targetC - curC, -12.0, 12.0);
 
         for (int k : HAZARD_FEATURE_INDICES) {
-            wReward[unsafeAction][k] = (1.0 - cfg.rlWeightDecay) * wReward[unsafeAction][k] + step * errR * phi[k];
-            wCost[unsafeAction][k]   = (1.0 - cfg.rlWeightDecay) * wCost[unsafeAction][k]   + step * errC * phi[k];
+            double updated = (1.0 - cfg.rlWeightDecay) * wReward[unsafeAction][k] + step * errR * phi[k];
+            wReward[unsafeAction][k] = clamp(updated, -20.0, 20.0);
         }
     }
 
@@ -241,12 +233,13 @@ public class ShieldedCmdpRlAgent {
         double step = (0.5 * cfg.rlAlpha) / normSq(phi);
         double err = clamp(ackReward, 0.0, 3.0);
         for (int k = 0; k < NUM_FEATURES; k++) {
-            wReward[forwardAction][k] += step * err * phi[k];
+            wReward[forwardAction][k] = clamp(wReward[forwardAction][k] + step * err * phi[k], -20.0, 20.0);
         }
     }
 
     /**
-     * Primal-Dual Expected SARSA TD update over executed transition (s, a_exec, r, c, s').
+     * Single-Critic Expected SARSA TD update over executed transition (s, a_exec, r, s').
+     * Retains cost audit counters (costSum, lastCost) for diagnostic logging only.
      */
     public void updateTransition(double[] prevState, int executedAction, double reward, double cost,
                                  double[] nextState, boolean[] nextSafeMask, boolean useMaskForNext,
@@ -268,7 +261,6 @@ public class ShieldedCmdpRlAgent {
         double epsNext = getEpsilon(simTime);
 
         double expectedNextR = 0.0;
-        double expectedNextC = 0.0;
         for (int a = 0; a < NUM_ACTIONS; a++) {
             if (evalMask != null && !evalMask[a]) continue;
             double prob = epsNext / validCount;
@@ -276,26 +268,17 @@ public class ShieldedCmdpRlAgent {
                 prob += (1.0 - epsNext);
             }
             expectedNextR += prob * dot(wReward[a], phiNext);
-            expectedNextC += prob * dot(wCost[a], phiNext);
         }
 
         double targetR = reward + cfg.rlGamma * expectedNextR;
-        double targetC = cost + cfg.rlGamma * expectedNextC;
-
         double predR = dot(wReward[executedAction], phiPrev);
-        double predC = dot(wCost[executedAction], phiPrev);
-
         double deltaR = clamp(targetR - predR, -5.0, 5.0);
-        double deltaC = clamp(targetC - predC, -5.0, 5.0);
 
         double step = cfg.rlAlpha / normSq(phiPrev);
         for (int k = 0; k < NUM_FEATURES; k++) {
-            wReward[executedAction][k] = (1.0 - cfg.rlWeightDecay) * wReward[executedAction][k] + step * deltaR * phiPrev[k];
-            wCost[executedAction][k]   = (1.0 - cfg.rlWeightDecay) * wCost[executedAction][k]   + step * deltaC * phiPrev[k];
+            double updated = (1.0 - cfg.rlWeightDecay) * wReward[executedAction][k] + step * deltaR * phiPrev[k];
+            wReward[executedAction][k] = clamp(updated, -20.0, 20.0);
         }
-
-        // Dual Lagrange multiplier update
-        this.lambda = clamp(this.lambda + cfg.rlEtaLambda * (cost - cfg.rlTargetCost), 0.0, cfg.rlLambdaMax);
 
         this.epochCount++;
         this.lastReward = reward;
@@ -305,7 +288,7 @@ public class ShieldedCmdpRlAgent {
     }
 
     /**
-     * Atomic, order-independent Same-Mobility-Class Gossip Consensus averaging.
+     * Atomic, order-independent Same-Mobility-Class Gossip Consensus averaging over wReward.
      * Snapshots both agents before writing so merge outcomes are strictly symmetric
      * and immune to connection iteration order; guards against early herd-lock via gossipMinEpochs.
      */
@@ -347,43 +330,33 @@ public class ShieldedCmdpRlAgent {
         }
 
         double[][] snapAR = new double[NUM_ACTIONS][NUM_FEATURES];
-        double[][] snapAC = new double[NUM_ACTIONS][NUM_FEATURES];
         double[][] snapBR = new double[NUM_ACTIONS][NUM_FEATURES];
-        double[][] snapBC = new double[NUM_ACTIONS][NUM_FEATURES];
         for (int act = 0; act < NUM_ACTIONS; act++) {
             System.arraycopy(a.wReward[act], 0, snapAR[act], 0, NUM_FEATURES);
-            System.arraycopy(a.wCost[act],   0, snapAC[act], 0, NUM_FEATURES);
             System.arraycopy(b.wReward[act], 0, snapBR[act], 0, NUM_FEATURES);
-            System.arraycopy(b.wCost[act],   0, snapBC[act], 0, NUM_FEATURES);
         }
-        double snapLamA = a.lambda;
-        double snapLamB = b.lambda;
 
         if (alphaA > 0.0) {
             for (int act = 0; act < NUM_ACTIONS; act++) {
                 for (int k = 0; k < NUM_FEATURES; k++) {
                     a.wReward[act][k] = (1.0 - alphaA) * snapAR[act][k] + alphaA * snapBR[act][k];
-                    a.wCost[act][k]   = (1.0 - alphaA) * snapAC[act][k] + alphaA * snapBC[act][k];
                 }
             }
-            a.lambda = clamp((1.0 - alphaA) * snapLamA + alphaA * snapLamB, 0.0, a.cfg.rlLambdaMax);
         }
 
         if (alphaB > 0.0) {
             for (int act = 0; act < NUM_ACTIONS; act++) {
                 for (int k = 0; k < NUM_FEATURES; k++) {
                     b.wReward[act][k] = (1.0 - alphaB) * snapBR[act][k] + alphaB * snapAR[act][k];
-                    b.wCost[act][k]   = (1.0 - alphaB) * snapBC[act][k] + alphaB * snapAC[act][k];
                 }
             }
-            b.lambda = clamp((1.0 - alphaB) * snapLamB + alphaB * snapLamA, 0.0, b.cfg.rlLambdaMax);
         }
 
         return true;
     }
 
     /**
-     * Single-sided opportunistic Mobility-Class Gossip Consensus averaging (backward compatibility).
+     * Single-sided opportunistic Mobility-Class Gossip Consensus averaging over wReward (backward compatibility).
      */
     public boolean gossipMerge(ShieldedCmdpRlAgent peer, int myClass, int peerClass) {
         if (peer == null || peer.epochCount < Math.max(this.cfg.gossipMinEpochs, peer.cfg.gossipMinEpochs)) {
@@ -403,10 +376,8 @@ public class ShieldedCmdpRlAgent {
         for (int a = 0; a < NUM_ACTIONS; a++) {
             for (int k = 0; k < NUM_FEATURES; k++) {
                 this.wReward[a][k] = (1.0 - alphaG) * this.wReward[a][k] + alphaG * peer.wReward[a][k];
-                this.wCost[a][k]   = (1.0 - alphaG) * this.wCost[a][k]   + alphaG * peer.wCost[a][k];
             }
         }
-        this.lambda = clamp((1.0 - alphaG) * this.lambda + alphaG * peer.lambda, 0.0, cfg.rlLambdaMax);
         return true;
     }
 

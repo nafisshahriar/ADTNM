@@ -1,8 +1,9 @@
 /*
  * DtnmaUnitTests.java
- * Zero-dependency unit test suite for ADTNM Phase 1 Safety Shield,
- * Hazard-Localized Counterfactual Shaping, Symmetric Gossip, Causal ACK Credit,
- * 16B Contact Beacons, Relay-Time Token Conservation, and All-Critical Zero-Overshoot.
+ * Zero-dependency unit test suite for ADTNM Single-Critic Safety Shield,
+ * Hazard-Localized Counterfactual Shaping, Symmetric Gossip (648B), Causal ACK Credit,
+ * 16B Contact Beacons, Relay-Time Token Conservation, All-Critical Zero-Overshoot,
+ * and Fair Baselines (PriorityMaxPropRouter & DtnmaStaticAckTunedRouter).
  */
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -27,8 +28,10 @@ import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
 import routing.DtnmaShieldedAckRLRouter;
+import routing.DtnmaStaticAckTunedRouter;
 import routing.EddTelemetrySampler;
 import routing.PredicateExpression;
+import routing.PriorityMaxPropRouter;
 import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
 import routing.StateBasedRule;
@@ -116,8 +119,6 @@ public class DtnmaUnitTests {
 
     private static void test2CounterfactualShapingAndLocalization() {
         DtnmaConfig cfg = new DtnmaConfig();
-        cfg.rlLambdaInit = 5.0; // Max stress dual multiplier
-        cfg.rlLambdaMax = 5.0;
         ShieldedCmdpRlAgent agent = new ShieldedCmdpRlAgent(49L, 1, cfg);
 
         double[] sCong = new double[] { 0.95, 0.70, 0.50, 0.20, 0.50, 1.0 };
@@ -125,7 +126,7 @@ public class DtnmaUnitTests {
         boolean[] maskZeroOnly = new boolean[DtnmaPolicyProfile.NUM_ACTIONS];
         maskZeroOnly[0] = true;
 
-        // Drive high discounted Q_C(s_cong, 0) ~ 6.0 and train healthy reward on Profile 4
+        // Train safe congestion profile 0 and healthy reward on Profile 4
         for (int i = 0; i < 40; i++) {
             agent.updateTransition(sCong, 0, 0.0, 1.0, sCong, maskZeroOnly, true, i * 15.0);
             agent.updateTransition(sHealthy, 4, 1.5, 0.02, sHealthy, null, false, i * 15.0);
@@ -136,13 +137,13 @@ public class DtnmaUnitTests {
             agent.applyShieldPenaltyUpdate(sCong, 7, 0);
         }
 
-        double qLamUnsafeCong = agent.getLagrangianValue(sCong, 7);
-        double qLamSafeCong = agent.getLagrangianValue(sCong, 0);
+        double qUnsafeCong = agent.getLagrangianValue(sCong, 7);
+        double qSafeCong = agent.getLagrangianValue(sCong, 0);
         int healthyGreedy = agent.proposeGreedyAction(sHealthy);
 
-        check(qLamUnsafeCong < qLamSafeCong,
-                "Test2a: Safe-Anchored shaping drives Q_lambda(s_cong, unsafe) < Q_lambda(s_cong, safe) at lambda=5, Q_C~6",
-                String.format("unsafe=%.3f safe=%.3f", qLamUnsafeCong, qLamSafeCong));
+        check(qUnsafeCong < qSafeCong,
+                "Test2a: Safe-Anchored shaping drives Q(s_cong, unsafe) < Q(s_cong, safe) in single-critic mode",
+                String.format("unsafe=%.3f safe=%.3f", qUnsafeCong, qSafeCong));
 
         check(healthyGreedy != 0 && healthyGreedy == 4,
                 "Test2b: Hazard-localized penalty keeps healthy Q=0.25 regime anchored to optimal Profile 4",
@@ -184,10 +185,11 @@ public class DtnmaUnitTests {
 
         boolean exactSym = Math.abs(a1.getLagrangianValue(s, 6) - a2.getLagrangianValue(s, 6)) < 1e-12
                 && Math.abs(b1.getLagrangianValue(s, 2) - b2.getLagrangianValue(s, 2)) < 1e-12
-                && Math.abs(a1.getLambda() - a2.getLambda()) < 1e-12;
+                && Math.abs(a1.getLambda()) < 1e-12
+                && Math.abs(b1.getLambda()) < 1e-12;
 
         check(crossBlocked && symAB && symBA && exactSym,
-                "Test3b: Symmetric atomic gossip is class-gated & strictly order-independent (A<->B == B<->A)",
+                "Test3b: Symmetric atomic gossip is class-gated, lambda=0.0, & strictly order-independent (A<->B == B<->A)",
                 "crossBlocked=" + crossBlocked + " exactSym=" + exactSym);
     }
 
@@ -210,7 +212,7 @@ public class DtnmaUnitTests {
     private static void test5BeaconQuantizationAndWireSizes() {
         boolean sizesOk = (DtnmaContactBeacon.BEACON_SIZE_BYTES == 16)
                 && (DtnmaContactBeacon.ACK_ID_BYTES == 4)
-                && (DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES == 1292);
+                && (DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES == 648);
 
         DtnmaContactBeacon b = new DtnmaContactBeacon(42, 1234.5, 0.731, -0.125, 0.855, 12.345, 2, 7);
         boolean roundTripOk = b.getHostAddress() == 42
@@ -223,7 +225,7 @@ public class DtnmaUnitTests {
                 && b.getActiveDegree() == 7;
 
         check(sizesOk && roundTripOk,
-                "Test5: ContactBeacon 16B wire quantization & exact gossip size (1292B)",
+                "Test5: ContactBeacon 16B wire quantization & exact single-critic gossip size (648B)",
                 "sizesOk=" + sizesOk + " roundTripOk=" + roundTripOk);
     }
 
@@ -402,9 +404,81 @@ public class DtnmaUnitTests {
                         r0.hasMessage("SCIENCE_DATA_THIRD"), r0.getBufferOccupancyRatio()));
     }
 
+    private static void test10PriorityMaxPropAndTunedStatic() {
+        String cfgText =
+                "Scenario.endTime = 100\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "Group.bufferSize = 40000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 2\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "MaxPropRouter.alpha = 1.0\n" +
+                "MaxPropRouter.probSetMaxSize = 50\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfgText.getBytes(StandardCharsets.UTF_8)));
+        Settings grp = new Settings("Group");
+        MovementModel mm = new StationaryMovement(grp);
+        PriorityMaxPropRouter mpProto = new PriorityMaxPropRouter(grp);
+        List<NetworkInterface> ifaces = new ArrayList<NetworkInterface>();
+
+        DTNHost h0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m", ifaces, new ModuleCommunicationBus(), mm, mpProto);
+        DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m", ifaces, new ModuleCommunicationBus(), mm, mpProto);
+        PriorityMaxPropRouter pm0 = (PriorityMaxPropRouter) h0.getRouter();
+
+        Message c1 = new Message(h0, h1, "CRITICAL_FAULT_MP1", 20000);
+        Message c2 = new Message(h0, h1, "CRITICAL_FAULT_MP2", 20000);
+        boolean ok1 = pm0.createNewMessage(c1);
+        boolean ok2 = pm0.createNewMessage(c2);
+        Message blkBulk = new Message(h0, h1, "SCIENCE_DATA_MP_BLK", 10000);
+        Message blkCrit = new Message(h0, h1, "CRITICAL_FAULT_MP3", 15000);
+        boolean deniedBulk = !pm0.createNewMessage(blkBulk);
+        boolean deniedCrit = !pm0.createNewMessage(blkCrit);
+
+        // Mixed critical + bulk host: new bulk evicts old bulk while strictly keeping critical
+        DTNHost hMix = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m", ifaces, new ModuleCommunicationBus(), mm, mpProto);
+        PriorityMaxPropRouter pmMix = (PriorityMaxPropRouter) hMix.getRouter();
+        Message mc = new Message(hMix, h1, "CRITICAL_FAULT_MIX", 20000);
+        mc.setReceiveTime(1.0);
+        Message mb1 = new Message(hMix, h1, "SCIENCE_DATA_MIX1", 20000);
+        mb1.setReceiveTime(5.0);
+        Message mb2 = new Message(hMix, h1, "SCIENCE_DATA_MIX2", 10000);
+        mb2.setReceiveTime(10.0);
+        boolean mixOk = pmMix.createNewMessage(mc) && pmMix.createNewMessage(mb1) && pmMix.createNewMessage(mb2)
+                && pmMix.hasMessage("CRITICAL_FAULT_MIX")
+                && !pmMix.hasMessage("SCIENCE_DATA_MIX1")
+                && pmMix.hasMessage("SCIENCE_DATA_MIX2")
+                && pmMix.getBufferOccupancyRatio() <= 1.000001;
+
+        boolean mpOk = ok1 && ok2 && deniedBulk && deniedCrit
+                && pm0.hasMessage("CRITICAL_FAULT_MP1") && pm0.hasMessage("CRITICAL_FAULT_MP2")
+                && pm0.getLocalCreationRejected() == 2
+                && pm0.getBufferOccupancyRatio() <= 1.000001
+                && mixOk;
+
+        DtnmaStaticAckTunedRouter tunedProto = new DtnmaStaticAckTunedRouter(grp);
+        DTNHost hTuned = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "t", ifaces, new ModuleCommunicationBus(), mm, tunedProto);
+        DtnmaStaticAckTunedRouter rTuned = (DtnmaStaticAckTunedRouter) hTuned.getRouter();
+        rTuned.update();
+        boolean tunedOk = (rTuned.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.STATIC_RULES)
+                && !rTuned.isGossipEnabled()
+                && rTuned.isAckFeedbackEnabled()
+                && rTuned.getCurrentSprayQuota() == 10;
+
+        check(mpOk && tunedOk,
+                "Test10: PriorityMaxProp zero-drop & cap enforcement + DtnmaStaticAckTunedRouter L=10 load",
+                String.format("mpOk=%s mixOk=%s rej=%d occ=%.4f tunedOk=%s quota=%d",
+                        mpOk, mixOk, pm0.getLocalCreationRejected(), pm0.getBufferOccupancyRatio(),
+                        tunedOk, rTuned.getCurrentSprayQuota()));
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
-        System.out.println("ADTNM PHASE 1 JAVA UNIT TEST SUITE");
+        System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
         System.out.println("=================================================================");
         test1SafetyShieldInvariantsAndLiveness();
         test2CounterfactualShapingAndLocalization();
@@ -414,6 +488,7 @@ public class DtnmaUnitTests {
         test6BinaryTokenConservationAtRelay();
         test7AllCriticalFullBufferZeroOvershoot();
         test9ProtectedFifoEvictionAndCriticalOccupancy();
+        test10PriorityMaxPropAndTunedStatic();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");

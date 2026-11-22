@@ -1,7 +1,8 @@
 # Autonomic DTNMA Framework: Mathematical Derivations, Technical Taxonomy, and Publication LaTeX
 
 **Topic:** Mathematical Formulations, Technical Taxonomy, and Paper-Ready Formulations for the RFC 9675 / RFC 7575 Autonomic DTNMA Routing Framework in The ONE Simulator  
-**Source Repository:** `n:\R&D\cog`  
+**Source Repository:** `ADTNM` (relative links)  
+**Phase 2 / Stage 2 Update:** Retires the slack primal-dual `λ` cost-critic loop from earlier prototypes in favor of Single-Critic Shielded Counterfactual Expected SARSA + Same-Mobility-Class Peer Gossip (`648 B` payload) paired with an RFC 9675-inspired SRL engine.  
 **Date Exported:** October 18, 2026  
 **Standards:** RFC 9675 (DTNMA), RFC 7575 (Autonomic Networking), RFC 6693 (PRoPHET), RFC 9171 (BPv7)
 
@@ -17,7 +18,7 @@
 
 The autonomic Delay-Tolerant Network Management Architecture (**DTNMA**, standardized under **RFC 9675** and interoperating with autonomic networking principles in **RFC 7575**) implemented in this repository combines decentralized telemetric state estimation, declarative predicate logic, closed-loop actuation, and hybrid token-spray/cognitive routing.
 
-Below is the formal mathematical derivation of all currently implemented features across [`DtnmaRouter.java`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java), [`EddTelemetrySampler.java`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java), [`StateBasedRule.java`](file:///n:/R&D/cog/the-one/src/routing/StateBasedRule.java), [`PredicateExpression.java`](file:///n:/R&D/cog/the-one/src/routing/PredicateExpression.java), and [`ControlAction.java`](file:///n:/R&D/cog/the-one/src/routing/ControlAction.java).
+Below is the formal mathematical derivation of all currently implemented features across [`DtnmaRouter.java`](../src/routing/DtnmaRouter.java), [`EddTelemetrySampler.java`](../src/routing/EddTelemetrySampler.java), [`StateBasedRule.java`](../src/routing/StateBasedRule.java), [`PredicateExpression.java`](../src/routing/PredicateExpression.java), and [`ControlAction.java`](../src/routing/ControlAction.java).
 
 ---
 
@@ -41,16 +42,16 @@ where $s(m)$ is the source, $d(m)$ is the destination, $h(m) \in \mathbb{N}_0$ i
 
 ## 2. Feature 1: Strongly-Typed EDD Telemetry Sampling Vector
 
-As implemented in [`EddTelemetrySampler.java`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L20-L70), each node periodically samples an Externally Defined Data (EDD) feature vector:
+As implemented in [`EddTelemetrySampler.java`](../src/routing/EddTelemetrySampler.java), each node periodically samples an Externally Defined Data (EDD) feature vector:
 $$\mathbf{x}_i(t) = \begin{bmatrix} Q_i(t) & \dot{Q}_i(t) & v_i(t) & D_i(t) & E_i(t) & \dot{E}_i(t) & k_i(t) & Q_{\min, i}^{\mathcal{N}}(t) \end{bmatrix}^T$$
-with minimum sampling sampling stride $\Delta t \ge 0.5\text{ s}$ ([`EddTelemetrySampler.java#L167`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L167)).
+with minimum sampling sampling stride $\Delta t \ge 0.5\text{ s}$ ([`EddTelemetrySampler.java#L167`](../src/routing/EddTelemetrySampler.java)).
 
 ### 2.1 Instantaneous Buffer Occupancy Ratio ($Q_i(t)$)
 Let $S_{\text{free}, i}(t)$ be the currently unallocated buffer memory. The dimensionless occupancy ratio $Q_i(t) \in [0.0, 1.0]$ is:
 $$Q_i(t) = \frac{S_{\text{max}, i} - S_{\text{free}, i}(t)}{S_{\text{max}, i}} = \frac{1}{S_{\text{max}, i}} \sum_{m \in \mathcal{B}_i(t)} \text{size}(m)$$
 
 ### 2.2 First-Derivative Queue Drift ($\dot{Q}_i(t)$)
-To detect impending buffer collapse prior to packet loss, queue drift $\dot{Q}_i(t) \in \mathbb{R}\text{ [s}^{-1}\text{]}$ is computed via discrete backward finite difference ([`EddTelemetrySampler.java#L170`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L170)):
+To detect impending buffer collapse prior to packet loss, queue drift $\dot{Q}_i(t) \in \mathbb{R}\text{ [s}^{-1}\text{]}$ is computed via discrete backward finite difference ([`EddTelemetrySampler.java#L170`](../src/routing/EddTelemetrySampler.java)):
 $$\dot{Q}_i(t) = \frac{Q_i(t) - Q_i(t - \Delta t)}{\Delta t}$$
 - $\dot{Q}_i(t) > 0$: Buffer accumulation regime ($\lambda_{\text{in}} > \mu_{\text{out}}$).
 - $\dot{Q}_i(t) < 0$: Buffer draining regime ($\lambda_{\text{in}} < \mu_{\text{out}}$).
@@ -60,11 +61,11 @@ Speed is calculated irrespective of the underlying synthetic mobility model (RWP
 $$v_i(t) = \frac{\|\mathbf{p}_i(t) - \mathbf{p}_i(t - \Delta t)\|_2}{\Delta t} = \frac{\sqrt{\bigl(x_i(t) - x_i(t - \Delta t)\bigr)^2 + \bigl(y_i(t) - y_i(t - \Delta t)\bigr)^2}}{\Delta t}$$
 
 ### 2.4 Sliding-Window Temporal Contact Density ($D_i(t, W)$)
-Instantaneous link count $|\mathcal{A}_i(t)|$ oscillates erratically due to RF shadowing and movement. DTNMA integrates contact history over a sliding memory window $W = 300\text{ s}$ ([`EddTelemetrySampler.java#L54`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L54)):
+Instantaneous link count $|\mathcal{A}_i(t)|$ oscillates erratically due to RF shadowing and movement. DTNMA integrates contact history over a sliding memory window $W = 300\text{ s}$ ([`EddTelemetrySampler.java#L54`](../src/routing/EddTelemetrySampler.java)):
 $$\mathcal{H}_i(t, W) = \left\{ j \in \mathcal{V} \setminus \{i\} \;\middle|\; \bigl(t - \tau_{i,j}^{\text{last}}\bigr) \le W \right\}$$
 where $\tau_{i,j}^{\text{last}}$ is the timestamp of the most recent contact event between node $i$ and node $j$. The composite node density metric $D_i(t) \in \mathbb{N}_0$ is:
 $$D_i(t) = \left| \mathcal{H}_i(t, W) \cup \mathcal{A}_i(t) \right|$$
-Stale records $(t - \tau_{i, j}^{\text{last}}) > W$ are purged dynamically ([`EddTelemetrySampler.java#L194`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L194)).
+Stale records $(t - \tau_{i, j}^{\text{last}}) > W$ are purged dynamically ([`EddTelemetrySampler.java#L194`](../src/routing/EddTelemetrySampler.java)).
 
 ### 2.5 Energy State-of-Charge (SoC) and Drain Rate
 Let $E_i(t) \in [0.0, 1.0]$ denote normalized remaining battery capacity. The instantaneous drain rate $\dot{E}_i(t)$ is:
@@ -78,28 +79,28 @@ $$Q_{\min, i}^{\mathcal{N}}(t) = \begin{cases} \min_{j \in \mathcal{A}_i(t)} Q_j
 
 ## 3. Feature 2: Delivery Predictability Dynamics (RFC 6693 / PRoPHET Engine)
 
-Embedded inside [`EddTelemetrySampler.java#L82-L158`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L82-L158) is an autonomous implementation of delivery predictability $P_{(i, j)} \in [0.0, 1.0]$.
+Embedded inside [`EddTelemetrySampler.java#L82-L158`](../src/routing/EddTelemetrySampler.java) is an autonomous implementation of delivery predictability $P_{(i, j)} \in [0.0, 1.0]$.
 
 ### 3.1 Direct Encounter Recurrence
-When node $i$ establishes a contact with peer $j$ at time $t$ ([`EddTelemetrySampler.java#L94-L99`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L94-L99)):
+When node $i$ establishes a contact with peer $j$ at time $t$ ([`EddTelemetrySampler.java#L94-L99`](../src/routing/EddTelemetrySampler.java)):
 $$P_{(i, j)}(t^+) = P_{(i, j)}(t^-) + \bigl(1 - P_{(i, j)}(t^-)\bigr) \cdot P_{\text{init}}$$
 where $P_{\text{init}} = 0.75$.
 
 ### 3.2 Transitive Predictability Diffusion
-When node $i$ and node $j$ exchange routing vectors, node $i$ updates its delivery predictability toward all other destinations $k \in \mathcal{V} \setminus \{i, j\}$ ([`EddTelemetrySampler.java#L105-L127`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L105-L127)):
+When node $i$ and node $j$ exchange routing vectors, node $i$ updates its delivery predictability toward all other destinations $k \in \mathcal{V} \setminus \{i, j\}$ ([`EddTelemetrySampler.java#L105-L127`](../src/routing/EddTelemetrySampler.java)):
 $$P_{(i, k)}(t^+) = P_{(i, k)}(t^-) + \bigl(1 - P_{(i, k)}(t^-)\bigr) \cdot P_{(i, j)}(t^+) \cdot P_{(j, k)} \cdot \beta$$
 where transitivity scaling factor $\beta = 0.25$.
 
 ### 3.3 Continuous Predictability Decay
 In the absence of contact, predictabilities decay geometrically over elapsed simulation time:
 $$P_{(i, j)}(t) = P_{(i, j)}(t_{\text{prev}}) \cdot \gamma^{\left(\frac{t - t_{\text{prev}}}{\Delta t_{\text{unit}}}\right)}$$
-where aging coefficient $\gamma = 0.98$ and time unit quantum $\Delta t_{\text{unit}} = 30.0\text{ s}$ ([`EddTelemetrySampler.java#L34-L35`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L34-L35)).
+where aging coefficient $\gamma = 0.98$ and time unit quantum $\Delta t_{\text{unit}} = 30.0\text{ s}$ ([`EddTelemetrySampler.java#L34-L35`](../src/routing/EddTelemetrySampler.java)).
 
 ---
 
 ## 4. Feature 3: Declarative Predicate Autonomy Engine & Priority Arbitration
 
-Implemented in [`PredicateExpression.java`](file:///n:/R&D/cog/the-one/src/routing/PredicateExpression.java) and [`StateBasedRule.java`](file:///n:/R&D/cog/the-one/src/routing/StateBasedRule.java), node policy adaptation follows RFC 9675 State-Based Rules (SRLs).
+Implemented in [`PredicateExpression.java`](../src/routing/PredicateExpression.java) and [`StateBasedRule.java`](../src/routing/StateBasedRule.java), node policy adaptation follows RFC 9675 State-Based Rules (SRLs).
 
 ### 4.1 Clause and Predicate Logic Formulation
 A rule condition $\Phi_k(\mathbf{x}_i)$ consists of elementary clauses:
@@ -109,18 +110,18 @@ Composite predicates are evaluated under conjunction ($\land$) or disjunction ($
 $$\Phi_k^{\text{AND}}(\mathbf{x}_i) = \bigwedge_{m=1}^{K} \phi_{k, m}(\mathbf{x}_i), \qquad \Phi_k^{\text{OR}}(\mathbf{x}_i) = \bigvee_{m=1}^{K} \phi_{k, m}(\mathbf{x}_i)$$
 
 ### 4.2 Explainable AI (XAI) Causal Mapping
-Each clause evaluation maps to a Boolean audit string ([`PredicateExpression.java#L45-L49`](file:///n:/R&D/cog/the-one/src/routing/PredicateExpression.java#L45-L49)):
+Each clause evaluation maps to a Boolean audit string ([`PredicateExpression.java#L45-L49`](../src/routing/PredicateExpression.java)):
 $$\mathcal{X}(\phi_{k, m}) = \text{"}\text{EDD}_m(v_{\text{sampled}}) \;\bowtie\; \theta_m \to \{\text{TRUE} \mid \text{FALSE}\}\text{"}$$
-This string is exported directly to [`DtnmaAuditReport.java`](file:///n:/R&D/cog/the-one/src/report/DtnmaAuditReport.java#L54-L55) to provide verifiable causal explanations for all autonomous actions.
+This string is exported directly to [`DtnmaAuditReport.java`](../src/report/DtnmaAuditReport.java) to provide verifiable causal explanations for all autonomous actions.
 
 ### 4.3 Highest-Priority Rule Arbitration
-The autonomy engine evaluates rules at frequency $f_{\text{eval}} = 1.0\text{ Hz}$ ([`DtnmaRouter.java#L64`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L64)). Given the ordered rule set $\mathcal{R}_i = \langle R_1, R_2, \dots, R_M \rangle$ where $\pi(R_1) \ge \pi(R_2) \ge \dots \ge \pi(R_M)$:
+The autonomy engine evaluates rules at frequency $f_{\text{eval}} = 1.0\text{ Hz}$ ([`DtnmaRouter.java#L64`](../src/routing/DtnmaRouter.java)). Given the ordered rule set $\mathcal{R}_i = \langle R_1, R_2, \dots, R_M \rangle$ where $\pi(R_1) \ge \pi(R_2) \ge \dots \ge \pi(R_M)$:
 $$k^* = \min \left\{ k \in \{1, \dots, M\} \;\middle|\; \Phi_k\bigl(\mathbf{x}_i(t)\bigr) = \text{TRUE} \right\}$$
 
 The active policy actuation vector $\mathbf{u}_i(t)$ is updated instantaneously by the actions $\mathcal{A}(R_{k^*})$:
 $$\mathbf{u}_i(t) = \begin{bmatrix} L_{\text{spray}}(t) \\ M_{\text{ingress}}(t) \\ T_{\text{telem}}(t) \\ B_{\text{backpressure}}(t) \end{bmatrix} \in \mathbb{N}^+ \times \{0, 1, 2\} \times \mathbb{R}^+ \times \{0, 1\}$$
 
-In the default configuration ([`DtnmaRouter.java#L102-L143`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L102-L143)):
+In the default configuration ([`DtnmaRouter.java#L102-L143`](../src/routing/DtnmaRouter.java)):
 $$\mathbf{u}_i(t) = \begin{cases}
 \begin{bmatrix} 2 \\ 1 \\ 600.0 \\ 1 \end{bmatrix} & \text{if } Q_i(t) \ge 0.92 \;\lor\; E_i(t) < 0.20 & (\pi = 100, \text{ Congested Safe}) \\[12pt]
 \begin{bmatrix} 3 \\ 0 \\ 300.0 \\ 1 \end{bmatrix} & \text{if } D_i(t) \ge 4.0 & (\pi = 50, \text{ Dense Balanced}) \\[12pt]
@@ -131,11 +132,11 @@ $$\mathbf{u}_i(t) = \begin{cases}
 
 ## 5. Feature 4: Dynamic Token Spraying & Binary Halving Tree Dynamics
 
-When a new bundle is originated at source $s(m) = i$ ([`DtnmaRouter.java#L337-L345`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L337-L345)):
+When a new bundle is originated at source $s(m) = i$ ([`DtnmaRouter.java#L337-L345`](../src/routing/DtnmaRouter.java)):
 $$C_0(m) = \begin{cases} L_{\text{critical}} = 8 & \text{if } m \in \mathcal{C}_0 \\ L_{\text{spray}}(t) \in \{2, 3, 6\} & \text{if } m \in \mathcal{C}_1 \end{cases}$$
 
 ### 5.1 Binary Halving Splitting Operator
-When node $i$ transfers bundle $m$ to relay neighbor $j \ne d(m)$, tokens are split using the asymmetric ceiling/floor operator ([`DtnmaRouter.java#L361-L390`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L361-L390)):
+When node $i$ transfers bundle $m$ to relay neighbor $j \ne d(m)$, tokens are split using the asymmetric ceiling/floor operator ([`DtnmaRouter.java#L361-L390`](../src/routing/DtnmaRouter.java)):
 $$\begin{aligned}
 C_i(m) &\leftarrow \max\left(1, \; \left\lceil \frac{C(m)}{2} \right\rceil\right) \quad &&\text{(Retained by sender } i\text{)} \\
 C_j(m) &\leftarrow \max\left(1, \; \left\lfloor \frac{C(m)}{2} \right\rfloor\right) \quad &&\text{(Assigned to receiver } j\text{)}
@@ -161,7 +162,7 @@ For $C_0(m) = 6$, $d_{\max} = 3$ hops; for $C_0(m) = 8$, $d_{\max} = 3$ hops. $\
 
 ## 6. Feature 5: Cognitive Focus Handoff Phase ($C(m) = 1$)
 
-When token halving terminates at $C(m) = 1$, the bundle transitions from multi-path spray to single-copy cognitive handoff ([`DtnmaRouter.java#L311-L332`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L311-L332)).
+When token halving terminates at $C(m) = 1$, the bundle transitions from multi-path spray to single-copy cognitive handoff ([`DtnmaRouter.java#L311-L332`](../src/routing/DtnmaRouter.java)).
 
 ### 6.1 Cognitive Forwarding Criteria
 A bundle with $C(m) = 1$ is forwarded to relay $j \ne d(m)$ if and only if all four conditions hold:
@@ -177,8 +178,8 @@ A bundle with $C(m) = 1$ is forwarded to relay $j \ne d(m)$ if and only if all f
 ### 6.2 Custodial Relinquishment & Network Copy Invariance
 Upon successful transfer completion of a bundle with $C(m) = 1$ to relay $j$:
 $$\begin{aligned}
-\mathcal{B}_i(t^+) &\leftarrow \mathcal{B}_i(t^-) \setminus \{m\} \quad &&\text{([DtnmaRouter.java#L369](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L369))} \\
-C_j(m) &\leftarrow 1 \quad &&\text{([DtnmaRouter.java#L388](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L388))}
+\mathcal{B}_i(t^+) &\leftarrow \mathcal{B}_i(t^-) \setminus \{m\} \quad &&\text{([DtnmaRouter.java#L369](../src/routing/DtnmaRouter.java#L369))} \\
+C_j(m) &\leftarrow 1 \quad &&\text{([DtnmaRouter.java#L388](../src/routing/DtnmaRouter.java#L388))}
 \end{aligned}$$
 
 > **Theorem 2 (Single-Copy Conservation):**
@@ -192,7 +193,7 @@ Node $i$ executes `deleteMessage(m.getId(), false)` immediately upon notificatio
 
 ## 7. Feature 6: Backpressure Queue Gradient Forwarding
 
-To eliminate congestion collapse and the "hot-potato" problem, [`DtnmaRouter.java#L295-L306`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L295-L306) enforces a directional gradient check between sender $i$ and receiver $j$.
+To eliminate congestion collapse and the "hot-potato" problem, [`DtnmaRouter.java#L295-L306`](../src/routing/DtnmaRouter.java) enforces a directional gradient check between sender $i$ and receiver $j$.
 
 ### 7.1 Forwarding Gating Function
 Let $\Delta Q_{ij}(t) = Q_j(t) - Q_i(t)$ represent the spatial queue occupancy gradient. The forwarding gating function $G(m, i, j) \in \{0, 1\}$ is formulated as:
@@ -209,7 +210,7 @@ where the backpressure gradient threshold $\delta_{\text{thresh}} = 0.15$ (15% h
 
 ## 8. Feature 7: Dual-Tier Head-of-Line (HoL) Priority Scheduling
 
-Implemented in [`DtnmaRouter.java#L445-L477`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L445-L477), message scheduling and transmission queues follow a strict dual-tier total order $\prec$.
+Implemented in [`DtnmaRouter.java#L445-L477`](../src/routing/DtnmaRouter.java), message scheduling and transmission queues follow a strict dual-tier total order $\prec$.
 
 ### 8.1 Total Precedence Relation
 For any two messages $m_1, m_2 \in \mathcal{B}_i(t)$:
@@ -217,7 +218,7 @@ $$m_1 \prec m_2 \iff \begin{cases}
 \text{class}(m_1) = \mathcal{C}_0 \;\land\; \text{class}(m_2) = \mathcal{C}_1 \\[6pt]
 \text{class}(m_1) = \text{class}(m_2) \;\land\; \text{TTL}(m_1) < \text{TTL}(m_2)
 \end{cases}$$
-Where traffic classification is determined by message identifier syntax ([`DtnmaRouter.java#L487-L490`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L487-L490)):
+Where traffic classification is determined by message identifier syntax ([`DtnmaRouter.java#L487-L490`](../src/routing/DtnmaRouter.java)):
 $$\text{class}(m) = \begin{cases} \mathcal{C}_0 & \text{if } \text{ID}(m) \text{ matches } \{\text{CRITICAL\_FAULT*}, \text{FAULT*}, \text{CRIT*}\} \\ \mathcal{C}_1 & \text{otherwise} \end{cases}$$
 
 ### 8.2 Transmission Invariant
@@ -229,7 +230,7 @@ Critical fault telemetry ($\mathcal{C}_0$) preempts the entire bulk science queu
 
 ## 9. Feature 8: Constructive Ingress Admission Control
 
-Rather than admitting all offered load and dropping bundles after transfer (which wastes channel transmission energy and RF airtime), [`DtnmaRouter.java#L398-L409`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L398-L409) intercepts bundles at the link handshake level.
+Rather than admitting all offered load and dropping bundles after transfer (which wastes channel transmission energy and RF airtime), [`DtnmaRouter.java#L398-L409`](../src/routing/DtnmaRouter.java) intercepts bundles at the link handshake level.
 
 ### 9.1 Handshake Transfer Admission
 The admission function $\Gamma(m, i) \in \{\text{RCV\_OK}, \text{DENIED\_NO\_SPACE}\}$ is:
@@ -243,7 +244,7 @@ $$\Gamma(m, i) = \begin{cases}
 
 ## 10. Feature 9: Inviolable Zero-Drop Buffer Eviction
 
-When node memory is exhausted and room must be created for a newly admitted bundle, [`getNextMessageToRemove()`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L416-L440) determines the eviction victim.
+When node memory is exhausted and room must be created for a newly admitted bundle, [`getNextMessageToRemove()`](../src/routing/DtnmaRouter.java) determines the eviction victim.
 
 ### 10.1 Mathematical Eviction Formulation
 Let $\mathcal{B}_{\text{candidate}} = \left\{ m \in \mathcal{B}_i(t) \;\middle|\; m \notin \mathcal{M}_{\text{sending}} \;\land\; m \in \mathcal{C}_1 \right\}$.
@@ -259,7 +260,7 @@ $$\langle C(m_a), \text{TTL}(m_a) \rangle < \langle C(m_b), \text{TTL}(m_b) \ran
 > $$\mathbb{P}\bigl(\text{Drop}(m) \;\big|\; m \in \mathcal{C}_0\bigr) \equiv 0.0 \quad \forall t \ge 0$$
 
 *Proof:*
-From [`DtnmaRouter.java#L422`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L422):
+From [`DtnmaRouter.java#L422`](../src/routing/DtnmaRouter.java):
 ```java
 if (isCriticalMessage(m)) continue; // Inviolable safety guarantee
 ```
@@ -305,7 +306,7 @@ In standard DTN routers (e.g. classical Epidemic, PRoPHET), forwarding evaluates
 $$\mathcal{O}\bigl(|\mathcal{B}_i| \cdot |\mathcal{A}_i|\bigr)$$
 With thousands of messages, repeated link queries introduce simulation bottlenecks.
 
-In [`DtnmaRouter.java#L223-L256`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L223-L256), a **pre-caching vectorization** step extracts peer metrics once per update round:
+In [`DtnmaRouter.java#L223-L256`](../src/routing/DtnmaRouter.java), a **pre-caching vectorization** step extracts peer metrics once per update round:
 $$\mathbf{p}_{\text{peers}} = \Bigl[ \langle \text{Host}_k, \text{Router}_k, Q_k \rangle \;\Big|\; k \in \{1, \dots, |\mathcal{A}_i^{\text{ready}}|\} \Bigr]$$
 This decouples link probing from message iteration, reducing peer query complexity from $\mathcal{O}(|\mathcal{B}_i| \cdot |\mathcal{A}_i|)$ to:
 $$\mathcal{O}\bigl(|\mathcal{A}_i|\bigr) + \mathcal{O}\bigl(|\mathcal{B}_i| \log |\mathcal{B}_i|\bigr)$$
@@ -317,21 +318,21 @@ where sorting dominates and peer state lookups run in $\mathcal{O}(1)$ random-ac
 
 | Feature / Formulation | Mathematical Operation | Implementation Reference |
 | :--- | :--- | :--- |
-| **Buffer Occupancy ($Q_i$)** | $Q_i = (S_{\text{max}} - S_{\text{free}}) / S_{\text{max}}$ | [`DtnmaRouter.java#L514-L517`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L514-L517) |
-| **Queue Drift ($\dot{Q}_i$)** | $\dot{Q}_i = (Q_i(t) - Q_i(t - \Delta t)) / \Delta t$ | [`EddTelemetrySampler.java#L170`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L170) |
-| **Universal Velocity ($v_i$)** | $v_i = \|\mathbf{p}(t) - \mathbf{p}(t - \Delta t)\|_2 / \Delta t$ | [`EddTelemetrySampler.java#L177-L180`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L177-L180) |
-| **Sliding Window Density ($D_i$)**| $D_i = \|\mathcal{H}_i(t, 300\text{s}) \cup \mathcal{A}_i(t)\|$ | [`EddTelemetrySampler.java#L235-L246`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L235-L246) |
-| **Direct Predictability** | $P_{(i, j)} \leftarrow P + (1 - P) \cdot P_{\text{init}}$ | [`EddTelemetrySampler.java#L94-L99`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L94-L99) |
-| **Transitive Predictability** | $P_{(i, k)} \leftarrow P + (1 - P) \cdot P_{(i, j)} \cdot P_{(j, k)} \cdot \beta$ | [`EddTelemetrySampler.java#L105-L127`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L105-L127) |
-| **Predictability Aging** | $P \leftarrow P \cdot \gamma^{\Delta t / 30}$ | [`EddTelemetrySampler.java#L133-L143`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L133-L143) |
-| **Priority Arbitration** | $k^* = \arg\max \pi(R_k) \text{ s.t. } \Phi_k = \text{TRUE}$ | [`DtnmaRouter.java#L191-L211`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L191-L211) |
-| **Binary Token Halving** | $C_{\text{sender}} = \lceil C / 2 \rceil, \; C_{\text{recv}} = \lfloor C / 2 \rfloor$ | [`DtnmaRouter.java#L364-L384`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L364-L384) |
-| **Cognitive Handoff Gating** | $P_{\text{peer}} > P_{\text{my}} + \Delta P \;\land\; Q_{\text{peer}} < 0.90$ | [`DtnmaRouter.java#L323-L329`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L323-L329) |
-| **Single-Copy Invariant** | Relinquish local copy upon focus handoff | [`DtnmaRouter.java#L369`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L369) |
-| **Backpressure Gradient** | Suppress if $Q_{\text{peer}} \ge Q_{\text{local}} + 0.15$ | [`DtnmaRouter.java#L297-L305`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L297-L305) |
-| **Dual-Tier Queuing** | $\mathcal{C}_0$ Head-of-Line preemption ahead of $\mathcal{C}_1$ | [`DtnmaRouter.java#L445-L458`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L445-L458) |
-| **Constructive Ingress** | Deny bulk at handshake when $Q_i > 0.95$ | [`DtnmaRouter.java#L404-L406`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L404-L406) |
-| **Zero-Drop Invariant** | Exclude $\mathcal{C}_0$ from eviction candidate set | [`DtnmaRouter.java#L422`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L422) |
+| **Buffer Occupancy ($Q_i$)** | $Q_i = (S_{\text{max}} - S_{\text{free}}) / S_{\text{max}}$ | [`DtnmaRouter.java#L514-L517`](../src/routing/DtnmaRouter.java) |
+| **Queue Drift ($\dot{Q}_i$)** | $\dot{Q}_i = (Q_i(t) - Q_i(t - \Delta t)) / \Delta t$ | [`EddTelemetrySampler.java#L170`](../src/routing/EddTelemetrySampler.java) |
+| **Universal Velocity ($v_i$)** | $v_i = \|\mathbf{p}(t) - \mathbf{p}(t - \Delta t)\|_2 / \Delta t$ | [`EddTelemetrySampler.java#L177-L180`](../src/routing/EddTelemetrySampler.java) |
+| **Sliding Window Density ($D_i$)**| $D_i = \|\mathcal{H}_i(t, 300\text{s}) \cup \mathcal{A}_i(t)\|$ | [`EddTelemetrySampler.java#L235-L246`](../src/routing/EddTelemetrySampler.java) |
+| **Direct Predictability** | $P_{(i, j)} \leftarrow P + (1 - P) \cdot P_{\text{init}}$ | [`EddTelemetrySampler.java#L94-L99`](../src/routing/EddTelemetrySampler.java) |
+| **Transitive Predictability** | $P_{(i, k)} \leftarrow P + (1 - P) \cdot P_{(i, j)} \cdot P_{(j, k)} \cdot \beta$ | [`EddTelemetrySampler.java#L105-L127`](../src/routing/EddTelemetrySampler.java) |
+| **Predictability Aging** | $P \leftarrow P \cdot \gamma^{\Delta t / 30}$ | [`EddTelemetrySampler.java#L133-L143`](../src/routing/EddTelemetrySampler.java) |
+| **Priority Arbitration** | $k^* = \arg\max \pi(R_k) \text{ s.t. } \Phi_k = \text{TRUE}$ | [`DtnmaRouter.java#L191-L211`](../src/routing/DtnmaRouter.java) |
+| **Binary Token Halving** | $C_{\text{sender}} = \lceil C / 2 \rceil, \; C_{\text{recv}} = \lfloor C / 2 \rfloor$ | [`DtnmaRouter.java#L364-L384`](../src/routing/DtnmaRouter.java) |
+| **Cognitive Handoff Gating** | $P_{\text{peer}} > P_{\text{my}} + \Delta P \;\land\; Q_{\text{peer}} < 0.90$ | [`DtnmaRouter.java#L323-L329`](../src/routing/DtnmaRouter.java) |
+| **Single-Copy Invariant** | Relinquish local copy upon focus handoff | [`DtnmaRouter.java#L369`](../src/routing/DtnmaRouter.java) |
+| **Backpressure Gradient** | Suppress if $Q_{\text{peer}} \ge Q_{\text{local}} + 0.15$ | [`DtnmaRouter.java#L297-L305`](../src/routing/DtnmaRouter.java) |
+| **Dual-Tier Queuing** | $\mathcal{C}_0$ Head-of-Line preemption ahead of $\mathcal{C}_1$ | [`DtnmaRouter.java#L445-L458`](../src/routing/DtnmaRouter.java) |
+| **Constructive Ingress** | Deny bulk at handshake when $Q_i > 0.95$ | [`DtnmaRouter.java#L404-L406`](../src/routing/DtnmaRouter.java) |
+| **Zero-Drop Invariant** | Exclude $\mathcal{C}_0$ from eviction candidate set | [`DtnmaRouter.java#L422`](../src/routing/DtnmaRouter.java) |
 
 ---
 
@@ -363,11 +364,11 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **PRoPHET (Probabilistic Routing Protocol using History of Encounters and Transitivity / RFC 6693):**
     *   **Meaning:** A probabilistic DTN routing protocol that uses historical encounter frequencies to estimate the likelihood of future rendezvous.
-    *   **Description:** Instead of spraying bundles randomly, PRoPHET assigns each node pair a delivery predictability $P_{(a, b)} \in [0, 1]$. In this framework, PRoPHET's predictability equations are embedded into [`EddTelemetrySampler.java`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L82-L158) to govern single-copy custodial handoffs.
+    *   **Description:** Instead of spraying bundles randomly, PRoPHET assigns each node pair a delivery predictability $P_{(a, b)} \in [0, 1]$. In this framework, PRoPHET's predictability equations are embedded into [`EddTelemetrySampler.java`](../src/routing/EddTelemetrySampler.java) to govern single-copy custodial handoffs.
 
-*   **SCaN (Space Communications and Navigation):**
-    *   **Meaning:** NASA’s program responsible for space communications infrastructure spanning the Deep Space Network (DSN), Near Space Network (NSN), and Space Network (SN / TDRS).
-    *   **Description:** The operational lineage and target operational deployment for this cognitive networking framework, addressing high-latency lunar (Artemis) and deep-space missions.
+*   **Deep-Space & Non-Terrestrial DTN (NTN):**
+    *   **Meaning:** Space communications infrastructure spanning orbital relays, planetary surface clusters, and disrupted deep-space links.
+    *   **Description:** One of the target operational evaluation domains for this autonomic networking framework alongside vehicular DTNs (VDTN).
 
 ---
 
@@ -379,19 +380,19 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **EDD (Externally Defined Data):**
     *   **Meaning:** Strongly-typed operational state metrics sourced from platform hardware, network layer queues, physical sensors, or movement models (e.g., `EDD_QUEUE_RATIO`, `EDD_NODE_SPEED`).
-    *   **Description:** Implemented in [`EddTelemetrySampler.java`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L200-L226), EDDs represent the input telemetry vector $\mathbf{x}_i(t)$ sampled at discrete intervals to feed the condition evaluation engine.
+    *   **Description:** Implemented in [`EddTelemetrySampler.java`](../src/routing/EddTelemetrySampler.java), EDDs represent the input telemetry vector $\mathbf{x}_i(t)$ sampled at discrete intervals to feed the condition evaluation engine.
 
 *   **SRL (State-Based Rule):**
     *   **Meaning:** An autonomous event-condition-action rule defined in DTNMA: `IF <Predicate> THEN <ControlActions>`.
-    *   **Description:** Encapsulated in [`StateBasedRule.java`](file:///n:/R&D/cog/the-one/src/routing/StateBasedRule.java), an SRL defines policy logic paired with an explicit priority integer $\pi$ and an explainable causal audit string.
+    *   **Description:** Encapsulated in [`StateBasedRule.java`](../src/routing/StateBasedRule.java), an SRL defines policy logic paired with an explicit priority integer $\pi$ and an explainable causal audit string.
 
 *   **CTRL (Control / Control Action):**
     *   **Meaning:** An atomic actuation command executed by the router when an SRL fires (e.g., `CTRL_SET_SPRAY_QUOTA`, `CTRL_SET_BACKPRESSURE`).
-    *   **Description:** Implemented in [`ControlAction.java`](file:///n:/R&D/cog/the-one/src/routing/ControlAction.java), controls act as hardware and protocol actuators, modifying active router state variables instantaneously in memory.
+    *   **Description:** Implemented in [`ControlAction.java`](../src/routing/ControlAction.java), controls act as hardware and protocol actuators, modifying active router state variables instantaneously in memory.
 
 *   **Predicate Expression & Clause:**
     *   **Meaning:** The Boolean conditional expression that determines if an SRL should trigger.
-    *   **Description:** Implemented in [`PredicateExpression.java`](file:///n:/R&D/cog/the-one/src/routing/PredicateExpression.java), a *clause* evaluates an individual EDD metric against a numerical threshold using relational operators ($\ge, \le, >, <, ==, \ne$). The composite *predicate expression* evaluates multiple clauses joined by conjunction (AND) or disjunction (OR).
+    *   **Description:** Implemented in [`PredicateExpression.java`](../src/routing/PredicateExpression.java), a *clause* evaluates an individual EDD metric against a numerical threshold using relational operators ($\ge, \le, >, <, ==, \ne$). The composite *predicate expression* evaluates multiple clauses joined by conjunction (AND) or disjunction (OR).
 
 *   **Priority Arbitration:**
     *   **Meaning:** The deterministic selection algorithm used when multiple conflicting rules evaluate to TRUE simultaneously.
@@ -403,23 +404,23 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Queue Occupancy Ratio ($Q_i(t)$):**
     *   **Meaning:** The instantaneous fraction of allocated buffer storage relative to total capacity ($Q \in [0.0, 1.0]$).
-    *   **Description:** Implemented in [`DtnmaRouter.java#L514-L517`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L514-L517), this normalized metric allows identical rule thresholds to execute consistently across heterogeneous platforms (from cubesats with 5 MB to orbiters with 100 MB).
+    *   **Description:** Implemented in [`DtnmaRouter.java#L514-L517`](../src/routing/DtnmaRouter.java), this normalized metric allows identical rule thresholds to execute consistently across heterogeneous platforms (from cubesats with 5 MB to orbiters with 100 MB).
 
 *   **Queue Drift ($\dot{Q}_i(t)$):**
     *   **Meaning:** The first time-derivative (rate of change) of the queue occupancy ratio ($\text{s}^{-1}$).
-    *   **Description:** Implemented in [`EddTelemetrySampler.java#L170`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L170). A positive drift indicates incoming packet accumulation ($\lambda > \mu$), warning the node of impending overflow before saturation actually occurs.
+    *   **Description:** Implemented in [`EddTelemetrySampler.java#L170`](../src/routing/EddTelemetrySampler.java). A positive drift indicates incoming packet accumulation ($\lambda > \mu$), warning the node of impending overflow before saturation actually occurs.
 
 *   **Universal Kinematic Velocity ($v_i(t)$):**
     *   **Meaning:** The instantaneous Euclidean movement speed of a node ($\text{m/s}$).
-    *   **Description:** Calculated in [`EddTelemetrySampler.java#L177-L180`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L177-L180) across coordinate deltas. Used to distinguish high-speed highway or orbital transit (where contact times are fleeting) from stationary or pedestrian nodes.
+    *   **Description:** Calculated in [`EddTelemetrySampler.java#L177-L180`](../src/routing/EddTelemetrySampler.java) across coordinate deltas. Used to distinguish high-speed highway or orbital transit (where contact times are fleeting) from stationary or pedestrian nodes.
 
 *   **Sliding-Window Contact Density ($D_i(t, W)$):**
     *   **Meaning:** The number of unique physical neighbors encountered within a historical moving time window ($W = 300\text{ s}$).
-    *   **Description:** Implemented in [`EddTelemetrySampler.java#L235-L246`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L235-L246). Unlike instantaneous degree (which drops to zero during brief link fades), sliding-window density provides a stable measure of topology clustering.
+    *   **Description:** Implemented in [`EddTelemetrySampler.java#L235-L246`](../src/routing/EddTelemetrySampler.java). Unlike instantaneous degree (which drops to zero during brief link fades), sliding-window density provides a stable measure of topology clustering.
 
 *   **State of Charge (SoC / $E_i(t)$) & Drain Rate ($\dot{E}_i(t)$):**
     *   **Meaning:** Remaining battery level normalized to $[0.0, 1.0]$ and the rate of energy dissipation per second.
-    *   **Description:** Sourced from [`EnergyModel.java`](file:///n:/R&D/cog/the-one/src/routing/util/EnergyModel.java). When $E_i(t) < 0.20$, nodes enter power-saving emergency states, suppressing non-essential relaying.
+    *   **Description:** Sourced from `EnergyModel.java`. When $E_i(t) < 0.20$, nodes enter power-saving emergency states, suppressing non-essential relaying.
 
 ---
 
@@ -431,15 +432,15 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Binary Halving (Binary Splitting):**
     *   **Meaning:** The recursive algorithm where a transferring node splits its remaining token count evenly with a receiver.
-    *   **Description:** Implemented in [`DtnmaRouter.java#L364-L384`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L364-L384). The sender retains $\lceil C / 2 \rceil$ while the receiver gets $\lfloor C / 2 \rfloor$. This produces a logarithmic replication tree of depth $\lceil \log_2 C_0 \rceil$ with mathematically invariant token conservation.
+    *   **Description:** Implemented in [`DtnmaRouter.java#L364-L384`](../src/routing/DtnmaRouter.java). The sender retains $\lceil C / 2 \rceil$ while the receiver gets $\lfloor C / 2 \rfloor$. This produces a logarithmic replication tree of depth $\lceil \log_2 C_0 \rceil$ with mathematically invariant token conservation.
 
 *   **Cognitive Focus Handoff Phase:**
     *   **Meaning:** The routing phase entered when a bundle's token count decrements to $C(m) = 1$.
-    *   **Description:** Implemented in [`DtnmaRouter.java#L311-L332`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L311-L332). The router ceases replication and only transfers the bundle to relays demonstrating a proven mathematical predictability advantage toward the destination, relinquishing its local copy upon transfer.
+    *   **Description:** Implemented in [`DtnmaRouter.java#L311-L332`](../src/routing/DtnmaRouter.java). The router ceases replication and only transfers the bundle to relays demonstrating a proven mathematical predictability advantage toward the destination, relinquishing its local copy upon transfer.
 
 *   **Single-Copy Conservation Invariant:**
     *   **Meaning:** The structural guarantee that exactly one instance of a bundle exists network-wide once it enters the focus phase.
-    *   **Description:** Ensured by sender deletion ([`DtnmaRouter.java#L369`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L369)) and receiver token clamping ([`DtnmaRouter.java#L388`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L388)). Prevents the accidental re-seeding of duplicate bundles.
+    *   **Description:** Ensured by sender deletion ([`DtnmaRouter.java#L369`](../src/routing/DtnmaRouter.java)) and receiver token clamping ([`DtnmaRouter.java#L388`](../src/routing/DtnmaRouter.java)). Prevents the accidental re-seeding of duplicate bundles.
 
 *   **Delivery Predictability ($P_{(a, b)}$):**
     *   **Meaning:** A scalar in $[0, 1]$ estimating the probability that node $a$ will encounter destination node $b$.
@@ -447,7 +448,7 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Transitive Predictability ($\beta$):**
     *   **Meaning:** The mathematical property where if node $A$ frequently meets node $B$, and node $B$ frequently meets node $C$, node $A$ infers indirect reachability to node $C$.
-    *   **Description:** Implemented via transitivity multiplier $\beta = 0.25$ in [`EddTelemetrySampler.java#L105-L127`](file:///n:/R&D/cog/the-one/src/routing/EddTelemetrySampler.java#L105-L127).
+    *   **Description:** Implemented via transitivity multiplier $\beta = 0.25$ in [`EddTelemetrySampler.java#L105-L127`](../src/routing/EddTelemetrySampler.java).
 
 ---
 
@@ -455,7 +456,7 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Backpressure Queue Gradient Forwarding:**
     *   **Meaning:** A flow control mechanism where bundle transfers are conditioned on the buffer occupancy difference between sender and receiver.
-    *   **Description:** Implemented in [`DtnmaRouter.java#L295-L306`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L295-L306). If neighbor buffer occupancy exceeds local occupancy by $\ge 15\%$, bulk transfers are halted, forcing bundles to route around localized buffer bottlenecks.
+    *   **Description:** Implemented in [`DtnmaRouter.java#L295-L306`](../src/routing/DtnmaRouter.java). If neighbor buffer occupancy exceeds local occupancy by $\ge 15\%$, bulk transfers are halted, forcing bundles to route around localized buffer bottlenecks.
 
 *   **Hot-Potato / Buffer Ping-Pong Defect:**
     *   **Meaning:** An undesirable pathology where two congested nodes repeatedly bounce messages back and forth between each other, consuming radio energy and link airtime without making progress toward the destination.
@@ -463,7 +464,7 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Dual-Tier Priority Queuing:**
     *   **Meaning:** A strict two-class traffic architecture partitioning messages into Class 0 (Critical Fault Telemetry) and Class 1 (Bulk Science Payload).
-    *   **Description:** Implemented in [`sortMessagesDualTier()`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L445-L458). Class 0 bundles are sorted ahead of all Class 1 bundles, regardless of message arrival order or file size.
+    *   **Description:** Implemented in [`sortMessagesDualTier()`](../src/routing/DtnmaRouter.java). Class 0 bundles are sorted ahead of all Class 1 bundles, regardless of message arrival order or file size.
 
 *   **Head-of-Line (HoL) Preemption:**
     *   **Meaning:** The scheduling property where higher-priority packets immediately jump to the front of the transmission queue, preempting bulk traffic.
@@ -471,11 +472,11 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Constructive Ingress Admission Control:**
     *   **Meaning:** Rejecting incoming messages at the link handshake level (`DENIED_NO_SPACE`) prior to physical transmission.
-    *   **Description:** Implemented in [`checkReceiving()`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L398-L409). Contrast with *destructive post-hoc dropping*, where a node consumes battery and airtime to receive a bundle over radio, only to drop it immediately because memory is full.
+    *   **Description:** Implemented in [`checkReceiving()`](../src/routing/DtnmaRouter.java). Contrast with *destructive post-hoc dropping*, where a node consumes battery and airtime to receive a bundle over radio, only to drop it immediately because memory is full.
 
 *   **Inviolable Zero-Drop Storage:**
     *   **Meaning:** A safety guarantee that critical telemetry bundles will never be evicted from memory to make room for other bundles.
-    *   **Description:** Implemented in [`getNextMessageToRemove()`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L416-L440). Eviction candidates are strictly restricted to Class 1 bulk messages sorted by lowest token count and lowest TTL. Critical telemetry is mathematically excluded from the drop candidate set.
+    *   **Description:** Implemented in [`getNextMessageToRemove()`](../src/routing/DtnmaRouter.java). Eviction candidates are strictly restricted to Class 1 bulk messages sorted by lowest token count and lowest TTL. Critical telemetry is mathematically excluded from the drop candidate set.
 
 ---
 
@@ -483,7 +484,7 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Explainable AI (XAI) / Causal Audit Trail:**
     *   **Meaning:** A logging mechanism providing human-readable explanations of why an autonomic action occurred.
-    *   **Description:** Implemented in [`DtnmaAuditReport.java`](file:///n:/R&D/cog/the-one/src/report/DtnmaAuditReport.java) and [`PredicateExpression.java#L48`](file:///n:/R&D/cog/the-one/src/routing/PredicateExpression.java#L48). Generates explicit logs (e.g., `[EDD_QUEUE_RATIO(0.94) >= 0.92 -> TRUE]`) to ensure ground operators can verify autonomous space routing decisions forensically.
+    *   **Description:** Implemented in [`DtnmaAuditReport.java`](../src/report/DtnmaAuditReport.java) and [`PredicateExpression.java#L48`](../src/routing/PredicateExpression.java). Generates explicit logs (e.g., `[EDD_QUEUE_RATIO(0.94) >= 0.92 -> TRUE]`) to ensure ground operators can verify autonomous space routing decisions forensically.
 
 *   **Lyapunov Stability:**
     *   **Meaning:** A mathematical technique from dynamical systems theory proving that system state variables (e.g., buffer queue occupancy) converge asymptotically to an equilibrium point rather than diverging into unbounded growth.
@@ -491,18 +492,18 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 *   **Connection Pre-Caching Optimization:**
     *   **Meaning:** An algorithmic optimization that caches peer queue states and router types once per simulation timestep across active connections.
-    *   **Description:** Implemented in [`DtnmaRouter.java#L235-L256`](file:///n:/R&D/cog/the-one/src/routing/DtnmaRouter.java#L235-L256). Reduces the algorithmic complexity of forwarding scans from $\mathcal{O}(|\mathcal{B}| \cdot |\mathcal{A}|)$ down to $\mathcal{O}(|\mathcal{A}|) + \mathcal{O}(|\mathcal{B}| \log |\mathcal{B}|)$, eliminating simulator CPU bottlenecks.
+    *   **Description:** Implemented in [`DtnmaRouter.java#L235-L256`](../src/routing/DtnmaRouter.java). Reduces the algorithmic complexity of forwarding scans from $\mathcal{O}(|\mathcal{B}| \cdot |\mathcal{A}|)$ down to $\mathcal{O}(|\mathcal{A}|) + \mathcal{O}(|\mathcal{B}| \log |\mathcal{B}|)$, eliminating simulator CPU bottlenecks.
 
 *   **3-Tier Verification Pipeline:**
     *   **Meaning:** The multi-scale empirical testing methodology utilized to validate DTNMA across:
-        1.  *Tier 1 (Micro-Level):* Per-second event traces verifying individual rule triggers and link handshakes ([`DtnmaDecisionReport.java`](file:///n:/R&D/cog/the-one/src/report/DtnmaDecisionReport.java)).
+        1.  *Tier 1 (Micro-Level):* Per-second event traces verifying individual rule triggers and link handshakes ([`DtnmaDecisionReport.java`](../src/report/DtnmaDecisionReport.java)).
         2.  *Tier 2 (Domain-Specific):* Preservation benchmarks verifying 100% critical fault delivery alongside bulk science shedding under severe contention.
         3.  *Tier 3 (Macro-Level):* Large-scale Monte Carlo parametric studies across 210 simulation runs varying buffer sizes, TTLs, and RNG seeds.
 
 *   **Target Operational Environments (VDTN / NTN / FANET):**
-    *   **VDTN (Vehicular Delay-Tolerant Network):** High-speed road networks with intermittent intersections and road-side units (RSUs) configured in [`rules_vdtn.txt`](file:///n:/R&D/cog/the-one/scenarios/rules_vdtn.txt).
-    *   **NTN (Non-Terrestrial Networks):** Space-based constellations, orbital relays, and planetary surface rovers with long propagation delays configured in [`rules_ntn.txt`](file:///n:/R&D/cog/the-one/scenarios/rules_ntn.txt).
-    *   **FANET (Flying Ad-Hoc Network / UAV Swarms):** High-mobility aerial drone swarms where relaying decisions depend on flight battery depletion configured in [`rules_uav.txt`](file:///n:/R&D/cog/the-one/scenarios/rules_uav.txt).
+    *   **VDTN (Vehicular Delay-Tolerant Network):** High-speed road networks with intermittent intersections and road-side units (RSUs) configured in [`rules_vdtn.txt`](../scenarios/rules_vdtn.txt).
+    *   **NTN (Non-Terrestrial Networks):** Space-based constellations, orbital relays, and planetary surface rovers with long propagation delays configured in [`rules_ntn.txt`](../scenarios/rules_ntn.txt).
+    *   **FANET (Flying Ad-Hoc Network / UAV Swarms):** High-mobility aerial drone swarms where relaying decisions depend on flight battery depletion configured in [`rules_uav.txt`](../scenarios/rules_uav.txt).
 
 ---
 
@@ -514,7 +515,7 @@ Here is a comprehensive glossary of the technical jargons, standards, algorithmi
 
 ## 🤖 Assistant Response #3
 
-The publication-ready, IEEE-formatted LaTeX source has been written to [dtnma_mathematical_formulation.tex](file:///n:/R&D/cog/dtnma_mathematical_formulation.tex) and successfully compiled into [dtnma_mathematical_formulation.pdf](file:///n:/R&D/cog/dtnma_mathematical_formulation.pdf).
+The publication-ready, IEEE-formatted LaTeX source has been written to [dtnma_mathematical_formulation.tex](dtnma_mathematical_formulation.tex) and successfully compiled into [dtnma_mathematical_formulation.pdf](dtnma_mathematical_formulation.pdf).
 
 Below is the complete LaTeX code ready to paste into Overleaf or an IEEE / ACM / AIAA journal/conference template:
 
@@ -544,14 +545,14 @@ Below is the complete LaTeX code ready to paste into Overleaf or an IEEE / ACM /
 \title{Mathematical Foundations of Autonomic Delay-Tolerant Network Management Architecture (DTNMA) Routing}
 
 \author{Autonomous~Space~Networking~Research~Group%
-\thanks{Corresponding module implementations in NASA SCaN Cognitive DTNMA Framework.}}
+\thanks{Corresponding module implementations in the Autonomic DTNMA Open-Source Framework.}}
 
 \markboth{IEEE Transactions on Mobile Computing / Aerospace and Electronic Systems}{DTNMA Mathematical Formulation}
 
 \maketitle
 
 \begin{abstract}
-Delay- and Disruption-Tolerant Networks (DTNs) deployed in deep space and terrestrial tactical domains face severe intermittent connectivity, prolonged orbital round-trip times, and extreme buffer contention. Centralized network management protocols (e.g., SNMP, NETCONF) fail catastrophically under these conditions. This paper presents the comprehensive mathematical formulation of the autonomic DTNMA routing framework conforming to RFC~9675 (DTNMA) and RFC~7575 (Autonomic Networking). We derive the state-space dynamics of strongly-typed Externally Defined Data (EDD) telemetry, model probabilistic encounter recurrences, establish formal proofs for binary token conservation and single-copy invariants, and formulate constructive ingress admission control and backpressure queue gradient gating. Furthermore, we provide a formal proof of the Inviolable Zero-Drop Theorem for high-priority fault telemetry and prove the asymptotic Lyapunov stability of the closed-loop autonomous system under severe buffer congestion.
+Delay- and Disruption-Tolerant Networks (DTNs) deployed in deep space and terrestrial tactical domains face severe intermittent connectivity, prolonged orbital round-trip times, and extreme buffer contention. Centralized network management protocols (e.g., SNMP, NETCONF) fail catastrophically under these conditions. This paper presents the comprehensive mathematical formulation of the autonomic DTNMA routing framework inspired by RFC~9675 (DTNMA) and RFC~7575 (Autonomic Networking). We derive the state-space dynamics of strongly-typed Externally Defined Data (EDD) telemetry, model probabilistic encounter recurrences, establish formal proofs for binary token conservation and single-copy invariants, and formulate constructive ingress admission control and backpressure queue gradient gating. Furthermore, we provide a formal proof of the Inviolable Zero-Drop Theorem for high-priority fault telemetry and prove the asymptotic Lyapunov stability of the closed-loop autonomous system under severe buffer congestion.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -597,7 +598,7 @@ where $\mathcal{C}_0$ denotes \emph{Class~0: Critical Fault Observability Teleme
 \section{Strongly-Typed EDD Telemetry Vector Dynamics}
 % =========================================================================
 
-Conforming to RFC~9675, node $i$ periodically computes an 8-dimensional Externally Defined Data (EDD) telemetry vector:
+Inspired by RFC~9675, node $i$ periodically computes an 8-dimensional Externally Defined Data (EDD) telemetry vector:
 \begin{equation}
 \mathbf{x}_i(t) = \bigl[ Q_i(t), \; \dot{Q}_i(t), \; v_i(t), \; D_i, \; E_i(t), \; \dot{E}_i(t), \; k_i(t), \; Q_{\min, i}^{\mathcal{N}} \bigr]^T
 \end{equation}
@@ -1021,7 +1022,7 @@ S.~Burleigh, K.~Fall, and E.~Birrane, ``Bundle Protocol Version 7,'' \emph{IETF 
    * **Theorem 3 (Inviolable Zero-Drop Telemetry Theorem):** Formally proves that $\mathbb{P}(\text{Drop}(m) \mid m \in \mathcal{C}_0) \equiv 0.0$ under arbitrary load and contention.
 3. **Lyapunov Stability Proof:** Formulates the continuous fluid queue dynamics and proves $\dot{V}(Q) < 0$ when $Q \ge 0.92$, demonstrating asymptotic convergence into the safe invariant set.
 4. **Algorithmic Complexity & Pseudo-code:** Includes **Algorithm 1**, showing the $\mathcal{O}(|\mathcal{A}_i|) + \mathcal{O}(|\mathcal{B}_i| \log |\mathcal{B}_i|)$ connection pre-caching optimization.
-5. **Codebase Cross-Reference Table:** **Table 1** maps each mathematical operator directly to its corresponding Java class and method in [`the-one/src/routing`](file:///n:/R&D/cog/the-one/src/routing).
+5. **Codebase Cross-Reference Table:** **Table 1** maps each mathematical operator directly to its corresponding Java class and method in [`the-one/src/routing`](../src/routing).
 
 ---
 

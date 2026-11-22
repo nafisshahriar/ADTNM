@@ -30,15 +30,15 @@ public class DtnmaConfig {
     public boolean ackFeedbackEnabled = true;
     public double rlEpochInterval = 15.0;
 
-    // Primal-Dual CMDP RL Hyperparameters
+    // Single-Critic Expected SARSA RL Hyperparameters (rlLambdaInit/rlEtaLambda retained at 0.0 for config compatibility)
     public double rlAlpha = 0.15;
     public double rlGamma = 0.90;
     public double rlWeightDecay = 1e-4;
     public double rlEpsilonStart = 0.15;
     public double rlEpsilonMin = 0.01;
     public double rlEpsilonDecay = 900.0;
-    public double rlLambdaInit = 0.25;
-    public double rlEtaLambda = 0.02;
+    public double rlLambdaInit = 0.0;
+    public double rlEtaLambda = 0.0;
     public double rlTargetCost = 0.30;
     public double rlLambdaMax = 5.0;
     public double rlOptimisticInit = 0.0;

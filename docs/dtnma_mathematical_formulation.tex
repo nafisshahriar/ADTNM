@@ -23,14 +23,14 @@
 \title{Mathematical Foundations of Autonomic Delay-Tolerant Network Management Architecture (DTNMA) Routing}
 
 \author{Autonomous~Space~Networking~Research~Group%
-\thanks{Internal R\&D Technical Specification. Corresponding module implementations in NASA/SCaN DTNMA Open-Source Framework.}}
+\thanks{Internal R\&D Technical Specification. Corresponding module implementations in the Autonomic DTNMA Open-Source Framework (\url{https://github.com/nafisshahriar/ADTNM}).}}
 
 \markboth{IEEE Transactions on Mobile Computing / Aerospace and Electronic Systems (Preprint)}{DTNMA Mathematical Formulation}
 
 \maketitle
 
 \begin{abstract}
-Delay- and Disruption-Tolerant Networks (DTNs) deployed in deep space and terrestrial tactical domains face severe intermittent connectivity, prolonged orbital round-trip times, and extreme buffer contention. Centralized network management protocols (e.g., SNMP, NETCONF) fail catastrophically under these conditions. This paper presents the comprehensive mathematical formulation of the autonomic DTNMA routing framework conforming to RFC~9675 (DTNMA) and RFC~7575 (Autonomic Networking). We derive the state-space dynamics of strongly-typed Externally Defined Data (EDD) telemetry, model probabilistic encounter recurrences, establish formal proofs for binary token conservation and single-copy invariants, and formulate constructive ingress admission control and backpressure queue gradient gating. Furthermore, we provide a formal proof of the Inviolable Zero-Drop Theorem for high-priority fault telemetry and prove the asymptotic Lyapunov stability of the closed-loop autonomous system under severe buffer congestion.
+Delay- and Disruption-Tolerant Networks (DTNs) deployed in deep space and terrestrial tactical domains face severe intermittent connectivity, prolonged orbital round-trip times, and extreme buffer contention. Centralized network management protocols (e.g., SNMP, NETCONF) fail catastrophically under these conditions. This paper presents the comprehensive mathematical formulation of the autonomic DTNMA routing framework inspired by RFC~9675 (DTNMA) and RFC~7575 (Autonomic Networking). We derive the state-space dynamics of strongly-typed Externally Defined Data (EDD) telemetry, model probabilistic encounter recurrences, establish formal proofs for binary token conservation and single-copy invariants, and formulate constructive ingress admission control and backpressure queue gradient gating. Furthermore, we provide a formal proof of the Inviolable Zero-Drop Theorem for high-priority fault telemetry and prove the asymptotic Lyapunov stability of the closed-loop autonomous system under severe buffer congestion.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -41,7 +41,7 @@ Delay-Tolerant Networking (DTN), DTNMA, RFC 9675, Autonomic Networking, Binary T
 \section{Introduction and System Model}
 % =========================================================================
 
-\IEEEPARstart{C}{onventional} terrestrial networking paradigms rely upon persistent end-to-end paths and bounded round-trip latencies. In contrast, deep-space, vehicular (VDTN), and aerial (FANET) networks operate under time-varying, episodic topology graphs where instantaneous paths between sources and destinations rarely exist. To provide automated, survivable operations in the absence of real-time human control, the Delay-Tolerant Network Management Architecture (DTNMA, RFC~9675~\cite{rfc9675}) introduces asynchronous, declarative management via State-Based Rules (SRLs).
+\IEEEPARstart{C}{onventional} terrestrial networking paradigms rely upon persistent end-to-end paths and bounded round-trip latencies. In contrast, deep-space, vehicular (VDTN), and aerial (FANET) networks operate under time-varying, episodic topology graphs where instantaneous paths between sources and destinations rarely exist. To provide automated, survivable operations in the absence of real-time human control, the Delay-Tolerant Network Management Architecture (DTNMA, RFC~9675~\cite{rfc9675}) motivates asynchronous, decentralized management via State-Based Rules (SRLs); our simulator abstraction adopts human-readable text rules alongside Single-Critic Shielded Counterfactual Expected SARSA and Same-Class Peer Gossip (648~B).
 
 \subsection{Network Graph Formalism}
 We model the network as an episodic, time-varying contact graph:

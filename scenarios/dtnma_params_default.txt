@@ -1,6 +1,7 @@
 # ====================================================================
 # ADTNM USER-TUNABLE INTELLIGENCE, GOSSIP, ACK & SHIELD PARAMETERS
-# Default Profile: Shielded CMDP RL + Mobility-Class Gossip + Delayed ACK
+# Default Profile: Single-Critic Shielded Counterfactual Expected SARSA +
+#                  Same-Mobility-Class Peer Gossip (648 B) + Delayed ACK
 #
 # Usage in scenario file:
 #   DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
@@ -17,15 +18,16 @@ gossipEnabled = true
 ackFeedbackEnabled = true
 rlEpochInterval = 15.0
 
-# --- 2. Primal-Dual CMDP RL Hyperparameters ---
+# --- 2. Single-Critic Expected SARSA Hyperparameters ---
+# Note: rlLambdaInit & rlEtaLambda are retired (0.0) in single-critic mode
 rlAlpha = 0.15
 rlGamma = 0.90
 rlWeightDecay = 0.0001
 rlEpsilonStart = 0.15
 rlEpsilonMin = 0.01
 rlEpsilonDecay = 900.0
-rlLambdaInit = 0.25
-rlEtaLambda = 0.02
+rlLambdaInit = 0.0
+rlEtaLambda = 0.0
 rlTargetCost = 0.30
 rlLambdaMax = 5.0
 rlOptimisticInit = 0.0

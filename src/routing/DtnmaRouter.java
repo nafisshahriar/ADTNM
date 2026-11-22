@@ -165,17 +165,7 @@ public class DtnmaRouter extends ActiveRouter {
         }
 
         this.ruleDatabase = new ArrayList<StateBasedRule>();
-        if (rFile != null) {
-            try {
-                this.ruleDatabase = DtnmaRuleParser.parseFile(rFile);
-            } catch (Exception e) {
-                System.err.println("Warning: Failed to load DTNMA rules from " + rFile + " (" + e.getMessage() + "), using defaults.");
-                initDefaultRuleDatabase();
-            }
-        } else {
-            initDefaultRuleDatabase();
-        }
-        DtnmaSafetyShield.sanitizeRules(this.ruleDatabase);
+        loadRulesFromFile(rFile);
 
         this.config = DtnmaConfig.load(s, dtnmaSettings);
         this.intelligenceMode = this.config.intelligenceMode;
@@ -263,7 +253,26 @@ public class DtnmaRouter extends ActiveRouter {
     }
 
     /**
-     * Initializes the default RFC 9675 State-Based Rule database.
+     * Loads and safety-sanitizes declarative State-Based Rules (SRLs) from the given file path,
+     * falling back to the built-in default rules if rFile is null or unreadable.
+     */
+    protected final void loadRulesFromFile(String rFile) {
+        this.ruleDatabase = new ArrayList<StateBasedRule>();
+        if (rFile != null && !rFile.trim().isEmpty()) {
+            try {
+                this.ruleDatabase = DtnmaRuleParser.parseFile(rFile.trim());
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to load DTNMA rules from " + rFile + " (" + e.getMessage() + "), using defaults.");
+                initDefaultRuleDatabase();
+            }
+        } else {
+            initDefaultRuleDatabase();
+        }
+        DtnmaSafetyShield.sanitizeRules(this.ruleDatabase);
+    }
+
+    /**
+     * Initializes the default RFC 9675-inspired State-Based Rule database.
      */
     private void initDefaultRuleDatabase() {
         PredicateExpression pCrit = new PredicateExpression(false); // OR
@@ -850,7 +859,7 @@ public class DtnmaRouter extends ActiveRouter {
                     ackedCand = m;
                     break;
                 }
-                Integer copies = (Integer) m.getProperty(copiesPropKey);
+                Integer copies = (copiesPropKey != null) ? (Integer) m.getProperty(copiesPropKey) : null;
                 int cVal = (copies != null) ? copies : 1;
                 if (cVal > 1) {
                     if (redundantCand == null || cVal > highestRedundantCopies
@@ -1240,6 +1249,8 @@ public class DtnmaRouter extends ActiveRouter {
     public double getMaxBufferOccupancy() { return maxBufferOccupancy; }
     public long getLocalCreationRejected() { return localCreationRejected; }
     public long[] getProfileExecCounts() { return profileExecCounts; }
+    public int getCurrentSprayQuota() { return currentSprayQuota; }
+    public List<StateBasedRule> getRuleDatabase() { return Collections.unmodifiableList(ruleDatabase); }
 
     @Override
     public MessageRouter replicate() {

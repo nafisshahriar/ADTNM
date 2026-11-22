@@ -1,0 +1,111 @@
+# ====================================================================
+# PHASE 2 SPACE / NTN OUT-OF-DISTRIBUTION GENERALIZATION CAMPAIGN (COPRIME VERIFIED)
+# Evaluates 100% FROZEN VDTN-tuned hyperparameters on a completely unseen
+# Space/NTN topology: two separated lunar surface clusters (Alpha & Beta, 6km apart)
+# bridged exclusively by fast orbital/LEO relays over a shared RF interface,
+# with finite native EnergyModel budgets across 11 unseen prime seeds (5003..5087).
+#
+# Swept Parameters:
+#   7 Routers : PrioritySprayAndWaitRouter; MaxPropRouter; PriorityMaxPropRouter;
+#               DtnmaStaticAckRouter; DtnmaStaticAckTunedRouter;
+#               DtnmaShieldedAckRLRouter; DtnmaGossipAckRLRouter
+#  11 Seeds   : 5003; 5009; 5011; 5021; 5023; 5039; 5051; 5059; 5077; 5081; 5087
+# Fixed Buffer: 10M (relays 25M) | Fixed TTL: 300 | Duration: 8h (28800s)
+# Pairwise Coprime Lengths: (7, 11) => 77 unique simulation runs
+# ====================================================================
+
+## Scenario settings
+Scenario.name = Phase2NtnGen_%%Group.router%%_%%MovementModel.rngSeed%%_%%Group.msgTtl%%_%%Group.bufferSize%%
+Scenario.simulateConnections = true
+Scenario.updateInterval = 0.5
+# 28800s == 8h
+Scenario.endTime = 28800
+
+## Interface-specific settings (Shared S-Band / Ka-Band NTN Link):
+ntnLink.type = SimpleBroadcastInterface
+ntnLink.transmitSpeed = 500k
+ntnLink.transmitRange = 600
+
+Scenario.nrofHostGroups = 3
+
+## Common settings for all groups
+Group.router = [PrioritySprayAndWaitRouter; MaxPropRouter; PriorityMaxPropRouter; DtnmaStaticAckRouter; DtnmaStaticAckTunedRouter; DtnmaShieldedAckRLRouter; DtnmaGossipAckRLRouter]
+Group.bufferSize = 10M
+Group.nrofInterfaces = 1
+Group.interface1 = ntnLink
+Group.msgTtl = 300
+Group.waitTime = 5, 30
+Group.speed = 1.0, 4.0
+
+## Native ONE EnergyModel (Finite rover & solar-backed orbital budgets)
+Group.initialEnergy = 2000
+Group.scanEnergy = 0.005
+Group.scanResponseEnergy = 0.05
+Group.transmitEnergy = 1.5
+Group.energyWarmup = 1
+
+# Group 1: Lunar Base Alpha Surface Rovers (20 nodes, West Cluster)
+Group1.groupID = a
+Group1.nrofHosts = 20
+Group1.movementModel = ClusterMovement
+Group1.clusterCenter = 2000, 3000
+Group1.clusterRange = 1200
+
+# Group 2: Lunar Base Beta Surface Rovers (20 nodes, East Cluster, 6 km separation)
+Group2.groupID = b
+Group2.nrofHosts = 20
+Group2.movementModel = ClusterMovement
+Group2.clusterCenter = 8000, 3000
+Group2.clusterRange = 1200
+
+# Group 3: Orbital / LEO Relay Satellites (10 fast nodes bridging disconnected bases)
+Group3.groupID = s
+Group3.nrofHosts = 10
+Group3.bufferSize = 25M
+Group3.initialEnergy = 4000
+Group3.movementModel = RandomWaypoint
+Group3.speed = 40.0, 60.0
+Group3.waitTime = 0, 5
+
+## Baseline SOTA Router Settings
+SprayAndWaitRouter.nrofCopies = 6
+SprayAndWaitRouter.binaryMode = true
+MaxPropRouter.alpha = 1.0
+MaxPropRouter.probSetMaxSize = 50
+
+## DTNMA Autonomic Router Settings (100% Frozen VDTN RL Config + NTN Declarative Rules)
+DtnmaRouter.rulesFile = scenarios/rules_ntn.txt
+DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
+
+## Movement Model & World Area (10 km x 6 km cislunar surface+orbital field)
+MovementModel.rngSeed = [5003; 5009; 5011; 5021; 5023; 5039; 5051; 5059; 5077; 5081; 5087]
+MovementModel.worldSize = 10000, 6000
+MovementModel.warmup = 1000
+
+## Message Creation Parameters (50 total hosts: 0..49)
+Events.nrof = 2
+
+# Event 1: Critical Spacecraft / Rover Fault Telemetry
+Events1.class = MessageEventGenerator
+Events1.prefix = CRITICAL_FAULT_
+Events1.size = 10k, 25k
+Events1.interval = 45, 90
+Events1.hosts = 0, 50
+
+# Event 2: Bulk Science Imagery / Instrument Payload
+Events2.class = MessageEventGenerator
+Events2.prefix = SCIENCE_DATA_
+Events2.size = 500k, 1M
+Events2.interval = 18, 32
+Events2.hosts = 0, 50
+
+## Reports (Isolated to reports/phase2_ntn_gen/)
+Report.nrofReports = 2
+Report.warmup = 0
+Report.reportDir = reports/phase2_ntn_gen/
+Report.report1 = MessageStatsReport
+Report.report2 = DtnmaRlMetricsReport
+
+## Optimization settings
+Optimization.cellSizeMult = 5
+Optimization.randomizeUpdateOrder = true

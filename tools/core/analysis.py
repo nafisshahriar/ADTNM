@@ -533,9 +533,13 @@ class PlotGenerator:
             
             fig, ax = plt.subplots(figsize=tuple(settings['size']))
             
-            # Get marker styles and colors
+            # Get marker styles and colors (12 distinct colorblind-friendly colors for >=11 routers)
             marker_styles = settings['markers']
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+            colors = [
+                '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+                '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
+                '#bcbd22', '#17becf', '#003f5c', '#bc5090'
+            ]
             
             plotted_routers = []
             for i, router in enumerate(sorted(df['router'].unique())):  # Sort for consistency

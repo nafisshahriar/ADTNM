@@ -1,26 +1,32 @@
 /*
  * DtnmaRlMetricsReport.java
- * OppNDA-compatible key:value summary reporter for Phase 1 Shielded CMDP RL,
- * RFC 9675 Safety Shield intervention decay, control overhead, and Option A drop split.
+ * OppNDA-compatible key:value summary reporter for Single-Critic Shielded RL,
+ * RFC 9675-inspired Safety Shield intervention decay, control overhead, drop split,
+ * and cross-router EnergyModel battery telemetry.
  */
 package report;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import core.DTNHost;
 import core.Message;
 import core.MessageListener;
 import core.SimScenario;
+import core.UpdateListener;
 import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
+import routing.PriorityMaxPropRouter;
 import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
+import routing.util.EnergyModel;
 
-public class DtnmaRlMetricsReport extends Report implements MessageListener {
+public class DtnmaRlMetricsReport extends Report implements MessageListener, UpdateListener {
 
     private int criticalCreated = 0;
     private int criticalDelivered = 0;
@@ -34,6 +40,8 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
 
     private Set<String> criticalDeliveredIds = new HashSet<String>();
     private Set<String> criticalBufferDroppedIds = new HashSet<String>();
+    private Map<Integer, Double> initialEnergyByHost = new HashMap<Integer, Double>();
+    private boolean capturedInitialEnergy = false;
     private long deliveredPayloadBytes = 0;
 
     public DtnmaRlMetricsReport() {
@@ -56,7 +64,28 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         else this.criticalDeliveredIds.clear();
         if (this.criticalBufferDroppedIds == null) this.criticalBufferDroppedIds = new HashSet<String>();
         else this.criticalBufferDroppedIds.clear();
+        if (this.initialEnergyByHost == null) this.initialEnergyByHost = new HashMap<Integer, Double>();
+        else this.initialEnergyByHost.clear();
+        this.capturedInitialEnergy = false;
         this.deliveredPayloadBytes = 0;
+    }
+
+    @Override
+    public void updated(List<DTNHost> hosts) {
+        if (this.capturedInitialEnergy || hosts == null || hosts.isEmpty()) {
+            return;
+        }
+        boolean foundAny = false;
+        for (DTNHost h : hosts) {
+            Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
+            if (eObj instanceof Double) {
+                this.initialEnergyByHost.put(h.getAddress(), (Double) eObj);
+                foundAny = true;
+            }
+        }
+        if (foundAny || getSimTime() > 2.0) {
+            this.capturedInitialEnergy = true;
+        }
     }
 
     @Override
@@ -139,6 +168,9 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         long ackOverheadBytes = 0;
 
         double energySocSum = 0.0;
+        double allEnergySocSum = 0.0;
+        int energyNodes = 0;
+        long depletedNodes = 0;
         double maxBufferOccupancy = 0.0;
         long localCreationRejected = 0;
         int dtnmaNodes = 0;
@@ -197,6 +229,33 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
                         maxBufferOccupancy = pr.getMaxBufferOccupancy();
                     }
                     localCreationRejected += pr.getLocalCreationRejected();
+                } else if (h.getRouter() instanceof PriorityMaxPropRouter) {
+                    PriorityMaxPropRouter pm = (PriorityMaxPropRouter) h.getRouter();
+                    if (pm.getMaxBufferOccupancy() > maxBufferOccupancy) {
+                        maxBufferOccupancy = pm.getMaxBufferOccupancy();
+                    }
+                    localCreationRejected += pm.getLocalCreationRejected();
+                }
+
+                Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
+                if (eObj instanceof Double) {
+                    double curE = (Double) eObj;
+                    energyNodes++;
+                    if (curE <= 1e-9) {
+                        depletedNodes++;
+                    }
+                    double soc;
+                    if (h.getRouter() instanceof DtnmaRouter) {
+                        soc = ((DtnmaRouter) h.getRouter()).getEnergySoc();
+                    } else {
+                        Double initE = (this.initialEnergyByHost != null) ? this.initialEnergyByHost.get(h.getAddress()) : null;
+                        if (initE != null && initE > 0.0) {
+                            soc = Math.max(0.0, Math.min(1.0, curE / initE));
+                        } else {
+                            soc = curE > 0.0 ? 1.0 : 0.0;
+                        }
+                    }
+                    allEnergySocSum += soc;
                 }
             }
         }
@@ -218,7 +277,9 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         double rlAvgReward = rlNodes > 0 ? rlAvgRewardSum / rlNodes : 0.0;
         double rlAvgCost = rlNodes > 0 ? rlAvgCostSum / rlNodes : 0.0;
         double dualLambdaAvg = rlNodes > 0 ? dualLambdaSum / rlNodes : 0.0;
-        double avgEnergySoc = dtnmaNodes > 0 ? energySocSum / dtnmaNodes : 1.0;
+        double avgEnergySoc = energyNodes > 0
+                ? (allEnergySocSum / energyNodes)
+                : (dtnmaNodes > 0 ? energySocSum / dtnmaNodes : 1.0);
         long totalCtrlBytes = beaconOverheadBytes + gossipOverheadBytes + ackOverheadBytes;
         double ctrlToPayloadRatio = (double) totalCtrlBytes / Math.max(1.0, (double) deliveredPayloadBytes);
 
@@ -259,6 +320,8 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
             double frac = totalProfileExecs > 0 ? (double) profileCounts[a] / totalProfileExecs : 0.0;
             sb.append(String.format(Locale.US, "profile_%d_frac: %.4f\n", a, frac));
         }
+        sb.append(String.format(Locale.US, "avg_energy_soc: %.4f\n", avgEnergySoc));
+        sb.append("depleted_nodes_count: ").append(depletedNodes).append("\n");
         sb.append(String.format(Locale.US, "avg_energy_remaining_soc: %.4f", avgEnergySoc));
 
         write(sb.toString());

@@ -13,12 +13,12 @@
 
 Delay- and Disruption-Tolerant Networks (DTNs) deployed in deep space (e.g., lunar/Martian exploration, interplanetary relays) and tactical non-terrestrial mesh environments face high propagation latencies, intermittent orbital contact windows, and extreme buffer contention. Centralized management protocols (e.g., SNMP, NETCONF) fail catastrophically in these regimes due to the absence of continuous end-to-end paths.
 
-**ADTNM** is an autonomic, decentralized network management and routing framework designed to operate within **The ONE Simulator** (Opportunistic Network Environment). Adopting an **RFC 9675-inspired declarative policy architecture** and **Autonomic Networking Principles (RFC 7575)** — using human-readable State-Based Rule Language (SRL) text files as a lightweight simulation abstraction of AMM/ARI policies — ADTNM pairs a self-governing **MAPE-K (Monitor, Analyze, Plan, Execute, Knowledge)** closed-loop engine with a **Shielded Constrained MDP Reinforcement Learning** layer and **Opportunistic Mobility-Class Peer Gossip**.
+**ADTNM** is an autonomic, decentralized network management and routing framework designed to operate within **The ONE Simulator** (Opportunistic Network Environment). Adopting an **RFC 9675-inspired declarative policy architecture** and **Autonomic Networking Principles (RFC 7575)** — using human-readable State-Based Rule Language (SRL) text files as a lightweight simulation abstraction of AMM/ARI policies — ADTNM pairs a self-governing **MAPE-K (Monitor, Analyze, Plan, Execute, Knowledge)** closed-loop engine with a **Single-Critic Shielded Counterfactual Expected SARSA** layer and **Opportunistic Mobility-Class Peer Gossip**.
 
 ### Key Capabilities & Invariants
 - **RFC 9675-Inspired Autonomic MAPE-K Engine:** Evaluates declarative State-Based Rules (SRL) over local EDD telemetry with safety sanitization and priority arbitration.
-- **Shielded CMDP RL & Counterfactual Safety Learning:** Combines 20-D Primal-Dual Linear Expected SARSA over 8 operating profiles with Pre-/Post-Action Safety Masking and Hazard-Localized Counterfactual Shaping.
-- **Explicit Contact-Handshake & Gossip Control Plane:** Uses compact 16-byte contact beacons, class-gated symmetric RL weight gossip (1,292 B), and optional delayed ACK pruning with causal eligibility credit.
+- **Single-Critic Shielded Counterfactual Expected SARSA:** Combines 20-D Linear Expected SARSA over 8 operating profiles with Pre-/Post-Action Safety Masking (S1–S4) and Hazard-Localized Counterfactual Shaping (retiring the slack primal-dual λ loop from earlier prototypes).
+- **Explicit Contact-Handshake & Gossip Control Plane:** Uses compact 16-byte contact beacons, class-gated symmetric reward-critic weight gossip (648 B), and optional delayed ACK pruning with causal eligibility credit.
 - **Strongly-Typed Telemetry (EDD Sampler):** Samples queue ratios, EWMA-smoothed queue fill rates ($\dot{Q}$), contact density, EWMA node speeds, normalized residual energy SoC, and PRoPHET delivery predictabilities.
 - **Dual-Tier Priority Queuing & Buffer Cap Lock:** Enforces Head-of-Line (HoL) preemption for critical fault telemetry, Spray-before-Focus ordering, and physical buffer-cap zero-overshoot eviction protection.
 - **Two-Phase Spray-and-Focus Forwarding:** Dynamically throttles relay spray quotas while strictly conserving binary copy tokens and transitioning into predictive PRoPHET single-copy handoff ($C = 1$).
@@ -171,36 +171,42 @@ ADTNM/
 │   ├── phase1_vdtn_sanity.txt         # 105-run 5-seed SOTA + control ablation sweep
 │   ├── phase1_vdtn_shock.txt          # 15-run non-stationary burst-shock trace scenario
 │   ├── phase1_vdtn_ablation.txt       # 210-run full Phase 1 component ablation
+│   ├── phase2_vdtn_binding_campaign.txt      # 495-run binding-buffer benchmark (5M..35M, 11 routers)
+│   ├── phase2_vdtn_energy_shock_campaign.txt # 77-run EnergyModel + 2h-4h burst shock sweep
+│   ├── phase2_ntn_generalization_campaign.txt # 77-run frozen-param Space/NTN generalization sweep
 │   ├── scenario_dtnma.txt             # 1-hour smoke benchmark scenario
 │   ├── rules_ntn.txt                  # Declarative rules: Non-Terrestrial Networks (NTN)
 │   ├── rules_vdtn.txt                 # Declarative rules: Vehicular DTN (VDTN)
+│   ├── rules_vdtn_L10.txt             # Tuned L=10 static baseline VDTN rules
 │   └── rules_uav.txt                  # Declarative rules: UAV & Aerial Swarms
 ├── src/                               # DTNMA Core Java Implementations
 │   ├── report/
-│   │   ├── DtnmaAuditReport.java      # Forensic explainability log (lambda, shield, ARI)
+│   │   ├── DtnmaAuditReport.java      # Forensic explainability log (profile, shield, ARI)
 │   │   ├── DtnmaDecisionReport.java   # Legacy decision & drop-event logger
-│   │   └── DtnmaRlMetricsReport.java  # OppNDA metrics, greedy shield & profile fractions
+│   │   └── DtnmaRlMetricsReport.java  # OppNDA metrics, greedy shield, SoC & profile fractions
 │   └── routing/
 │       ├── ControlAction.java         # Sanitized autonomic actuator controls
 │       ├── DtnmaConfig.java           # External parameter loader & safe bounds clamp
-│       ├── DtnmaContactBeacon.java    # Quantized 16B contact beacon & overhead constants
+│       ├── DtnmaContactBeacon.java    # Quantized 16B contact beacon & 648B gossip constants
 │       ├── DtnmaPolicyProfile.java    # 8-profile autonomic action space (0..7)
-│       ├── DtnmaRouter.java           # Main MAPE-K + Shielded CMDP RL router engine
+│       ├── DtnmaRouter.java           # Main MAPE-K + Single-Critic Shielded RL router engine
 │       ├── DtnmaRuleParser.java       # Parser for declarative SRL text rules
 │       ├── DtnmaSafetyShield.java     # Pre-/post-action safety mask & greedy auditing
 │       ├── EddTelemetrySampler.java   # EWMA EDD state sampler & mobility classifier
 │       ├── PredicateExpression.java   # Boolean predicate evaluation engine
-│       ├── ShieldedCmdpRlAgent.java   # Primal-Dual Expected SARSA + gossip + shaping
+│       ├── PriorityMaxPropRouter.java # Zero-drop HoL-protected MaxProp fair baseline
+│       ├── PrioritySprayAndWaitRouter.java # Zero-drop HoL-protected SnW fair baseline
+│       ├── ShieldedCmdpRlAgent.java   # Single-critic Expected SARSA + 648B gossip + shaping
 │       ├── StateBasedRule.java        # Declarative rule representation
-│       └── *Router.java presets       # Static, StaticAck, Unshielded, ShieldedPassive, Shielded, Gossip, GossipAck
+│       └── *Router.java presets       # Static, StaticAck, StaticAckTuned, Unshielded, ShieldedPassive, Shielded, ShieldedAck, Gossip, GossipAck
 ├── tests/
-│   └── DtnmaUnitTests.java            # Standalone Phase 1 Java unit test suite
+│   └── DtnmaUnitTests.java            # Standalone Java unit test suite (15 assertions)
 ├── tools/                             # Runners and OppNDA analysis suite
 │   ├── config/                        # Visualization and OppNDA aggregation configs
 │   ├── core/                          # OppNDA automation modules (analysis, averager)
 │   ├── parallel_batch_runner.py       # Coprime-guarded multi-core batch accelerator
-│   ├── plot_adaptation_trace.py       # Non-stationary lambda/quota/shield timeline plot
-│   ├── run_phase1_oppnda.py           # OppNDA Phase 1 diagnostics & 95% CI verifier
+│   ├── plot_adaptation_trace.py       # Non-stationary high-spray/quota/shield timeline plot
+│   ├── run_phase1_oppnda.py           # OppNDA diagnostics, Holm-Bonferroni CIs & verifier
 │   └── verify_and_plot.py             # 1-hour smoke verification script
 ├── .gitignore
 ├── install.bat

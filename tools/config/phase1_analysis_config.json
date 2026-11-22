@@ -77,7 +77,9 @@
       "profile_4_frac",
       "profile_5_frac",
       "profile_6_frac",
-      "profile_7_frac"
+      "profile_7_frac",
+      "avg_energy_soc",
+      "depleted_nodes_count"
     ]
   },
   "plot_settings": {
@@ -121,7 +123,7 @@
         "ticks": 14
       },
       "marker_size": 10,
-      "markers": ["o", "s", "^", "D", "v", "*", "P", "X"],
+      "markers": ["o", "s", "^", "D", "v", "*", "P", "X", "h", "<", ">", "d"],
       "size": [10, 6]
     }
   },
