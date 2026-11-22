@@ -116,6 +116,7 @@ public class DtnmaRouter extends ActiveRouter {
     private String shieldTriggerAri = "ARI://DTNMA/SHIELD/PASS";
     private long[] profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
     private double maxBufferOccupancy = 0.0;
+    private long localCreationRejected = 0;
 
     // Dynamic Policy Variables (Adjusted via Profile / Control Actions)
     private int currentSprayQuota = DEFAULT_SPARSE_QUOTA;
@@ -228,6 +229,7 @@ public class DtnmaRouter extends ActiveRouter {
         this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
         this.profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
         this.maxBufferOccupancy = 0.0;
+        this.localCreationRejected = 0;
     }
 
     private static <V> Map<String, V> createLruMap(final int maxSize) {
@@ -803,31 +805,100 @@ public class DtnmaRouter extends ActiveRouter {
     }
 
     /**
-     * Returns total bytes belonging to active non-sending incoming transfers on this host
+     * Computes total bytes belonging to active non-sending incoming transfers on this host
      * that are not destined for this host (i.e., will be buffered upon transfer completion).
      */
-    private long getReservedIncomingBytes() {
-        if (getHost() == null) return 0L;
+    public static long computeReservedIncomingBytes(
+            DTNHost host, List<Connection> connections, Collection<Connection> sendingConnections) {
+        if (host == null || connections == null) return 0L;
         long reserved = 0L;
-        for (Connection con : getConnections()) {
+        for (Connection con : connections) {
             if (con != null && con.isUp() && con.getMessage() != null
-                    && !this.sendingConnections.contains(con)
-                    && con.getMessage().getTo() != getHost()) {
+                    && (sendingConnections == null || !sendingConnections.contains(con))
+                    && con.getMessage().getTo() != host) {
                 reserved += con.getMessage().getSize();
             }
         }
         return reserved;
     }
 
+    /**
+     * Emergency room reclamation for critical creation under saturated all-critical buffers:
+     * evicts already-ACKed critical copies first, then highest redundant replica (copies > 1),
+     * never touching sole un-ACKed copies or exceeding physical buffer capacity.
+     */
+    public static boolean reclaimCriticalEmergency(
+            ActiveRouter router, String copiesPropKey,
+            Map<String, Boolean> deliveredAckSet, int size) {
+        if (size > router.getBufferSize()) {
+            return false;
+        }
+        while (router.getFreeBufferSize() < size) {
+            Message ackedCand = null;
+            Message redundantCand = null;
+            int highestRedundantCopies = 1;
+
+            for (Message m : router.getMessageCollection()) {
+                if (router.isSending(m.getId()) || !isCriticalMessage(m)) continue;
+                if (deliveredAckSet != null && deliveredAckSet.containsKey(m.getId())) {
+                    ackedCand = m;
+                    break;
+                }
+                Integer copies = (Integer) m.getProperty(copiesPropKey);
+                int cVal = (copies != null) ? copies : 1;
+                if (cVal > 1) {
+                    if (redundantCand == null || cVal > highestRedundantCopies
+                            || (cVal == highestRedundantCopies && m.getTtl() < redundantCand.getTtl())) {
+                        redundantCand = m;
+                        highestRedundantCopies = cVal;
+                    }
+                }
+            }
+
+            if (ackedCand != null) {
+                router.deleteMessage(ackedCand.getId(), false);
+            } else if (redundantCand != null) {
+                router.deleteMessage(redundantCand.getId(), true);
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Reclaims any post-transfer physical buffer overshoot so occupancy stays <= 1.0.
+     */
+    public static void clampPostTransferDeficit(
+            ActiveRouter router, Message incomingMsg, String copiesPropKey,
+            Map<String, Boolean> deliveredAckSet) {
+        if (router.getFreeBufferSize() < 0) {
+            router.makeRoomForMessage(0);
+            if (router.getFreeBufferSize() < 0 && incomingMsg != null) {
+                if (!isCriticalMessage(incomingMsg) && router.hasMessage(incomingMsg.getId())) {
+                    router.deleteMessage(incomingMsg.getId(), true);
+                } else if (isCriticalMessage(incomingMsg)) {
+                    if (!reclaimCriticalEmergency(router, copiesPropKey, deliveredAckSet, 0)
+                            && router.hasMessage(incomingMsg.getId())) {
+                        router.deleteMessage(incomingMsg.getId(), true);
+                    }
+                }
+            }
+        }
+    }
+
     @Override
     public boolean createNewMessage(Message msg) {
-        long neededLong = (long) msg.getSize() + getReservedIncomingBytes();
+        long reserved = computeReservedIncomingBytes(getHost(), getConnections(), this.sendingConnections);
+        long neededLong = (long) msg.getSize() + reserved;
         if (neededLong > this.getBufferSize()) {
+            this.localCreationRejected++;
             return false;
         }
         int needed = (int) neededLong;
         if (!makeRoomForMessage(needed)) {
             if (!isCriticalMessage(msg) || !makeRoomForCriticalEmergency(needed)) {
+                this.localCreationRejected++;
                 return false;
             }
         }
@@ -841,47 +912,9 @@ public class DtnmaRouter extends ActiveRouter {
         return true;
     }
 
-    /**
-     * Emergency room reclamation for critical creation under saturated all-critical buffers:
-     * evicts already-ACKed critical copies first, then highest redundant replica (copies > 1),
-     * never touching sole un-ACKed copies or exceeding physical buffer capacity.
-     */
     private boolean makeRoomForCriticalEmergency(int size) {
-        if (size > this.getBufferSize()) {
-            return false;
-        }
-        while (this.getFreeBufferSize() < size) {
-            Message ackedCand = null;
-            Message redundantCand = null;
-            int highestRedundantCopies = 1;
-
-            for (Message m : getMessageCollection()) {
-                if (isSending(m.getId()) || !isCriticalMessage(m)) continue;
-                if (this.ackFeedbackEnabled && this.deliveredAckSet != null
-                        && this.deliveredAckSet.containsKey(m.getId())) {
-                    ackedCand = m;
-                    break;
-                }
-                Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-                int cVal = (copies != null) ? copies : 1;
-                if (cVal > 1) {
-                    if (redundantCand == null || cVal > highestRedundantCopies
-                            || (cVal == highestRedundantCopies && m.getTtl() < redundantCand.getTtl())) {
-                        redundantCand = m;
-                        highestRedundantCopies = cVal;
-                    }
-                }
-            }
-
-            if (ackedCand != null) {
-                deleteMessage(ackedCand.getId(), false);
-            } else if (redundantCand != null) {
-                deleteMessage(redundantCand.getId(), true);
-            } else {
-                return false;
-            }
-        }
-        return true;
+        Map<String, Boolean> ackMap = this.ackFeedbackEnabled ? this.deliveredAckSet : null;
+        return reclaimCriticalEmergency(this, MSG_COPIES_PROPERTY, ackMap, size);
     }
 
     /**
@@ -974,18 +1007,8 @@ public class DtnmaRouter extends ActiveRouter {
         Message m = super.messageTransferred(id, from);
         if (m != null) {
             this.epochActivityCount++;
-            if (this.getFreeBufferSize() < 0) {
-                this.makeRoomForMessage(0);
-                if (this.getFreeBufferSize() < 0) {
-                    if (!isCriticalMessage(m) && hasMessage(m.getId())) {
-                        deleteMessage(m.getId(), true);
-                    } else if (isCriticalMessage(m)) {
-                        if (!makeRoomForCriticalEmergency(0) && hasMessage(m.getId())) {
-                            deleteMessage(m.getId(), true);
-                        }
-                    }
-                }
-            }
+            Map<String, Boolean> ackMap = this.ackFeedbackEnabled ? this.deliveredAckSet : null;
+            clampPostTransferDeficit(this, m, MSG_COPIES_PROPERTY, ackMap);
             this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, getBufferOccupancyRatio());
             if (m.getTo() == getHost() && this.deliveredAckSet != null) {
                 this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
@@ -1091,10 +1114,8 @@ public class DtnmaRouter extends ActiveRouter {
         });
     }
 
-    @Override
     @SuppressWarnings("unchecked")
-    protected List sortByQueueMode(List list) {
-        list = super.sortByQueueMode(list);
+    public static List sortCriticalFirst(List list) {
         Collections.sort(list, new Comparator() {
             public int compare(Object o1, Object o2) {
                 Message m1 = (o1 instanceof Tuple) ? ((Tuple<Message, Connection>) o1).getKey() : (Message) o1;
@@ -1108,6 +1129,12 @@ public class DtnmaRouter extends ActiveRouter {
             }
         });
         return list;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    protected List sortByQueueMode(List list) {
+        return sortCriticalFirst(super.sortByQueueMode(list));
     }
 
     /**
@@ -1179,6 +1206,8 @@ public class DtnmaRouter extends ActiveRouter {
 
     // Phase 1 RL, Shield & Overhead Getters
     public IntelligenceMode getIntelligenceMode() { return intelligenceMode; }
+    public boolean isGossipEnabled() { return gossipEnabled; }
+    public boolean isAckFeedbackEnabled() { return ackFeedbackEnabled; }
     public int getLastProposedProfile() { return lastProposedProfile; }
     public int getLastExecutedProfile() { return lastExecutedProfile; }
     public boolean isLastShieldIntervened() { return lastShieldIntervened; }
@@ -1191,6 +1220,7 @@ public class DtnmaRouter extends ActiveRouter {
     public long getAckExchanges() { return ackExchanges; }
     public long getAckOverheadBytes() { return ackOverheadBytes; }
     public double getMaxBufferOccupancy() { return maxBufferOccupancy; }
+    public long getLocalCreationRejected() { return localCreationRejected; }
     public long[] getProfileExecCounts() { return profileExecCounts; }
 
     @Override

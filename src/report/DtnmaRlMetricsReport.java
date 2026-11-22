@@ -17,6 +17,7 @@ import core.SimScenario;
 import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
+import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
 
 public class DtnmaRlMetricsReport extends Report implements MessageListener {
@@ -139,6 +140,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
 
         double energySocSum = 0.0;
         double maxBufferOccupancy = 0.0;
+        long localCreationRejected = 0;
         int dtnmaNodes = 0;
         long[] profileCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
         long totalProfileExecs = 0;
@@ -153,6 +155,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
                     if (r.getMaxBufferOccupancy() > maxBufferOccupancy) {
                         maxBufferOccupancy = r.getMaxBufferOccupancy();
                     }
+                    localCreationRejected += r.getLocalCreationRejected();
                     beaconOverheadBytes += r.getBeaconOverheadBytes();
                     gossipExchanges += r.getGossipExchanges();
                     gossipOverheadBytes += r.getGossipOverheadBytes();
@@ -188,6 +191,12 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
                         dualLambdaSum += agent.getLambda();
                         rlNodes++;
                     }
+                } else if (h.getRouter() instanceof PrioritySprayAndWaitRouter) {
+                    PrioritySprayAndWaitRouter pr = (PrioritySprayAndWaitRouter) h.getRouter();
+                    if (pr.getMaxBufferOccupancy() > maxBufferOccupancy) {
+                        maxBufferOccupancy = pr.getMaxBufferOccupancy();
+                    }
+                    localCreationRejected += pr.getLocalCreationRejected();
                 }
             }
         }
@@ -227,6 +236,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener {
         sb.append("bulk_buffer_dropped: ").append(bulkBufferDropped).append("\n");
         sb.append("bulk_ttl_expired: ").append(bulkTtlExpired).append("\n");
         sb.append("delivered_payload_bytes: ").append(deliveredPayloadBytes).append("\n");
+        sb.append("local_creation_rejected: ").append(localCreationRejected).append("\n");
         sb.append(String.format(Locale.US, "max_buffer_occupancy: %.4f\n", maxBufferOccupancy));
         sb.append("rl_decisions_total: ").append(rlDecisionsTotal).append("\n");
         sb.append("shield_interventions_total: ").append(shieldInterventionsTotal).append("\n");

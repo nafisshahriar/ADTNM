@@ -1,8 +1,9 @@
 """
 Parallel Batch Runner for The ONE Simulator
-Maximizes hardware utilization across multi-core CPUs with tuned JVM parameters,
-enforces pairwise-coprime parameter list validation, supports --dry-run and --resume,
-and displays live active simulation run numbers in real time.
+Maximizes hardware utilization politely across multi-core CPUs (50% default core cap,
+BELOW_NORMAL/nice OS priority), enforces pairwise-coprime parameter list validation,
+guarantees zero-orphan child process tree termination on exit or Ctrl+C / SIGTERM,
+supports --dry-run and --resume, and displays live active simulation run numbers.
 """
 
 import os
@@ -10,6 +11,8 @@ import re
 import sys
 import math
 import time
+import atexit
+import signal
 import argparse
 import threading
 import subprocess
@@ -18,6 +21,72 @@ import multiprocessing
 
 SETTING_LINE_RE = re.compile(r"^\s*([A-Za-z0-9_.]+)\s*=\s*(.+)$")
 PLACEHOLDER_RE = re.compile(r"%%([^%]+)%%")
+
+_PROC_LOCK = threading.Lock()
+_ACTIVE_PROCS = set()
+_STOP_EVENT = threading.Event()
+
+
+def _kill_proc_tree(proc):
+    """Terminates a subprocess and its entire OS process tree."""
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=0.5)
+        return
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    try:
+        proc.wait(timeout=2.0)
+    except Exception:
+        pass
+
+
+def terminate_all_children():
+    """Signals cancellation and forcefully reaps all running child JVM processes."""
+    _STOP_EVENT.set()
+    with _PROC_LOCK:
+        procs = list(_ACTIVE_PROCS)
+    for proc in procs:
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+        except Exception:
+            pass
+    if procs:
+        time.sleep(0.5)
+    for proc in procs:
+        _kill_proc_tree(proc)
+    with _PROC_LOCK:
+        _ACTIVE_PROCS.clear()
+
+
+def _handle_termination_signal(signum, frame):
+    terminate_all_children()
+    raise KeyboardInterrupt(f"Received signal {signum}")
+
 
 def parse_scenario_settings(scenario_path):
     """Parses all scenario settings and identifies [a; b; ...] swept parameter lists."""
@@ -42,6 +111,7 @@ def parse_scenario_settings(scenario_path):
                 all_settings[key] = [raw_val]
     return all_settings, swept
 
+
 def resolve_run_setting(all_settings, key, run_id):
     """Resolves a single setting for 1-based run_id using ONE's (run_id - 1) % len indexing."""
     vals = all_settings.get(key)
@@ -51,14 +121,18 @@ def resolve_run_setting(all_settings, key, run_id):
         return vals[0]
     return vals[(run_id - 1) % len(vals)]
 
+
 def resolve_scenario_name(all_settings, run_id):
     """Resolves Scenario.name %%Key%% placeholders identically to ONE's Settings.valueFillString."""
     template = resolve_run_setting(all_settings, "Scenario.name", run_id)
+
     def repl(match):
         k = match.group(1).strip()
         val = resolve_run_setting(all_settings, k, run_id)
         return val if val else match.group(0)
+
     return PLACEHOLDER_RE.sub(repl, template)
+
 
 def validate_coprime_sweeps(swept, force=False):
     """Validates that all swept list lengths are pairwise coprime (gcd == 1)."""
@@ -99,7 +173,30 @@ def validate_coprime_sweeps(swept, force=False):
 
     return total_cartesian
 
-def run_single(run_id, total_runs, scenario_file, classpath, java_opts, cwd, lock, active_runs):
+
+def _build_popen_kwargs(cwd, priority):
+    kwargs = {
+        "cwd": cwd,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if sys.platform == "win32":
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP
+        if priority == "low":
+            flags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        kwargs["creationflags"] = flags
+    else:
+        kwargs["start_new_session"] = True
+        if priority == "low":
+            kwargs["preexec_fn"] = lambda: os.nice(10)
+    return kwargs
+
+
+def run_single(run_id, total_runs, scenario_file, classpath, java_opts, cwd, lock, active_runs, priority):
+    if _STOP_EVENT.is_set():
+        return run_id, False, 0.0, "Cancelled"
+
     with lock:
         active_runs.add(run_id)
         active_list = sorted(active_runs)
@@ -107,29 +204,46 @@ def run_single(run_id, total_runs, scenario_file, classpath, java_opts, cwd, loc
 
     cmd = ["java"] + java_opts + ["-cp", classpath, "core.DTNSim", "-b", f"{run_id}:{run_id}", scenario_file]
     t0 = time.time()
+    proc = None
     try:
-        subprocess.run(
-            cmd,
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
-        )
-        return run_id, True, time.time() - t0, ""
-    except subprocess.CalledProcessError as e:
-        err = e.stderr.strip() if e.stderr else e.stdout.strip()
-        return run_id, False, time.time() - t0, err
+        with _PROC_LOCK:
+            if _STOP_EVENT.is_set():
+                return run_id, False, 0.0, "Cancelled"
+            proc = subprocess.Popen(cmd, **_build_popen_kwargs(cwd, priority))
+            _ACTIVE_PROCS.add(proc)
+
+        out, err = proc.communicate()
+        dur = time.time() - t0
+        if proc.returncode == 0:
+            return run_id, True, dur, ""
+        msg = (err or out or f"Exit code {proc.returncode}").strip()
+        return run_id, False, dur, msg
+    except Exception as e:
+        return run_id, False, time.time() - t0, str(e)
     finally:
+        with _PROC_LOCK:
+            if proc is not None:
+                _ACTIVE_PROCS.discard(proc)
+        if proc is not None and proc.poll() is None:
+            _kill_proc_tree(proc)
         with lock:
             active_runs.discard(run_id)
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Multi-threaded hardware-accelerated batch runner for The ONE")
+    atexit.register(terminate_all_children)
+    signal.signal(signal.SIGINT, _handle_termination_signal)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _handle_termination_signal)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _handle_termination_signal)
+
+    parser = argparse.ArgumentParser(description="Polite Multi-Core Batch Accelerator for The ONE")
     parser.add_argument("--scenario", "-s", default="scenarios/dtnma_batch_scenario.txt", help="Scenario configuration file")
     parser.add_argument("--start", type=int, default=1, help="Starting run index (1-based)")
     parser.add_argument("--end", type=int, default=None, help="Ending run index (inclusive; auto-computed if omitted)")
-    parser.add_argument("--workers", "-w", type=int, default=None, help="Parallel worker threads (default: CPU logical cores - 1)")
+    parser.add_argument("--workers", "-w", type=int, default=None, help="Parallel worker threads (default: 50%% of CPU cores)")
+    parser.add_argument("--priority", choices=["low", "normal"], default="low", help="Child JVM OS process priority (default: low / BelowNormal)")
     parser.add_argument("--mem", "-m", default="1536M", help="Max heap per process (default: 1536M)")
     parser.add_argument("--force", action="store_true", help="Bypass coprime parameter validation guard")
     parser.add_argument("--dry-run", action="store_true", help="Validate coprime sweeps and preview resolved runs without executing")
@@ -169,7 +283,7 @@ def main():
             print(f"  Run {r_id:3d} -> {r_name}")
         if len(full_range) > preview_count:
             last_id = full_range[-1]
-            print(f"  ...")
+            print("  ...")
             print(f"  Run {last_id:3d} -> {resolve_scenario_name(all_settings, last_id)}")
         print(f"Total Planned Runs: {len(full_range)} (Indices {args.start}..{end_idx})")
         print("=" * 72)
@@ -195,7 +309,7 @@ def main():
         sys.exit(0)
 
     cpu_count = multiprocessing.cpu_count()
-    workers = args.workers if args.workers else max(1, cpu_count - 1)
+    workers = args.workers if args.workers else max(1, cpu_count // 2)
 
     java_opts = [
         "-server",
@@ -205,14 +319,14 @@ def main():
         "-XX:+TieredCompilation",
         "-XX:TieredStopAtLevel=4",
         "-Djava.awt.headless=true",
-        "-Djava.util.Arrays.useLegacyMergeSort=true"
+        "-Djava.util.Arrays.useLegacyMergeSort=true",
     ]
 
     total_to_run = len(run_list)
 
     print("-" * 72)
     print(f"Total CPU Cores/Threads : {cpu_count}")
-    print(f"Active Worker Processes : {workers}")
+    print(f"Active Worker Processes : {workers} (default 50% cap; OS priority={args.priority})")
     print(f"Heap per Worker         : {args.mem} (Parallel GC, Headless)")
     print(f"Scenario File           : {scenario_path}")
     print(f"Report Directory        : {report_dir_rel}")
@@ -225,9 +339,13 @@ def main():
     lock = threading.Lock()
     active_runs = set()
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
+    executor = ThreadPoolExecutor(max_workers=workers)
+    try:
         futures = {
-            executor.submit(run_single, r_id, total_to_run, scenario_path, classpath, java_opts, the_one_dir, lock, active_runs): r_id
+            executor.submit(
+                run_single, r_id, total_to_run, scenario_path, classpath, java_opts,
+                the_one_dir, lock, active_runs, args.priority
+            ): r_id
             for r_id in run_list
         }
 
@@ -245,14 +363,22 @@ def main():
                 print(
                     f"[DONE ] [{completed:3d}/{total_to_run}] Run {r_id:3d} OK ({dur:5.1f}s) | "
                     f"Elapsed: {elapsed/60:5.1f}m | ETA: {remaining/60:5.1f}m | Active: {active_snapshot}",
-                    flush=True
+                    flush=True,
                 )
             else:
                 failed += 1
                 print(
-                    f"[FAIL ] [{completed:3d}/{total_to_run}] Run {r_id:3d} FAILED ({dur:5.1f}s): {err[:100]}",
-                    flush=True
+                    f"[FAIL ] [{completed:3d}/{total_to_run}] Run {r_id:3d} FAILED ({dur:5.1f}s): {err[:120]}",
+                    flush=True,
                 )
+    except KeyboardInterrupt:
+        terminate_all_children()
+        executor.shutdown(wait=False, cancel_futures=True)
+        print("\n[ABORT] Interrupted -- terminated all child simulations cleanly.", flush=True)
+        sys.exit(130)
+    finally:
+        terminate_all_children()
+        executor.shutdown(wait=True, cancel_futures=True)
 
     total_time = time.time() - start_all
     print("=" * 72)
@@ -263,6 +389,7 @@ def main():
         print(f"Failed Runs: {failed}")
         sys.exit(1)
     print("=" * 72)
+
 
 if __name__ == "__main__":
     main()

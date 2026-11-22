@@ -26,8 +26,10 @@ import routing.DtnmaContactBeacon;
 import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
+import routing.DtnmaShieldedAckRLRouter;
 import routing.EddTelemetrySampler;
 import routing.PredicateExpression;
+import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
 import routing.StateBasedRule;
 
@@ -304,6 +306,43 @@ public class DtnmaUnitTests {
                 "Test7: All-Critical Full-Buffer enforces occ <= 1.0 & protects sole critical copies",
                 String.format("occ1=%.4f occ2=%.4f ok1=%s ok2=%s blkB=%s blkC=%s recl=%s",
                         occAfterSoleBlock, occAfterReclaim, ok1, ok2, bulkBlocked, critBlockedNoOvershoot, reclaimedRedundant));
+
+        // Test8: localCreationRejected counter, PrioritySprayAndWaitRouter, & DtnmaShieldedAckRLRouter
+        boolean rejCountOk = (r0.getLocalCreationRejected() == 2);
+
+        String cfgSnW = cfgText + "SprayAndWaitRouter.nrofCopies = 6\nSprayAndWaitRouter.binaryMode = true\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfgSnW.getBytes(StandardCharsets.UTF_8)));
+        Settings grpSnW = new Settings("Group");
+        MovementModel mm2 = new StationaryMovement(grpSnW);
+        PrioritySprayAndWaitRouter snwProto = new PrioritySprayAndWaitRouter(grpSnW);
+        DTNHost hs0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "p", ifaces, new ModuleCommunicationBus(), mm2, snwProto);
+        DTNHost hs1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "p", ifaces, new ModuleCommunicationBus(), mm2, snwProto);
+        PrioritySprayAndWaitRouter pSnW = (PrioritySprayAndWaitRouter) hs0.getRouter();
+
+        Message psCrit1 = new Message(hs0, hs1, "CRITICAL_FAULT_P1", 20000);
+        Message psCrit2 = new Message(hs0, hs1, "CRITICAL_FAULT_P2", 20000);
+        boolean psOk1 = pSnW.createNewMessage(psCrit1);
+        boolean psOk2 = pSnW.createNewMessage(psCrit2);
+        psCrit1.updateProperty(PrioritySprayAndWaitRouter.MSG_COUNT_PROPERTY, 1);
+        psCrit2.updateProperty(PrioritySprayAndWaitRouter.MSG_COUNT_PROPERTY, 1);
+        Message psBulk = new Message(hs0, hs1, "SCIENCE_DATA_P1", 10000);
+        boolean psBlkBulk = !pSnW.createNewMessage(psBulk);
+        boolean psOccOk = pSnW.getBufferOccupancyRatio() <= 1.000001
+                && pSnW.getLocalCreationRejected() == 1
+                && pSnW.hasMessage("CRITICAL_FAULT_P1")
+                && pSnW.hasMessage("CRITICAL_FAULT_P2");
+
+        DtnmaShieldedAckRLRouter ackRl = new DtnmaShieldedAckRLRouter(grpSnW);
+        boolean ackRlFlagsOk = ackRl.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL
+                && !ackRl.isGossipEnabled()
+                && ackRl.isAckFeedbackEnabled();
+
+        check(rejCountOk && psOk1 && psOk2 && psBlkBulk && psOccOk && ackRlFlagsOk,
+                "Test8: localCreationRejected audit, PrioritySprayAndWaitRouter protection & DtnmaShieldedAckRLRouter flags",
+                String.format("rej=%d psOk=(%s,%s,%s,%s) flags=%s",
+                        r0.getLocalCreationRejected(), psOk1, psOk2, psBlkBulk, psOccOk, ackRlFlagsOk));
     }
 
     public static void main(String[] args) {

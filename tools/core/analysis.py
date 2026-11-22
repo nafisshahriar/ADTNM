@@ -61,6 +61,7 @@ import re
 import numpy as np
 import json
 import sys
+import signal
 from pathlib import Path
 from collections import defaultdict
 from multiprocessing import Pool
@@ -795,9 +796,29 @@ class PlotGenerator:
 _WORKER_CONFIG = None
 _WORKER_OUTPUT_DIR = None
 
+def _lower_worker_priority():
+    """Ignore SIGINT in child pool workers and lower OS priority (BelowNormal / nice +10)."""
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except Exception:
+        pass
+    if sys.platform == 'win32':
+        try:
+            import psutil
+            psutil.Process().nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        except Exception:
+            pass
+    else:
+        try:
+            os.nice(10)
+        except Exception:
+            pass
+
+
 def _init_worker(config, output_dir):
     """Initialize worker with config (called once per worker process)."""
     global _WORKER_CONFIG, _WORKER_OUTPUT_DIR
+    _lower_worker_priority()
     _WORKER_CONFIG = config
     _WORKER_OUTPUT_DIR = output_dir
 
@@ -939,11 +960,20 @@ def main():
             print(f"  Workers: {num_processes} (CPU count)")
         
         # Use Pool with initializer to avoid pickling config for every job
-        with Pool(processes=num_processes, 
-                  initializer=_init_worker, 
-                  initargs=(config, plots_dir)) as pool:
+        pool = Pool(processes=num_processes,
+                    initializer=_init_worker,
+                    initargs=(config, plots_dir))
+        try:
             # Use imap_unordered for faster processing
-            results = list(pool.imap_unordered(execute_plot_job, plot_jobs, chunksize=max(1, len(plot_jobs) // num_processes)))
+            results = list(pool.imap_unordered(
+                execute_plot_job, plot_jobs, chunksize=max(1, len(plot_jobs) // num_processes)
+            ))
+            pool.close()
+            pool.join()
+        except BaseException:
+            pool.terminate()
+            pool.join()
+            raise
         
         elapsed = time.time() - start_time
         successful = sum(r for r in results if r)

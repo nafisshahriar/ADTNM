@@ -114,13 +114,15 @@ def main():
     phase_summary(0.0, 2.0, "Pre-Shock (0-2h)")
     phase_summary(2.0, 4.0, "Burst Shock (2-4h)")
     phase_summary(4.0, 6.1, "Recovery (4-6h)")
+    print("  Note: Dual multiplier lambda(t) acts as an integral congestion accumulator and")
+    print("        lags past t=4h before residual backlog drains during recovery.")
     print("=" * 78)
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 10), sharex=True)
     plt.subplots_adjust(hspace=0.22)
 
     panels = [
-        (axes[0], "lam_mean", "lam_std", "Mean Dual Variable $\\lambda(t)$", "#d62728", "Primal-Dual Multiplier Adaptation"),
+        (axes[0], "lam_mean", "lam_std", "Mean Dual Variable $\\lambda(t)$", "#d62728", "Primal-Dual Multiplier (Integral Congestion Lag Response)"),
         (axes[1], "quota_mean", "quota_std", "Mean Spray Quota $L(t)$", "#1f77b4", "Active Spray Quota Adaptation Under Congestion Shock"),
         (axes[2], "shield_mean", "shield_std", "Shield Override Rate (%)", "#ff7f0e", "Safety Shield Intervention Rate Over Time"),
     ]

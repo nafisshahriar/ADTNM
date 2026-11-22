@@ -58,10 +58,11 @@ class ResourceConfig:
     DEFAULT_S_MAX_MB = 10   # Default S_max when file sizes are not explicitly measured
     MIN_WORKERS = 1         # Minimum worker count (feasible set lower bound)
     MAX_WORKERS = 64        # Maximum worker count (hard safety ceiling)
-    
-    # Use available CPU cores when psutil unavailable
+    CPU_FRACTION = 0.50     # Polite default CPU core cap (leave 50% headroom for OS/desktop)
+
+    # Use 50% of available CPU cores when psutil unavailable
     import os as _os
-    FALLBACK_WORKERS = max(1, (_os.cpu_count() or 4))
+    FALLBACK_WORKERS = max(1, (_os.cpu_count() or 4) // 2)
     
     # Safety toggle
     SAFETY_ENABLED = True
@@ -338,9 +339,10 @@ class ResourceManager:
         Returns:
             Maximum feasible worker count P_max (integer >= 1)
         """
-        # If safety is disabled, bound only by CPU and task count
+        p_cpu_polite = max(1, int(self._cpu_count * ResourceConfig.CPU_FRACTION))
+        # If safety is disabled, bound only by polite CPU cap and task count
         if not self.safety_enabled:
-            p_cpu = min(ResourceConfig.FALLBACK_WORKERS, self._cpu_count)
+            p_cpu = min(ResourceConfig.FALLBACK_WORKERS, p_cpu_polite)
             if num_tasks is not None and num_tasks > 0:
                 return max(1, min(p_cpu, num_tasks))
             if file_paths:
@@ -357,7 +359,7 @@ class ResourceManager:
             n_tasks = len(file_paths)
             
         p_mem_max = self.get_memory_feasible_workers(s_max=s_max)
-        p_cpu = self._cpu_count
+        p_cpu = p_cpu_polite
         
         candidates = [p_cpu, p_mem_max, ResourceConfig.MAX_WORKERS]
         if n_tasks is not None and n_tasks > 0:

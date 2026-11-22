@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 run_phase1_oppnda.py
-Executes OppNDA's ReportAverager & Analysis pipeline on Phase 1 VDTN ablation,
-multi-seed sanity, shock, or 210-run comparison sweeps; verifies zero critical
-buffer drops and zero physical buffer overshoot across shielded/static routers;
-reports epsilon-free greedy safety internalization, profile usage distributions,
-and paired 95% confidence intervals.
+Executes OppNDA's ReportAverager & Analysis pipeline politely (50% default CPU cap),
+verifies zero critical buffer drops, zero physical buffer overshoot, and creation
+denominator parity across shielded/protected routers, and computes statistically valid
+seed-clustered 95% confidence intervals (and per-buffer paired differences).
 """
 import argparse
 import json
@@ -27,10 +26,12 @@ from core.averager import ReportAverager
 from core.analysis import load_config, SmartFileParser, DataOrganizer, PlotStrategy, PlotGenerator
 
 SHIELDED_ROUTERS = {
+    "PrioritySprayAndWaitRouter",
     "DtnmaStaticRouter",
     "DtnmaStaticAckRouter",
     "DtnmaShieldedPassiveRLRouter",
     "DtnmaShieldedRLRouter",
+    "DtnmaShieldedAckRLRouter",
     "DtnmaGossipRLRouter",
     "DtnmaGossipAckRLRouter",
     "DtnmaRouter",
@@ -56,19 +57,18 @@ def t_critical_95(df_deg: int) -> float:
     return 1.960
 
 
-def print_paired_diff(raw_df: pd.DataFrame, router_a: str, router_b: str, metric: str,
-                      scale: float = 1.0, unit: str = ""):
-    if router_a not in raw_df["router"].values or router_b not in raw_df["router"].values:
-        return
-    if metric not in raw_df.columns:
-        return
+def _compute_paired_ci(df_sub: pd.DataFrame, router_a: str, router_b: str, metric: str,
+                       cluster_col: str = "seed", scale: float = 1.0):
+    if router_a not in df_sub["router"].values or router_b not in df_sub["router"].values:
+        return None
+    if metric not in df_sub.columns or cluster_col not in df_sub.columns:
+        return None
 
-    join_cols = [c for c in ["seed", "ttl", "buffer"] if c in raw_df.columns]
-    df_a = raw_df[raw_df["router"] == router_a][join_cols + [metric]].rename(columns={metric: "a"})
-    df_b = raw_df[raw_df["router"] == router_b][join_cols + [metric]].rename(columns={metric: "b"})
-    merged = pd.merge(df_a, df_b, on=join_cols, how="inner").dropna()
+    grp_a = df_sub[df_sub["router"] == router_a].groupby(cluster_col, as_index=False)[metric].mean().rename(columns={metric: "a"})
+    grp_b = df_sub[df_sub["router"] == router_b].groupby(cluster_col, as_index=False)[metric].mean().rename(columns={metric: "b"})
+    merged = pd.merge(grp_a, grp_b, on=cluster_col, how="inner").dropna()
     if merged.empty:
-        return
+        return None
 
     diffs = (merged["a"] - merged["b"]) * scale
     n = len(diffs)
@@ -76,18 +76,33 @@ def print_paired_diff(raw_df: pd.DataFrame, router_a: str, router_b: str, metric
     if n > 1:
         sd = float(diffs.std(ddof=1))
         ci = t_critical_95(n - 1) * (sd / math.sqrt(n))
-        ci_str = f"[{mean_d - ci:+.3f}, {mean_d + ci:+.3f}]{unit} (+/-{ci:.3f})"
+        lo, hi = mean_d - ci, mean_d + ci
+        sig = "EXCLUDES 0" if (lo > 0.0 or hi < 0.0) else "crosses 0"
+        return n, mean_d, ci, lo, hi, sig
+    return n, mean_d, 0.0, mean_d, mean_d, "n=1"
+
+
+def print_seed_clustered_diff(raw_df: pd.DataFrame, router_a: str, router_b: str, metric: str,
+                              scale: float = 1.0, unit: str = "", label_prefix: str = ""):
+    res = _compute_paired_ci(raw_df, router_a, router_b, metric, cluster_col="seed", scale=scale)
+    if res is None:
+        return
+    n, mean_d, ci, lo, hi, sig = res
+    if n > 1:
+        ci_str = f"[{lo:+.3f}, {hi:+.3f}]{unit} (+/-{ci:.3f}, {sig})"
     else:
         ci_str = "n=1"
-    print(f"  {router_a:<27} - {router_b:<27} | {metric:<24} (n={n:2d}): mean={mean_d:+.3f}{unit} 95%CI={ci_str}")
+    print(f"  {label_prefix}{router_a:<27} - {router_b:<27} | {metric:<24} (n_seeds={n:2d}): mean={mean_d:+.3f}{unit} 95%CI={ci_str}")
 
 
 def main():
+    default_workers = max(1, (os.cpu_count() or 4) // 2)
     parser = argparse.ArgumentParser(description="OppNDA Phase 1 Post-Processing & Diagnostics")
     parser.add_argument("--averager-config", default="config/phase1_averager_config.json")
     parser.add_argument("--analysis-config", default="config/phase1_analysis_config.json")
     parser.add_argument("--report-dir", "-r", default=None, help="Override reports directory (e.g., reports/phase1_sanity)")
     parser.add_argument("--plots-dir", "-p", default=None, help="Override plots output directory (e.g., plots/phase1_sanity)")
+    parser.add_argument("--workers", "-w", type=int, default=default_workers, help=f"Worker processes (default: {default_workers}, 50%% of cores)")
     parser.add_argument("--no-assert", action="store_true", help="Skip strict zero-drop & zero-overshoot assertions")
     args = parser.parse_args()
 
@@ -98,6 +113,10 @@ def main():
         avg_cfg = json.load(f)
     with open(ana_cfg_path, "r", encoding="utf-8") as f:
         ana_cfg = json.load(f)
+
+    workers = max(1, int(args.workers))
+    avg_cfg["num_processes"] = workers
+    ana_cfg["num_processes"] = workers
 
     if args.report_dir:
         rdir = args.report_dir.rstrip("/\\") + "/"
@@ -110,6 +129,7 @@ def main():
     print("PHASE 1 OppNDA POST-PROCESSING & VERIFICATION")
     print(f"Reports Dir : {avg_cfg['folder']}")
     print(f"Plots Dir   : {ana_cfg['directories']['plots_dir']}")
+    print(f"Workers     : {workers} (polite CPU cap)")
     print("=" * 78)
 
     temp_files = []
@@ -138,6 +158,9 @@ def main():
 
         averaged_dfs = organizer.load_averaged_files()
         raw_df = organizer.load_raw_files()
+    except KeyboardInterrupt:
+        print("\n[ABORT] OppNDA processing interrupted cleanly.")
+        sys.exit(130)
     finally:
         for tp in temp_files:
             try:
@@ -166,19 +189,20 @@ def main():
                 plot_gen.create_3d_surface_plot((grouping_types, dfs, metric, config["plot_settings"]["3d_surface"]))
 
     # 3. Print Comprehensive Summary Table
-    print("\n" + "=" * 134)
+    print("\n" + "=" * 142)
     print("PHASE 1 VDTN SUMMARY (MEAN ACROSS ALL SEEDS, TTLs & BUFFERS)")
-    print("=" * 134)
+    print("=" * 142)
     header = (
         f"{'Router':<28} | {'Deliv':>6} | {'CritDel':>7} | {'CritDrp':>7} | {'UnqLost':>7} | "
-        f"{'MaxOcc':>6} | {'Overhd':>6} | {'CtrlRat':>7} | {'GrdErl':>6} | {'GrdLat':>6} | {'CtrlKB':>8}"
+        f"{'RejCr':>5} | {'MaxOcc':>6} | {'Overhd':>6} | {'CtrlRat':>7} | {'GrdErl':>6} | {'GrdLat':>6} | {'CtrlKB':>8}"
     )
     print(header)
-    print("-" * 134)
+    print("-" * 142)
 
     router_order = [
         "EpidemicRouter",
         "SprayAndWaitRouter",
+        "PrioritySprayAndWaitRouter",
         "ProphetV2Router",
         "MaxPropRouter",
         "DtnmaStaticRouter",
@@ -186,6 +210,7 @@ def main():
         "DtnmaUnshieldedRLRouter",
         "DtnmaShieldedPassiveRLRouter",
         "DtnmaShieldedRLRouter",
+        "DtnmaShieldedAckRLRouter",
         "DtnmaGossipRLRouter",
         "DtnmaGossipAckRLRouter",
         "DtnmaRouter",
@@ -203,6 +228,7 @@ def main():
         crit_del = sub["critical_delivery_prob"].mean() * 100.0 if "critical_delivery_prob" in sub else 0.0
         crit_buf_drp = sub["critical_buffer_dropped"].sum() if "critical_buffer_dropped" in sub else 0.0
         unq_lost = sub["unique_critical_lost"].sum() if "unique_critical_lost" in sub else 0.0
+        rej_cr = sub["local_creation_rejected"].sum() if "local_creation_rejected" in sub else 0.0
         max_occ = sub["max_buffer_occupancy"].max() if "max_buffer_occupancy" in sub else 0.0
         overhd = sub["overhead_ratio"].mean() if "overhead_ratio" in sub else 0.0
         ctrl_rat = sub["control_to_payload_ratio"].mean() * 100.0 if "control_to_payload_ratio" in sub else 0.0
@@ -217,7 +243,7 @@ def main():
 
         print(
             f"{r:<28} | {deliv:5.2f}% | {crit_del:6.2f}% | {int(crit_buf_drp):7d} | {int(unq_lost):7d} | "
-            f"{max_occ:6.4f} | {overhd:6.2f} | {ctrl_rat:6.3f}% | {grd_erl:5.2f}% | {grd_lat:5.2f}% | {ctrl_kb:8.1f}"
+            f"{int(rej_cr):5d} | {max_occ:6.4f} | {overhd:6.2f} | {ctrl_rat:6.3f}% | {grd_erl:5.2f}% | {grd_lat:5.2f}% | {ctrl_kb:8.1f}"
         )
 
         if r in SHIELDED_ROUTERS and crit_buf_drp > 0:
@@ -225,12 +251,12 @@ def main():
         if r in SHIELDED_ROUTERS and max_occ > 1.0001:
             occ_violations.append((r, float(max_occ)))
 
-    print("=" * 134)
+    print("=" * 142)
 
     # 4. Per-Buffer Breakdown & Profile Distribution
     if "buffer" in raw_df.columns:
         print("\nPER-BUFFER PERFORMANCE & PROFILE EXECUTION DISTRIBUTION:")
-        print("-" * 120)
+        print("-" * 124)
         for buf_val in sorted(raw_df["buffer"].unique()):
             sub_b = raw_df[raw_df["buffer"] == buf_val]
             print(f"Buffer = {buf_val}M:")
@@ -250,21 +276,49 @@ def main():
                     f"Overhd={sr['overhead_ratio'].mean():5.2f} | "
                     f"GrdShld={gr_e:4.1f}%->{gr_l:4.1f}%{p_str}"
                 )
-        print("-" * 120)
+        print("-" * 124)
 
-    # 5. Per-Seed Paired Differences & 95% CIs
-    print("\nPAIRED DIFFERENCES & 95% CONFIDENCE INTERVALS (MATCHED SEED x TTL x BUFFER):")
-    print("-" * 120)
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "delivery_prob", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "critical_delivery_prob", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "overhead_ratio", 1.0, "")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "SprayAndWaitRouter", "delivery_prob", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "SprayAndWaitRouter", "critical_delivery_prob", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "MaxPropRouter", "delivery_prob", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "MaxPropRouter", "critical_delivery_prob", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaGossipAckRLRouter", "DtnmaShieldedPassiveRLRouter", "shield_greedy_late_rate", 100.0, "pp")
-    print_paired_diff(raw_df, "DtnmaRouter", "SprayAndWaitRouter", "delivery_prob", 100.0, "pp")
-    print("-" * 120)
+    # 5A. Seed-Clustered Overall Paired Differences (cluster unit = seed, independent)
+    print("\nSECTION A: SEED-CLUSTERED OVERALL PAIRED DIFFERENCES (CLUSTER = SEED; INDEPENDENT n_seeds):")
+    print("-" * 130)
+    seed_pairs = [
+        ("DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "critical_delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "overhead_ratio", 1.0, ""),
+        ("DtnmaGossipAckRLRouter", "DtnmaShieldedAckRLRouter", "delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "DtnmaShieldedAckRLRouter", "shield_greedy_late_rate", 100.0, "pp"),
+        ("DtnmaShieldedAckRLRouter", "DtnmaStaticAckRouter", "delivery_prob", 100.0, "pp"),
+        ("DtnmaShieldedAckRLRouter", "DtnmaStaticAckRouter", "overhead_ratio", 1.0, ""),
+        ("DtnmaGossipAckRLRouter", "PrioritySprayAndWaitRouter", "delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "PrioritySprayAndWaitRouter", "critical_delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "SprayAndWaitRouter", "delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "SprayAndWaitRouter", "critical_delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "MaxPropRouter", "delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "MaxPropRouter", "critical_delivery_prob", 100.0, "pp"),
+        ("DtnmaGossipAckRLRouter", "DtnmaShieldedPassiveRLRouter", "shield_greedy_late_rate", 100.0, "pp"),
+        ("DtnmaShieldedAckRLRouter", "DtnmaShieldedPassiveRLRouter", "shield_greedy_late_rate", 100.0, "pp"),
+    ]
+    for ra, rb, met, sc, unit in seed_pairs:
+        print_seed_clustered_diff(raw_df, ra, rb, met, sc, unit)
+    print("-" * 130)
+
+    # 5B. Per-Buffer Paired Differences (cluster unit = seed within buffer)
+    if "buffer" in raw_df.columns and raw_df["buffer"].nunique() > 1:
+        print("\nSECTION B: PER-BUFFER PAIRED DIFFERENCES (INDEPENDENT n_seeds PER BUFFER):")
+        print("-" * 130)
+        buf_pairs = [
+            ("DtnmaGossipAckRLRouter", "DtnmaStaticAckRouter", "delivery_prob", 100.0, "pp"),
+            ("DtnmaGossipAckRLRouter", "DtnmaShieldedAckRLRouter", "delivery_prob", 100.0, "pp"),
+            ("DtnmaShieldedAckRLRouter", "DtnmaStaticAckRouter", "delivery_prob", 100.0, "pp"),
+            ("DtnmaGossipAckRLRouter", "PrioritySprayAndWaitRouter", "delivery_prob", 100.0, "pp"),
+            ("DtnmaGossipAckRLRouter", "DtnmaShieldedPassiveRLRouter", "shield_greedy_late_rate", 100.0, "pp"),
+        ]
+        for buf_val in sorted(raw_df["buffer"].unique()):
+            sub_b = raw_df[raw_df["buffer"] == buf_val]
+            prefix = f"[{buf_val:3d}M] "
+            for ra, rb, met, sc, unit in buf_pairs:
+                print_seed_clustered_diff(sub_b, ra, rb, met, sc, unit, label_prefix=prefix)
+        print("-" * 130)
 
     # 6. Generate Phase 1 RL & Shield Diagnostics Composite Figure
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))

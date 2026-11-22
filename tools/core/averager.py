@@ -40,6 +40,7 @@ import numpy as np
 from collections import defaultdict
 import re
 import sys
+import signal
 from pathlib import Path
 from multiprocessing import Pool, Manager
 import traceback
@@ -56,6 +57,25 @@ try:
     RESOURCE_MANAGER_AVAILABLE = True
 except ImportError:
     RESOURCE_MANAGER_AVAILABLE = False
+
+
+def _init_gentle_worker():
+    """Ignore SIGINT in child pool workers and lower OS priority (BelowNormal / nice +10)."""
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except Exception:
+        pass
+    if sys.platform == 'win32':
+        try:
+            import psutil
+            psutil.Process().nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        except Exception:
+            pass
+    else:
+        try:
+            os.nice(10)
+        except Exception:
+            pass
 
 def read_and_parse_file_parallel(args):
     """Worker function for parallel file reading and parsing"""
@@ -316,9 +336,16 @@ class ReportAverager:
         if len(unique_paths) > 1 and self.num_processes > 1:
             try:
                 chunksize = max(1, len(unique_paths) // (self.num_processes * 4))
-                with Pool(processes=self.num_processes) as pool:
+                pool = Pool(processes=self.num_processes, initializer=_init_gentle_worker)
+                try:
                     results = pool.map(read_and_parse_file_parallel, args_list, chunksize=chunksize)
-                
+                    pool.close()
+                    pool.join()
+                except BaseException:
+                    pool.terminate()
+                    pool.join()
+                    raise
+
                 for filepath, data in results:
                     if data is not None:
                         parsed_data[filepath] = data
@@ -364,9 +391,16 @@ class ReportAverager:
         # Use multiprocessing to read files in parallel
         if len(filepaths) > 1 and self.num_processes > 1:
             try:
-                with Pool(processes=self.num_processes) as pool:
+                pool = Pool(processes=self.num_processes, initializer=_init_gentle_worker)
+                try:
                     results = pool.map(read_and_parse_file_parallel, args_list)
-                
+                    pool.close()
+                    pool.join()
+                except BaseException:
+                    pool.terminate()
+                    pool.join()
+                    raise
+
                 for filepath, data in results:
                     if data is None:
                         continue

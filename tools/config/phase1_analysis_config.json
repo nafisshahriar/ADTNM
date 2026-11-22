@@ -55,6 +55,7 @@
       "critical_ttl_expired",
       "bulk_buffer_dropped",
       "delivered_payload_bytes",
+      "local_creation_rejected",
       "max_buffer_occupancy",
       "shield_intervention_rate",
       "shield_early_rate",
