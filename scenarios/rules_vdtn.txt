@@ -3,17 +3,23 @@
 # Targeted for highway speeds, urban clusters, and road intersection dwell times
 # ====================================================================
 
-# Rule 1: Traffic Jam / Intersection Gridlock
-# High vehicle density with near-zero speed: heavy risk of buffer collapse
-RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 100 | DESC: High vehicle density stopped at intersection or jam
+# Rule 0: Hard Safety Failsafe - Critical Buffer Saturation or Low Energy
+# Priority >= 100 is reserved strictly for inviolable safety constraints
+RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Critical buffer congestion or low energy across any vehicular speed regime
+IF: (EDD_QUEUE_RATIO >= 0.90) || (EDD_ENERGY_SOC < 0.20)
+THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 1: Traffic Jam / Intersection Gridlock (Operational Heuristic)
+# High vehicle density with near-zero speed: balanced throttle without false hard-shield lock
+RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 60 | DESC: High vehicle density stopped at intersection or jam
 IF: (EDD_NODE_DENSITY >= 5.0) && (EDD_NODE_SPEED < 2.0)
 THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
 
 # Rule 2: Highway High-Speed Transit
-# Moving at high speed (>= 15 m/s): brief encounter window with passing vehicles
+# Moving at high speed (>= 10 m/s): brief encounter window with passing vehicles
 RULE: ARI://DTNMA/SRL/VDTN_HIGHWAY_PASS | PRIORITY: 50 | DESC: High-speed highway passing encounter
-IF: (EDD_NODE_SPEED >= 15.0) && (EDD_QUEUE_RATIO < 0.85)
-THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(false)
+IF: (EDD_NODE_SPEED >= 10.0) && (EDD_QUEUE_RATIO < 0.85)
+THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(true)
 
 # Rule 3: Urban Sparse Suburban Cruising
 # Moderate urban transit with low congestion

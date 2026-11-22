@@ -46,6 +46,42 @@ public class ControlAction {
         return ca;
     }
 
+    public ControlType getType() {
+        return type;
+    }
+
+    public int getIntParam() {
+        return intParam;
+    }
+
+    public double getNumericParam() {
+        return numericParam;
+    }
+
+    public boolean getBoolParam() {
+        return boolParam;
+    }
+
+    /**
+     * Clamps rule parameters into physically and mathematically valid bounds
+     * so user-authored declarative rules cannot destabilize the router.
+     */
+    public void sanitize() {
+        switch (type) {
+            case SET_SPRAY_QUOTA:
+                this.intParam = Math.max(1, Math.min(16, this.intParam));
+                break;
+            case SET_INGRESS_MODE:
+                this.intParam = Math.max(0, Math.min(2, this.intParam));
+                break;
+            case SET_TELEMETRY_INTERVAL:
+                this.numericParam = Math.max(1.0, Math.min(3600.0, this.numericParam));
+                break;
+            case SET_BACKPRESSURE:
+                break;
+        }
+    }
+
     public void execute(DtnmaRouter router) {
         switch (type) {
             case SET_SPRAY_QUOTA:
