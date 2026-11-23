@@ -22,7 +22,7 @@ highspeedInterface.transmitRange = 1000
 
 # Common Group Settings (120 Field Devices + 6 Powered Managers)
 Group.movementModel = ShortestPathMapBasedMovement
-Group.router = [SprayAndWaitRouter; ManagedSprayAndWaitRouter; ProphetV2Router; ManagedProphetV2Router; MaxPropRouter; ManagedMaxPropRouter; EpidemicRouter; ManagedEpidemicRouter]
+Group.router = [SprayAndWaitRouter; ManagedSprayAndWaitRouter; ProphetV2Router; ManagedProphetV2Router; MaxPropRouter; ManagedMaxPropRouter; EpidemicRouter; ManagedEpidemicRouter; EnergyAwareEpidemicRouter]
 Group.bufferSize = 15M
 Group.waitTime = 0, 60
 Group.nrofInterfaces = 1

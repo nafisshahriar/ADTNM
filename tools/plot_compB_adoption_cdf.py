@@ -16,9 +16,10 @@ import matplotlib.pyplot as plt
 
 
 MODE_META = [
-    ("DtnmaM1RemoteRouter", "M1 Remote-Only (DTN L=8)", "#d62728", "-", 2.2),
-    ("DtnmaM2SrlRouter",    "M2 Autonomic SRL (Local + Remote)", "#1f77b4", "--", 2.0),
-    ("DtnmaM3RlRouter",     "M3 Autonomic RL (Full DTNMA)", "#2ca02c", "-.", 2.0),
+    ("DtnmaM1RemoteRouter", "M1-U Remote (DTN L=8)", "#e377c2", "-", 2.2),
+    ("DtnmaM1FloodRouter",  "M1-F Remote (Flood)",   "#d62728", "-", 2.0),
+    ("DtnmaM2SrlRouter",    "M2 Autonomic SRL",      "#1f77b4", "--", 2.0),
+    ("DtnmaM3RlRouter",     "M3 Autonomic RL",       "#2ca02c", "-.", 2.0),
 ]
 
 
@@ -101,7 +102,7 @@ def main():
             pct_5m = float(w1_mean[5])
             if tag == "DtnmaM1RemoteRouter":
                 ax1.scatter([5.0], [pct_5m], color=color, zorder=5, s=45)
-                ax1.annotate(f"W1 @ 5 min: {pct_5m:.1f}% reached",
+                ax1.annotate(f"W1 @ 5 min (M1-U): {pct_5m:.1f}%",
                              xy=(5.0, pct_5m), xytext=(11.0, max(12.0, pct_5m - 2.0)),
                              arrowprops=dict(arrowstyle="->", color=color, lw=1.0),
                              fontsize=8.5, fontweight="bold", color=color)
@@ -137,21 +138,22 @@ def main():
         "M2 Local Reflex\n(Threshold Crossing)",
         "M3 Local Reflex\n(Threshold Crossing)",
         "5-Min Burst\nDuration",
-        "Remote Downlink\nMedian (T50)",
-        "Remote Downlink\n90% Conv. (T90)",
+        "M1-F Flood\n90% Conv. (T90)",
+        "M1-U Unicast\n90% Conv. (T90)",
         "30-Min Shock\nDuration",
     ]
-    m1_runs = records.get("DtnmaM1RemoteRouter", [])
-    t50_vals = [w["t50"] for r in m1_runs for w in r["waves"] if w["t50"] >= 0]
-    t90_vals = [w["t90"] for r in m1_runs for w in r["waves"] if w["t90"] >= 0]
-    t50_mean = float(np.mean(t50_vals)) if t50_vals else 750.0
-    t90_mean = float(np.mean(t90_vals)) if t90_vals else 1500.0
+    m1u_runs = records.get("DtnmaM1RemoteRouter", [])
+    m1f_runs = records.get("DtnmaM1FloodRouter", [])
+    t90_u_vals = [w["t90"] for r in m1u_runs for w in r["waves"] if w["t90"] >= 0]
+    t90_f_vals = [w["t90"] for r in m1f_runs for w in r["waves"] if w["t90"] >= 0]
+    t90_u_mean = float(np.mean(t90_u_vals)) if t90_u_vals else 3100.0
+    t90_f_mean = float(np.mean(t90_f_vals)) if t90_f_vals else 1400.0
 
     # Floor <=0.5s tick floor at 0.5s for log display, annotate exact mean
     m2_disp = max(0.5, m2_react)
     m3_disp = max(0.5, m3_react)
-    vals_b = [m2_disp, m3_disp, 300.0, t50_mean, t90_mean, 1800.0]
-    cols_b = ["#1f77b4", "#2ca02c", "#7f7f7f", "#ff7f0e", "#d62728", "#7f7f7f"]
+    vals_b = [m2_disp, m3_disp, 300.0, t90_f_mean, t90_u_mean, 1800.0]
+    cols_b = ["#1f77b4", "#2ca02c", "#7f7f7f", "#d62728", "#e377c2", "#7f7f7f"]
 
     x = np.arange(len(labels_b))
     bars = ax2.bar(x, vals_b, color=cols_b, alpha=0.88, width=0.58, edgecolor="#222222", linewidth=0.6)
@@ -167,8 +169,8 @@ def main():
         f"<=0.5s\n({m2_react:.3f}s)",
         f"<=0.5s\n({m3_react:.3f}s)",
         "300 s",
-        f"{t50_mean:.0f} s",
-        f"{t90_mean:.0f} s",
+        f"{t90_f_mean:.0f} s",
+        f"{t90_u_mean:.0f} s",
         "1800 s",
     ]
     for bar, tv in zip(bars, txt_vals):

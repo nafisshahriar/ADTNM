@@ -9,7 +9,7 @@ train/dev vs. held-out test separation.
 | Role | Seeds | Usage Policy |
 |---|---|---|
 | **Development & Calibration** | `4001, 4003, 4007, 4009, 4021` | Bug-hunting, reward shaping verification, M0a/M0b stressor calibration, and matched single-seed pilot verification (`4001`). Never cited as final paper tables without held-out replication. |
-| **Final Paper Campaigns** | `7103, 7109, 7121, 7127, 7129, 7151, 7159` | 7 fresh prime seeds reserved exclusively for final camera-ready campaigns (Comparison A, Comparison A Intervention Tiers, Comparison B Multi-Timescale, and Regression/Oracle checks). Prime count `7` is coprime to router sweep counts (`2, 4, 5, 8, 9, 12`) to prevent ONE modular-index collisions. |
+| **Final Paper Campaigns** | `7103, 7109, 7121, 7127, 7129, 7151, 7159, 7177, 7187, 7193, 7207` | 11 fresh prime seeds reserved exclusively for final camera-ready campaigns (`df = 10` paired tests across Comparison A multi-regime, Comparison A Tiers, Equivalence/TOST, Comparison B Stress + Benign). Prime count `11` is coprime to all router sweep counts (`2, 4, 5, 6, 8, 9, 12`) to prevent ONE modular-index collisions. Never executed until one frozen commit tag exists. |
 
 ## 2. Comparison B Stressor Calibration Record (Seed `4001`, `M0a`/`M0b` Only)
 

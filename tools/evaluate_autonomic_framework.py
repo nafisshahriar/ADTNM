@@ -277,6 +277,22 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
         "L4": parse_rules_file(scenarios_dir / "rules_vdtn_L4.txt"),
         "L10": parse_rules_file(scenarios_dir / "rules_vdtn_L10.txt"),
         "fixed": parse_rules_file(scenarios_dir / "rules_fixed_L6.txt"),
+        "M0c": [
+            {
+                "ari": "ARI://DTNMA/SRL/V1_PREINSTALLED_GUARD",
+                "priority": 110,
+                "if": (False, [("EDD_ENERGY_SOC", "<", 0.25), ("EDD_QUEUE_RATIO", ">=", 0.88)]),
+                "max_quota": 1,
+                "min_ingress": 2,
+            },
+            {
+                "ari": "ARI://DTNMA/SRL/V1_PREINSTALLED_NOMINAL",
+                "priority": 10,
+                "if": (True, [("EDD_QUEUE_RATIO", ">=", 0.0)]),
+                "max_quota": 6,
+                "min_ingress": 0,
+            },
+        ],
     }
     v1_overlay = {
         "ari": "ARI://DTNMA/SRL/DOWNLINK_V1_ENERGY_GUARD",
@@ -330,6 +346,9 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
         elif "DtnmaStaticAckTunedRouter" in af.name:
             file_rules = rules_by_tag["L10"]
             allow_v1 = True
+        elif "DtnmaM0cV1GuardRouter" in af.name:
+            file_rules = rules_by_tag["M0c"]
+            allow_v1 = False
         else:
             file_rules = rules_by_tag["base"]
             allow_v1 = True

@@ -94,6 +94,7 @@ public class DtnmaConfig {
     public double shieldStormQueue = 0.78;
     public double shieldStormDensity = 5.0;
     public double shieldEnergyMin = 0.20;
+    public boolean equivalenceConnOuterOrder = false;
 
     public DtnmaConfig() {}
 
@@ -150,6 +151,7 @@ public class DtnmaConfig {
         this.shieldStormQueue = o.shieldStormQueue;
         this.shieldStormDensity = o.shieldStormDensity;
         this.shieldEnergyMin = o.shieldEnergyMin;
+        this.equivalenceConnOuterOrder = o.equivalenceConnOuterOrder;
     }
 
     /**
@@ -284,6 +286,7 @@ public class DtnmaConfig {
         shieldStormQueue = parseDouble(params, "shieldStormQueue", shieldStormQueue);
         shieldStormDensity = parseDouble(params, "shieldStormDensity", shieldStormDensity);
         shieldEnergyMin = parseDouble(params, "shieldEnergyMin", shieldEnergyMin);
+        equivalenceConnOuterOrder = parseBool(params, "equivalenceConnOuterOrder", equivalenceConnOuterOrder);
     }
 
     private void applySettings(Settings s) {
@@ -344,6 +347,7 @@ public class DtnmaConfig {
         if (s.contains("shieldStormQueue")) shieldStormQueue = s.getDouble("shieldStormQueue");
         if (s.contains("shieldStormDensity")) shieldStormDensity = s.getDouble("shieldStormDensity");
         if (s.contains("shieldEnergyMin")) shieldEnergyMin = s.getDouble("shieldEnergyMin");
+        if (s.contains("equivalenceConnOuterOrder")) equivalenceConnOuterOrder = s.getBoolean("equivalenceConnOuterOrder");
     }
 
     public void clampSafeBounds() {

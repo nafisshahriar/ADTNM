@@ -38,6 +38,7 @@ Group.energyWarmup = 0
 DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
 DtnmaRouter.managementMode = M0_STATIC
 DtnmaRouter.interventionTier = TIER1_PROTECTION_ONLY
+DtnmaRouter.equivalenceConnOuterOrder = true
 DtnmaRouter.staticQuota = 6
 DtnmaRouter.staticIngressMode = 0
 DtnmaRouter.staticBackpressure = false

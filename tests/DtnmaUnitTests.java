@@ -30,6 +30,9 @@ import routing.DtnmaConfig;
 import routing.DtnmaContactBeacon;
 import routing.DtnmaFixedAckRouter;
 import routing.DtnmaM0bStaticRouter;
+import routing.DtnmaM0cV1GuardRouter;
+import routing.DtnmaM0dConservativeRouter;
+import routing.DtnmaM1FloodRouter;
 import routing.DtnmaM1RemoteRouter;
 import routing.DtnmaM2SrlRouter;
 import routing.DtnmaM3RlRouter;
@@ -45,6 +48,7 @@ import routing.DtnmaStaticAckL8Router;
 import routing.DtnmaStaticAckL12Router;
 import routing.DtnmaStaticAckTunedRouter;
 import routing.EddTelemetrySampler;
+import routing.EnergyAwareEpidemicRouter;
 import routing.ManagedEpidemicRouter;
 import routing.ManagedMaxPropRouter;
 import routing.ManagedProphetV2Router;
@@ -1023,6 +1027,77 @@ public class DtnmaUnitTests {
                 String.format("rules=%s(%s) presets=%s tier1=%s", rulesOk, ruleInfo, presetsOk, tier1Ok));
     }
 
+    private static void test19M0cM0dM1FloodEquivalenceAndEnergyAware() {
+        String baseCfg =
+                "Scenario.endTime = 200\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "bt.transmitSpeed = 250000\n" +
+                "bt.transmitRange = 100\n" +
+                "Group.bufferSize = 100000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 6\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "DtnmaRouter.equivalenceConnOuterOrder = true\n" +
+                "SprayAndWaitRouter.nrofCopies = 6\n" +
+                "SprayAndWaitRouter.binaryMode = true\n";
+        Settings.initFromStream(new ByteArrayInputStream(baseCfg.getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp = new Settings("Group");
+        SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
+        ifc.setGroupSettings(grp);
+        MovementModel mm = new StationaryMovement(grp);
+
+        DtnmaM0cV1GuardRouter pm0c = new DtnmaM0cV1GuardRouter(grp);
+        DtnmaM0dConservativeRouter pm0d = new DtnmaM0dConservativeRouter(grp);
+        DtnmaM1FloodRouter pm1f = new DtnmaM1FloodRouter(grp);
+        EnergyAwareEpidemicRouter peae = new EnergyAwareEpidemicRouter(grp);
+
+        DTNHost h0c = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m0c", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, pm0c);
+        DTNHost h0d = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m0d", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, pm0d);
+        DTNHost h1f = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m1f", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, pm1f);
+        DTNHost heae = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "eae", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, peae);
+
+        // Verify M0c fires pre-installed V1 guard at Q >= 0.88 even without CritQ and ignores remote CTRL_UPDATE
+        DtnmaM0cV1GuardRouter r0c = (DtnmaM0cV1GuardRouter) h0c.getRouter();
+        r0c.createNewMessage(new Message(h0c, h0d, "BULK_M0C", 90000));
+        SimClock.getInstance().advance(2.0);
+        h0c.update(false);
+        r0c.getDtnmaAgent().applyDownlinkControlBundle(new Message(h1f, h0c, "CTRL_UPDATE_THROTTLE_1", 1024));
+        boolean m0cOk = !r0c.supportsDynamicControlReconfig()
+                && r0c.getCurrentSprayQuota() == 1
+                && r0c.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY;
+
+        // Verify M0d boots conservative P1 (L=2, INGRESS=1) and M1-F sets epidemicControlFlooding=true
+        DtnmaM0dConservativeRouter r0d = (DtnmaM0dConservativeRouter) h0d.getRouter();
+        DtnmaM1FloodRouter r1f = (DtnmaM1FloodRouter) h1f.getRouter();
+        boolean m0dM1fOk = r0d.getCurrentSprayQuota() == 2
+                && r0d.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK
+                && r1f.getConfig().epidemicControlFlooding
+                && r1f.getConfig().equivalenceConnOuterOrder;
+
+        // Verify EnergyAwareEpidemicRouter protects critical messages while evicting bulk under full buffer
+        EnergyAwareEpidemicRouter rEae = (EnergyAwareEpidemicRouter) heae.getRouter();
+        boolean cOk = rEae.createNewMessage(new Message(heae, h0d, "CRITICAL_1", 40000));
+        boolean b1Ok = rEae.createNewMessage(new Message(heae, h0d, "BULK_1", 55000));
+        boolean b2Ok = rEae.createNewMessage(new Message(heae, h0d, "BULK_2", 30000));
+        boolean eaeProtected = cOk && b1Ok && b2Ok
+                && rEae.hasMessage("CRITICAL_1")
+                && !rEae.hasMessage("BULK_1")
+                && rEae.hasMessage("BULK_2");
+
+        check(m0cOk && m0dM1fOk && eaeProtected,
+                "Test19: M0c V1-guard/immutable, M0d/M1-F presets, ordering flag, & EnergyAwareEpidemic work cleanly",
+                String.format("m0c=%s(q=%d,ing=%d) m0dM1f=%s eae=%s",
+                        m0cOk, r0c.getCurrentSprayQuota(), r0c.getDtnmaAgent().getCurrentIngressMode(),
+                        m0dM1fOk, eaeProtected));
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -1044,6 +1119,7 @@ public class DtnmaUnitTests {
         test16DensityGossipBackoffAndOpenLoopAudit();
         test17StaticOracleFamilyL8L12();
         test18InterventionTiersPresetsAndCatchAllRule();
+        test19M0cM0dM1FloodEquivalenceAndEnergyAware();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");

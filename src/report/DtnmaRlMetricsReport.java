@@ -19,9 +19,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import core.Connection;
 import core.DTNHost;
 import core.Message;
 import core.MessageListener;
+import core.Settings;
 import core.SimScenario;
 import core.UpdateListener;
 import routing.DtnmaAgent;
@@ -30,6 +32,7 @@ import routing.DtnmaManagedRouter;
 import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
+import routing.EnergyAwareEpidemicRouter;
 import routing.PriorityMaxPropRouter;
 import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
@@ -44,12 +47,53 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
     private static final class MsgLifecycleRecord {
         final double createTime;
         final boolean isCrit;
+        final boolean isCtrl;
+        int eventMask = 0;
         boolean delivered = false;
         double delivTime = -1.0;
 
-        MsgLifecycleRecord(double createTime, boolean isCrit) {
+        MsgLifecycleRecord(double createTime, boolean isCrit, boolean isCtrl) {
             this.createTime = createTime;
             this.isCrit = isCrit;
+            this.isCtrl = isCtrl;
+        }
+    }
+
+    private static final class EventWindowState {
+        final String label;
+        final int bit;
+        final double tStart;
+        final double tEnd;
+        final double horizon;
+
+        int critCreatedAccepted = 0;
+        int bulkCreatedAccepted = 0;
+        long critRejectedSrc = 0L;
+        long bulkRejectedSrc = 0L;
+
+        Set<String> critEvictedIds = new HashSet<String>();
+        Set<String> bulkEvictedIds = new HashSet<String>();
+        Set<String> critTtlIds = new HashSet<String>();
+        Set<String> bulkTtlIds = new HashSet<String>();
+
+        double peakOcc = 0.0;
+        double nodeSecQ90 = 0.0;
+        double energyJ = 0.0;
+        double ctrlTxJ = 0.0;
+        int depletedNew = 0;
+
+        double atRiskNodeSec = 0.0;
+        double atRiskThrottledNodeSec = 0.0;
+        double staleThrottleNodeSec = 0.0;
+        Map<Integer, Double> firstAtRiskTime = new HashMap<Integer, Double>();
+        Map<Integer, Double> firstThrottleAfterRisk = new HashMap<Integer, Double>();
+
+        EventWindowState(String label, int bit, double tStart, double tEnd, double horizon) {
+            this.label = label;
+            this.bit = bit;
+            this.tStart = tStart;
+            this.tEnd = tEnd;
+            this.horizon = horizon;
         }
     }
 
@@ -100,6 +144,18 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
     private Map<Integer, Double> pendingHazardCrossingTime = new HashMap<Integer, Double>();
     private Set<Integer> prevHazardHosts = new HashSet<Integer>();
     private List<Double> localReactionDelaysSec = new ArrayList<Double>();
+
+    // Settings-driven Per-Event Cohort & Control Timing Tracking
+    private List<EventWindowState> eventWindows = new ArrayList<EventWindowState>();
+    private double groupTxEnergy = 0.0;
+    private double lastUpdateTime = -1.0;
+    private double lastControlSampleTime = -1.0;
+    private double totalEnergyJ = 0.0;
+    private double totalCtrlTxJ = 0.0;
+    private Map<Integer, Double> prevEnergyByHost = new HashMap<Integer, Double>();
+    private Map<Integer, Double> prev1HzQByHost = new HashMap<Integer, Double>();
+    private Map<Integer, Long> prevCritRejByHost = new HashMap<Integer, Long>();
+    private Map<Integer, Long> prevBulkRejByHost = new HashMap<Integer, Long>();
 
     public DtnmaRlMetricsReport() {
         super();
@@ -168,6 +224,42 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         else this.prevHazardHosts.clear();
         if (this.localReactionDelaysSec == null) this.localReactionDelaysSec = new ArrayList<Double>();
         else this.localReactionDelaysSec.clear();
+
+        if (this.eventWindows == null) this.eventWindows = new ArrayList<EventWindowState>();
+        else this.eventWindows.clear();
+        if (this.prevEnergyByHost == null) this.prevEnergyByHost = new HashMap<Integer, Double>();
+        else this.prevEnergyByHost.clear();
+        if (this.prev1HzQByHost == null) this.prev1HzQByHost = new HashMap<Integer, Double>();
+        else this.prev1HzQByHost.clear();
+        if (this.prevCritRejByHost == null) this.prevCritRejByHost = new HashMap<Integer, Long>();
+        else this.prevCritRejByHost.clear();
+        if (this.prevBulkRejByHost == null) this.prevBulkRejByHost = new HashMap<Integer, Long>();
+        else this.prevBulkRejByHost.clear();
+        this.groupTxEnergy = 0.0;
+        this.lastUpdateTime = -1.0;
+        this.lastControlSampleTime = -1.0;
+        this.totalEnergyJ = 0.0;
+        this.totalCtrlTxJ = 0.0;
+
+        try {
+            Settings grpSettings = new Settings("Group");
+            if (grpSettings.contains("transmitEnergy")) {
+                this.groupTxEnergy = grpSettings.getDouble("transmitEnergy");
+            }
+            Settings repSettings = getSettings();
+            double horizon = repSettings.contains("eventHorizon")
+                    ? repSettings.getDouble("eventHorizon") : 3600.0;
+            String[] labels = new String[] { "A", "B", "C" };
+            for (int i = 0; i < labels.length; i++) {
+                String key = "event" + labels[i];
+                if (repSettings.contains(key)) {
+                    double[] bounds = repSettings.getCsvDoubles(key, 2);
+                    this.eventWindows.add(new EventWindowState(
+                            labels[i], 1 << i, bounds[0], bounds[1], horizon));
+                }
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static String extractWaveKey(String msgId) {
@@ -180,6 +272,48 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
             idx--;
         }
         return idx > 0 ? msgId.substring(0, idx) : "V0";
+    }
+
+    private static double getHostQueueRatio(DTNHost h) {
+        if (h.getRouter() instanceof DtnmaManagedRouter) {
+            return ((DtnmaManagedRouter) h.getRouter()).getBufferOccupancyRatio();
+        }
+        if (h.getRouter() instanceof EnergyAwareEpidemicRouter) {
+            return ((EnergyAwareEpidemicRouter) h.getRouter()).getBufferOccupancyRatio();
+        }
+        return Math.max(0.0, h.getBufferOccupancy() / 100.0);
+    }
+
+    private double getHostEnergySoc(DTNHost h) {
+        if (h.getRouter() instanceof DtnmaManagedRouter) {
+            return ((DtnmaManagedRouter) h.getRouter()).getEnergySoc();
+        }
+        if (h.getRouter() instanceof EnergyAwareEpidemicRouter) {
+            return ((EnergyAwareEpidemicRouter) h.getRouter()).getEnergySoc();
+        }
+        Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
+        if (eObj instanceof Double) {
+            double curE = (Double) eObj;
+            Double initE = (this.initialEnergyByHost != null) ? this.initialEnergyByHost.get(h.getAddress()) : null;
+            if (initE != null && initE > 0.0) {
+                return Math.max(0.0, Math.min(1.0, curE / initE));
+            }
+            return curE > 0.0 ? 1.0 : 0.0;
+        }
+        return 1.0;
+    }
+
+    private static boolean isHostThrottleActive(DTNHost h) {
+        if (h.getRouter() instanceof DtnmaManagedRouter) {
+            DtnmaAgent dr = ((DtnmaManagedRouter) h.getRouter()).getDtnmaAgent();
+            if (dr == null) return false;
+            return dr.getCurrentIngressMode() >= DtnmaRouter.INGRESS_THROTTLE_BULK
+                    || dr.getCurrentSprayQuota() <= 2;
+        }
+        if (h.getRouter() instanceof EnergyAwareEpidemicRouter) {
+            return ((EnergyAwareEpidemicRouter) h.getRouter()).isThrottleActive();
+        }
+        return false;
     }
 
     private static int countAliveHosts(List<DTNHost> hosts) {
@@ -293,6 +427,135 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                 this.aoiSamples.add(instAoi);
             }
         }
+
+        // Per-tick Energy, Ctrl TX Energy, Peak Q>=0.90 node-seconds, and Source Rejections
+        double dt = (this.lastUpdateTime >= 0.0) ? Math.max(0.0, now - this.lastUpdateTime) : 0.0;
+        this.lastUpdateTime = now;
+
+        for (DTNHost h : hosts) {
+            int addr = h.getAddress();
+            Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
+            boolean hasE = (eObj instanceof Double);
+            double curE = hasE ? (Double) eObj : 0.0;
+            boolean isAlive = !hasE || curE > 1e-9;
+
+            double dE = 0.0;
+            boolean newlyDepleted = false;
+            if (hasE) {
+                Double prevE = this.prevEnergyByHost.get(addr);
+                if (prevE != null) {
+                    dE = Math.max(0.0, prevE - curE);
+                    newlyDepleted = (prevE > 1e-9 && curE <= 1e-9);
+                }
+                this.prevEnergyByHost.put(addr, curE);
+                this.totalEnergyJ += dE;
+            }
+
+            double hostCtrlTxJ = 0.0;
+            if (dE > 0.0 && dt > 0.0 && this.groupTxEnergy > 0.0) {
+                int totalXfer = 0;
+                int ctrlXfer = 0;
+                for (Connection con : h.getConnections()) {
+                    if (con.isTransferring() && con.getMessage() != null) {
+                        totalXfer++;
+                        if (DtnmaRouter.isDownlinkControlMessage(con.getMessage())) {
+                            ctrlXfer++;
+                        }
+                    }
+                }
+                if (totalXfer > 0 && ctrlXfer > 0) {
+                    hostCtrlTxJ = Math.min(dE, dt * this.groupTxEnergy) * ((double) ctrlXfer / totalXfer);
+                    this.totalCtrlTxJ += hostCtrlTxJ;
+                }
+            }
+
+            long curCritRej = 0L;
+            long curBulkRej = 0L;
+            if (h.getRouter() instanceof DtnmaManagedRouter) {
+                DtnmaAgent dr = ((DtnmaManagedRouter) h.getRouter()).getDtnmaAgent();
+                if (dr != null) {
+                    curCritRej = dr.getCriticalCreationRejected();
+                    curBulkRej = dr.getBulkCreationRejected();
+                }
+            } else if (h.getRouter() instanceof EnergyAwareEpidemicRouter) {
+                EnergyAwareEpidemicRouter er = (EnergyAwareEpidemicRouter) h.getRouter();
+                curCritRej = er.getCriticalCreationRejected();
+                curBulkRej = er.getBulkCreationRejected();
+            } else if (h.getRouter() instanceof PrioritySprayAndWaitRouter) {
+                curBulkRej = ((PrioritySprayAndWaitRouter) h.getRouter()).getLocalCreationRejected();
+            } else if (h.getRouter() instanceof PriorityMaxPropRouter) {
+                curBulkRej = ((PriorityMaxPropRouter) h.getRouter()).getLocalCreationRejected();
+            }
+            long dCritRej = Math.max(0L, curCritRej - this.prevCritRejByHost.getOrDefault(addr, curCritRej));
+            long dBulkRej = Math.max(0L, curBulkRej - this.prevBulkRejByHost.getOrDefault(addr, curBulkRej));
+            this.prevCritRejByHost.put(addr, curCritRej);
+            this.prevBulkRejByHost.put(addr, curBulkRej);
+
+            if (!this.eventWindows.isEmpty() && dt > 0.0) {
+                double q = isAlive ? getHostQueueRatio(h) : 0.0;
+                for (EventWindowState w : this.eventWindows) {
+                    if (now >= w.tStart && now <= w.tEnd) {
+                        w.energyJ += dE;
+                        w.ctrlTxJ += hostCtrlTxJ;
+                        if (newlyDepleted) w.depletedNew++;
+                        if (isAlive) {
+                            if (q > w.peakOcc) w.peakOcc = q;
+                            if (q >= 0.90) w.nodeSecQ90 += dt;
+                        }
+                        w.critRejectedSrc += dCritRej;
+                        w.bulkRejectedSrc += dBulkRej;
+                    }
+                }
+            }
+        }
+
+        // 1 Hz Per-Event Control-Timing Sampling (coverage, stale throttle, censored reaction)
+        if (!this.eventWindows.isEmpty()
+                && (this.lastControlSampleTime < 0.0 || (now - this.lastControlSampleTime) >= 1.0 - 1e-9)) {
+            double sampleDt = (this.lastControlSampleTime < 0.0)
+                    ? 1.0 : Math.min(2.0, Math.max(0.5, now - this.lastControlSampleTime));
+            this.lastControlSampleTime = now;
+
+            for (DTNHost h : hosts) {
+                int addr = h.getAddress();
+                Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
+                boolean isAlive = !(eObj instanceof Double) || ((Double) eObj) > 1e-9;
+                if (!isAlive) continue;
+
+                double q = getHostQueueRatio(h);
+                Double prevQ = this.prev1HzQByHost.get(addr);
+                double dQ1Hz = (prevQ != null) ? ((q - prevQ) / sampleDt) : 0.0;
+                this.prev1HzQByHost.put(addr, q);
+
+                double soc = getHostEnergySoc(h);
+                boolean atRisk = (q >= 0.82) || (dQ1Hz > 0.015) || (soc < 0.25);
+                boolean throttleActive = isHostThrottleActive(h);
+
+                for (EventWindowState w : this.eventWindows) {
+                    if (now >= w.tStart && now <= w.tEnd) {
+                        if (atRisk) {
+                            w.atRiskNodeSec += sampleDt;
+                            if (throttleActive) {
+                                w.atRiskThrottledNodeSec += sampleDt;
+                            }
+                            w.firstAtRiskTime.putIfAbsent(addr, now);
+                        }
+                    }
+                    if (now >= w.tStart && now <= w.tEnd + w.horizon) {
+                        if (w.firstAtRiskTime.containsKey(addr)
+                                && !w.firstThrottleAfterRisk.containsKey(addr)
+                                && throttleActive) {
+                            w.firstThrottleAfterRisk.put(addr, now);
+                        }
+                    }
+                    if (now > w.tEnd && now <= w.tEnd + w.horizon) {
+                        if (throttleActive && !atRisk) {
+                            w.staleThrottleNodeSec += sampleDt;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Override
@@ -303,8 +566,19 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         }
         double now = getSimTime();
         boolean isCrit = DtnmaRouter.isCriticalMessage(m);
+        boolean isCtrl = DtnmaRouter.isDownlinkControlMessage(m);
         this.msgCreationTimes.put(m.getId(), now);
-        this.msgRecords.put(m.getId(), new MsgLifecycleRecord(now, isCrit));
+        MsgLifecycleRecord rec = new MsgLifecycleRecord(now, isCrit, isCtrl);
+        if (!isCtrl && !this.eventWindows.isEmpty()) {
+            for (EventWindowState w : this.eventWindows) {
+                if (now >= w.tStart && now <= w.tEnd) {
+                    rec.eventMask |= w.bit;
+                    if (isCrit) w.critCreatedAccepted++;
+                    else w.bulkCreatedAccepted++;
+                }
+            }
+        }
+        this.msgRecords.put(m.getId(), rec);
 
         if (isCrit) {
             criticalCreated++;
@@ -378,8 +652,23 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
             return;
         }
         if (dropped) {
+            double now = getSimTime();
             boolean isCrit = DtnmaRouter.isCriticalMessage(m);
             boolean isTtlExpired = (m.getTtl() <= 0);
+            MsgLifecycleRecord rec = this.msgRecords.get(m.getId());
+            if (rec != null && !rec.isCtrl && rec.eventMask != 0) {
+                for (EventWindowState w : this.eventWindows) {
+                    if ((rec.eventMask & w.bit) != 0 && now >= w.tStart && now <= w.tEnd + w.horizon) {
+                        if (isCrit) {
+                            if (isTtlExpired) w.critTtlIds.add(m.getId());
+                            else w.critEvictedIds.add(m.getId());
+                        } else {
+                            if (isTtlExpired) w.bulkTtlIds.add(m.getId());
+                            else w.bulkEvictedIds.add(m.getId());
+                        }
+                    }
+                }
+            }
             if (isCrit) {
                 if (isTtlExpired) {
                     criticalTtlExpired++;
@@ -538,6 +827,14 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                             rlNodes++;
                         }
                     }
+                } else if (h.getRouter() instanceof EnergyAwareEpidemicRouter) {
+                    EnergyAwareEpidemicRouter er = (EnergyAwareEpidemicRouter) h.getRouter();
+                    if (er.getMaxBufferOccupancy() > maxBufferOccupancy) {
+                        maxBufferOccupancy = er.getMaxBufferOccupancy();
+                    }
+                    criticalCreationRejected += er.getCriticalCreationRejected();
+                    bulkCreationRejected += er.getBulkCreationRejected();
+                    localCreationRejected += er.getLocalCreationRejected();
                 } else if (h.getRouter() instanceof PrioritySprayAndWaitRouter) {
                     PrioritySprayAndWaitRouter pr = (PrioritySprayAndWaitRouter) h.getRouter();
                     if (pr.getMaxBufferOccupancy() > maxBufferOccupancy) {
@@ -781,7 +1078,95 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         }
         sb.append(String.format(Locale.US, "avg_energy_soc: %.4f\n", avgEnergySoc));
         sb.append("depleted_nodes_count: ").append(depletedNodes).append("\n");
-        sb.append(String.format(Locale.US, "avg_energy_remaining_soc: %.4f", avgEnergySoc));
+        sb.append(String.format(Locale.US, "avg_energy_remaining_soc: %.4f\n", avgEnergySoc));
+        int totalHostsN = (hosts != null && !hosts.isEmpty()) ? hosts.size() : 1;
+        sb.append("n_hosts: ").append(totalHostsN).append("\n");
+        sb.append(String.format(Locale.US, "total_energy_J: %.4f\n", this.totalEnergyJ));
+        sb.append(String.format(Locale.US, "total_ctrl_tx_J: %.4f", this.totalCtrlTxJ));
+
+        for (EventWindowState w : this.eventWindows) {
+            List<Double> critLats = new ArrayList<Double>();
+            List<Double> bulkLats = new ArrayList<Double>();
+            int critDelH = 0;
+            int bulkDelH = 0;
+            Set<String> critDeliveredByH = new HashSet<String>();
+            double cutoff = w.tEnd + w.horizon;
+
+            for (Map.Entry<String, MsgLifecycleRecord> me : this.msgRecords.entrySet()) {
+                MsgLifecycleRecord rec = me.getValue();
+                if ((rec.eventMask & w.bit) == 0 || rec.isCtrl) continue;
+                if (rec.delivered && rec.delivTime <= cutoff) {
+                    double lat = Math.max(0.0, rec.delivTime - rec.createTime);
+                    if (rec.isCrit) {
+                        critDelH++;
+                        critDeliveredByH.add(me.getKey());
+                        critLats.add(lat);
+                    } else {
+                        bulkDelH++;
+                        bulkLats.add(lat);
+                    }
+                }
+            }
+            int critUniqueLostW = 0;
+            for (String evictedId : w.critEvictedIds) {
+                if (!critDeliveredByH.contains(evictedId)) {
+                    critUniqueLostW++;
+                }
+            }
+            int critCreatedTotal = w.critCreatedAccepted + (int) w.critRejectedSrc;
+            int bulkCreatedTotal = w.bulkCreatedAccepted + (int) w.bulkRejectedSrc;
+            double critDelivRatio = critCreatedTotal > 0 ? (double) critDelH / critCreatedTotal : 0.0;
+            double bulkDelivRatio = bulkCreatedTotal > 0 ? (double) bulkDelH / bulkCreatedTotal : 0.0;
+            double critLatMed = critLats.isEmpty() ? -1.0 : computePercentile(critLats, 0.50);
+            double critLatP95W = critLats.isEmpty() ? -1.0 : computePercentile(critLats, 0.95);
+            double bulkLatMed = bulkLats.isEmpty() ? -1.0 : computePercentile(bulkLats, 0.50);
+            double bulkLatP95W = bulkLats.isEmpty() ? -1.0 : computePercentile(bulkLats, 0.95);
+
+            double coverage = w.atRiskNodeSec > 1e-9 ? (w.atRiskThrottledNodeSec / w.atRiskNodeSec) : -1.0;
+            double staleNodeSec = w.staleThrottleNodeSec / totalHostsN;
+            List<Double> reactVals = new ArrayList<Double>(w.firstAtRiskTime.size());
+            int censoredCnt = 0;
+            for (Map.Entry<Integer, Double> re : w.firstAtRiskTime.entrySet()) {
+                Double tAct = w.firstThrottleAfterRisk.get(re.getKey());
+                if (tAct != null) {
+                    reactVals.add(Math.max(0.0, tAct - re.getValue()));
+                } else {
+                    reactVals.add(Math.max(0.0, cutoff - re.getValue()));
+                    censoredCnt++;
+                }
+            }
+            double reactMed = reactVals.isEmpty() ? -1.0 : computePercentile(reactVals, 0.50);
+            double censoredFrac = reactVals.isEmpty() ? -1.0 : ((double) censoredCnt / reactVals.size());
+
+            String p = "event" + w.label + "_";
+            sb.append("\n").append(p).append("crit_created: ").append(critCreatedTotal);
+            sb.append("\n").append(p).append(String.format(Locale.US, "crit_deliv: %.4f", critDelivRatio));
+            sb.append("\n").append(p).append(String.format(Locale.US, "crit_lat_med_s: %.4f", critLatMed));
+            sb.append("\n").append(p).append(String.format(Locale.US, "crit_lat_p95_s: %.4f", critLatP95W));
+            sb.append("\n").append(p).append("crit_evicted: ").append(w.critEvictedIds.size());
+            sb.append("\n").append(p).append("crit_unique_lost: ").append(critUniqueLostW);
+            sb.append("\n").append(p).append("crit_ttl_expired: ").append(w.critTtlIds.size());
+            sb.append("\n").append(p).append("crit_rejected_src: ").append(w.critRejectedSrc);
+
+            sb.append("\n").append(p).append("bulk_created: ").append(bulkCreatedTotal);
+            sb.append("\n").append(p).append(String.format(Locale.US, "bulk_deliv: %.4f", bulkDelivRatio));
+            sb.append("\n").append(p).append(String.format(Locale.US, "bulk_lat_med_s: %.4f", bulkLatMed));
+            sb.append("\n").append(p).append(String.format(Locale.US, "bulk_lat_p95_s: %.4f", bulkLatP95W));
+            sb.append("\n").append(p).append("bulk_evicted: ").append(w.bulkEvictedIds.size());
+            sb.append("\n").append(p).append("bulk_ttl_expired: ").append(w.bulkTtlIds.size());
+            sb.append("\n").append(p).append("bulk_rejected_src: ").append(w.bulkRejectedSrc);
+
+            sb.append("\n").append(p).append(String.format(Locale.US, "peak_occ: %.4f", w.peakOcc));
+            sb.append("\n").append(p).append(String.format(Locale.US, "nodesec_q90: %.4f", w.nodeSecQ90 / totalHostsN));
+            sb.append("\n").append(p).append(String.format(Locale.US, "energy_J: %.4f", w.energyJ));
+            sb.append("\n").append(p).append(String.format(Locale.US, "ctrl_tx_J: %.4f", w.ctrlTxJ));
+            sb.append("\n").append(p).append("depleted_new: ").append(w.depletedNew);
+
+            sb.append("\n").append(p).append(String.format(Locale.US, "throttle_coverage: %.4f", coverage));
+            sb.append("\n").append(p).append(String.format(Locale.US, "stale_throttle_nodesec: %.4f", staleNodeSec));
+            sb.append("\n").append(p).append(String.format(Locale.US, "react_med_s: %.4f", reactMed));
+            sb.append("\n").append(p).append(String.format(Locale.US, "react_censored_frac: %.4f", censoredFrac));
+        }
 
         if (!this.waveStartTime.isEmpty()) {
             List<String> waveKeys = new ArrayList<String>(this.waveStartTime.keySet());

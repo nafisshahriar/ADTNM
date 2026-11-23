@@ -23,7 +23,7 @@ highspeedInterface.transmitSpeed = 10M
 highspeedInterface.transmitRange = 1000
 
 Group.movementModel = ShortestPathMapBasedMovement
-Group.router = [SprayAndWaitRouter; DtnmaM0bStaticRouter; DtnmaM1RemoteRouter; DtnmaM2SrlRouter; DtnmaM3RlRouter]
+Group.router = [SprayAndWaitRouter; DtnmaM0bStaticRouter; DtnmaM0cV1GuardRouter; DtnmaM0dConservativeRouter; DtnmaM1RemoteRouter; DtnmaM1FloodRouter; DtnmaM2SrlRouter; DtnmaM3RlRouter]
 Group.bufferSize = 10M
 Group.waitTime = 0, 60
 Group.nrofInterfaces = 1
@@ -236,3 +236,7 @@ Report.report1 = DtnmaRlMetricsReport
 Report.report2 = DtnmaRecoveryTimelineReport
 Report.report3 = DtnmaAuditReport
 Report.report4 = MessageStatsReport
+DtnmaRlMetricsReport.eventA = 3600, 3900
+DtnmaRlMetricsReport.eventB = 7200, 9000
+DtnmaRlMetricsReport.eventC = 21600, 28800
+DtnmaRlMetricsReport.eventHorizon = 3600

@@ -152,9 +152,20 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
         return list;
     }
 
+    private boolean isBitForBitEquivalenceMode() {
+        return this.agent.getInterventionTier() == DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY
+                && this.agent.getConfig() != null
+                && this.agent.getConfig().equivalenceConnOuterOrder
+                && !this.agent.isAckFeedbackEnabled()
+                && !this.agent.getConfig().epidemicControlFlooding;
+    }
+
     @Override
     protected Connection tryMessagesToConnections(
             List<Message> messages, List<Connection> connections) {
+        if (isBitForBitEquivalenceMode()) {
+            return super.tryMessagesToConnections(messages, connections);
+        }
         if (messages == null || messages.isEmpty() || connections == null || connections.isEmpty()) {
             return null;
         }
@@ -212,6 +223,10 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
 
     @Override
     protected void transferDone(Connection con) {
+        if (isBitForBitEquivalenceMode()) {
+            super.transferDone(con);
+            return;
+        }
         Message msg = getMessage(con.getMessage().getId());
         if (msg == null) return;
         DTNHost recipient = con.getOtherNode(getHost());

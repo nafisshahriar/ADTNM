@@ -126,7 +126,7 @@ Events4.tohosts = 0, 120
 Events4.time = 7200, 10800
 Events4.prefix = BULK_SHOCK_
 
-MovementModel.rngSeed = [4001; 4003; 4007; 4009; 4021]
+MovementModel.rngSeed = 4001
 MovementModel.worldSize = 4500, 3400
 MovementModel.warmup = 1000
 
