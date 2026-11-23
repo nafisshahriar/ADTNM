@@ -1,0 +1,20 @@
+# ====================================================================
+# RFC 9675-INSPIRED DTNMA DECLARATIVE RULES: VEHICULAR DTN (L=4 STATIC BASELINE)
+# Identical to rules_vdtn.txt EXCEPT nominal Rule 3 sets spray quota L = 4
+# ====================================================================
+
+RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Critical buffer congestion or low energy across any vehicular speed regime
+IF: (EDD_QUEUE_RATIO >= 0.95) || (EDD_ENERGY_SOC < 0.20)
+THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)
+
+RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 60 | DESC: Congested vehicle cluster at intersection or traffic jam
+IF: (EDD_QUEUE_RATIO >= 0.65) && (EDD_NODE_DENSITY >= 5.0) && (EDD_NODE_SPEED < 2.0)
+THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
+
+RULE: ARI://DTNMA/SRL/VDTN_HIGHWAY_PASS | PRIORITY: 50 | DESC: Congested high-speed highway passing encounter
+IF: (EDD_QUEUE_RATIO >= 0.65) && (EDD_NODE_SPEED >= 10.0)
+THEN: CTRL_SET_SPRAY_QUOTA(4); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(true)
+
+RULE: ARI://DTNMA/SRL/VDTN_URBAN_NOMINAL | PRIORITY: 10 | DESC: Uncongested nominal cruising across vehicular regimes (L=4)
+IF: (EDD_QUEUE_RATIO < 0.85)
+THEN: CTRL_SET_SPRAY_QUOTA(4); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)

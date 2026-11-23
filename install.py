@@ -146,23 +146,31 @@ def optimize_launch_scripts(one_dir: Path):
             log_success("Optimized one.sh with '-server -Xms1G -Xmx4G -XX:+UseParallelGC'")
 
 def compile_one(one_dir: Path) -> bool:
-    """Invokes compile.bat on Windows or compile.sh / javac on POSIX."""
+    """Invokes javac directly on Windows/POSIX so compiler failures never hide behind batch exit codes."""
     log_info("Compiling The ONE Simulator with DTNMA components...")
     try:
-        if sys.platform == "win32":
-            compile_bat = one_dir / "compile.bat"
-            if compile_bat.is_file():
-                proc = subprocess.run(["cmd.exe", "/c", "compile.bat"], cwd=str(one_dir), capture_output=True, text=True)
-            else:
-                cmd = ["javac", "-sourcepath", "src", "-d", "target", "-cp", "lib/ECLA.jar;lib/DTNConsoleConnection.jar", "src/core/*.java", "src/movement/*.java", "src/report/*.java", "src/routing/*.java", "src/gui/*.java", "src/input/*.java", "src/applications/*.java", "src/interfaces/*.java"]
-                proc = subprocess.run(cmd, cwd=str(one_dir), capture_output=True, text=True)
-        else:
-            compile_sh = one_dir / "compile.sh"
-            if compile_sh.is_file():
-                proc = subprocess.run(["bash", "compile.sh"], cwd=str(one_dir), capture_output=True, text=True)
-            else:
-                cmd = ["javac", "-sourcepath", "src", "-d", "target", "-cp", "lib/ECLA.jar:lib/DTNConsoleConnection.jar", "src/core/*.java", "src/movement/*.java", "src/report/*.java", "src/routing/*.java", "src/gui/*.java", "src/input/*.java", "src/applications/*.java", "src/interfaces/*.java"]
-                proc = subprocess.run(cmd, cwd=str(one_dir), capture_output=True, text=True)
+        sep = ";" if sys.platform == "win32" else ":"
+        (one_dir / "target").mkdir(parents=True, exist_ok=True)
+        src_globs = [
+            "src/core/*.java", "src/movement/*.java", "src/report/*.java",
+            "src/routing/*.java", "src/gui/*.java", "src/input/*.java",
+            "src/applications/*.java", "src/interfaces/*.java",
+        ]
+        # Expand globs in Python so cross-platform javac receives exact source paths
+        src_files = []
+        for g in src_globs:
+            src_files.extend(str(p.relative_to(one_dir)) for p in sorted(one_dir.glob(g)))
+        cmd = [
+            "javac", "-sourcepath", "src", "-d", "target",
+            "-cp", f"lib/ECLA.jar{sep}lib/DTNConsoleConnection.jar",
+        ] + src_files
+        proc = subprocess.run(cmd, cwd=str(one_dir), capture_output=True, text=True)
+
+        # Ensure GUI icon resources exist alongside target
+        btn_dest = one_dir / "target" / "gui" / "buttonGraphics"
+        btn_src = one_dir / "src" / "gui" / "buttonGraphics"
+        if not btn_dest.exists() and btn_src.is_dir():
+            shutil.copytree(btn_src, btn_dest)
 
         if proc.returncode == 0:
             log_success("Compilation finished successfully (Exit Code 0).")
@@ -212,19 +220,11 @@ def get_tracked_file_pairs(repo_dir: Path, one_dir: Path):
     for f in (repo_dir / "scenarios").glob("*.txt"):
         pairs.append((Path("scenarios") / f.name, f, one_dir / "scenarios" / f.name))
 
-    # Runner scripts
-    for name in ["parallel_batch_runner.py", "verify_and_plot.py", "run_phase1_oppnda.py", "plot_adaptation_trace.py"]:
+    # Runner & Evaluation scripts
+    for name in ["parallel_batch_runner.py", "evaluate_autonomic_framework.py"]:
         rf = repo_dir / "tools" / name
         if rf.is_file():
             pairs.append((Path(name), rf, one_dir / name))
-
-    # OppNDA core
-    for f in (repo_dir / "tools" / "core").glob("*.py"):
-        pairs.append((Path("core") / f.name, f, one_dir / "core" / f.name))
-
-    # Automation configs
-    for f in (repo_dir / "tools" / "config").glob("*.json"):
-        pairs.append((Path("config") / f.name, f, one_dir / "config" / f.name))
 
     return pairs
 
@@ -419,6 +419,46 @@ def main():
         "accessible delivery predictions (private -> public)"
     )
 
+    prophet_v2 = target_dir / "src" / "routing" / "ProphetV2Router.java"
+    patch_file(
+        prophet_v2,
+        "private Tuple<Message, Connection> tryOtherMessages()",
+        "protected Tuple<Message, Connection> tryOtherMessages()",
+        "subclass-overridable tryOtherMessages (private -> protected)"
+    )
+
+    maxprop_router = target_dir / "src" / "routing" / "MaxPropRouter.java"
+    patch_file(
+        maxprop_router,
+        "private Set<String> ackedMessageIds;",
+        "protected Set<String> ackedMessageIds;",
+        "subclass-accessible ackedMessageIds (private -> protected)"
+    )
+    patch_file(
+        maxprop_router,
+        "private Map<DTNHost, Set<String>> sentMessages;",
+        "protected Map<DTNHost, Set<String>> sentMessages;",
+        "subclass-accessible sentMessages (private -> protected)"
+    )
+    patch_file(
+        maxprop_router,
+        "private Tuple<Message, Connection> tryOtherMessages()",
+        "protected Tuple<Message, Connection> tryOtherMessages()",
+        "subclass-overridable tryOtherMessages (private -> protected)"
+    )
+    patch_file(
+        maxprop_router,
+        "private class MaxPropComparator implements Comparator<Message>",
+        "protected class MaxPropComparator implements Comparator<Message>",
+        "subclass-accessible MaxPropComparator (private -> protected)"
+    )
+    patch_file(
+        maxprop_router,
+        "private class MaxPropTupleComparator",
+        "protected class MaxPropTupleComparator",
+        "subclass-accessible MaxPropTupleComparator (private -> protected)"
+    )
+
     # 3. Deploy Scenarios & Rules
     log_info("Deploying scenario configurations and declarative rules...")
     scenarios_src = repo_dir / "scenarios"
@@ -426,28 +466,14 @@ def main():
     c_scenarios = deploy_tree(scenarios_src, scenarios_dest, "*.txt", mode=args.mode)
     log_success(f"Deployed {c_scenarios} scenario and rule configuration files.")
 
-    # 4. Deploy Tools, Core, and Config
-    log_info("Deploying evaluation scripts and OppNDA analysis modules...")
+    # 4. Deploy Tools
+    log_info("Deploying runner and evaluation scripts...")
     tools_src = repo_dir / "tools"
-    for tool_name in ["parallel_batch_runner.py", "verify_and_plot.py", "run_phase1_oppnda.py", "plot_adaptation_trace.py"]:
+    for tool_name in ["parallel_batch_runner.py", "evaluate_autonomic_framework.py"]:
         tf = tools_src / tool_name
         if tf.is_file():
             link_or_copy(tf, target_dir / tool_name, mode=args.mode)
             log_info(f"Installed {tool_name}")
-
-    core_src = tools_src / "core"
-    if core_src.is_dir():
-        core_dest = target_dir / "core"
-        core_dest.mkdir(parents=True, exist_ok=True)
-        deploy_tree(core_src, core_dest, "*.py", mode=args.mode)
-        log_info("Installed OppNDA core package.")
-
-    config_src = tools_src / "config"
-    if config_src.is_dir():
-        config_dest = target_dir / "config"
-        config_dest.mkdir(parents=True, exist_ok=True)
-        deploy_tree(config_src, config_dest, "*.json", mode=args.mode)
-        log_info("Installed automation configurations.")
 
     # 5. Optimize memory launch scripts
     optimize_launch_scripts(target_dir)
@@ -467,7 +493,7 @@ def main():
     print("  - Check sync status:     python install.py --status")
     print("  - Pull edits to repo:    python install.py --sync-back")
     print("  - Run simulation:        ./one.bat -b 1 scenarios/scenario_dtnma.txt")
-    print("  - Verify 0-drop safety:  python verify_and_plot.py")
+    print("  - Evaluate framework:    python evaluate_autonomic_framework.py --one-dir .")
     print("=" * 72 + "\n")
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ public class EddTelemetrySampler {
     public static final double SECONDS_IN_TIME_UNIT = 30.0;
 
     private DTNHost host;
-    private DtnmaRouter router;
+    private DtnmaManagedRouter router;
 
     // Smoothing & Drift tracking
     private double lastSampleTime = 0.0;
@@ -68,7 +68,7 @@ public class EddTelemetrySampler {
     private Map<DTNHost, Double> preds;
     private double lastAgeUpdate = 0.0;
 
-    public EddTelemetrySampler(DTNHost host, DtnmaRouter router) {
+    public EddTelemetrySampler(DTNHost host, DtnmaManagedRouter router) {
         this.host = host;
         this.router = router;
         this.contactTimestamps = new HashMap<Integer, Double>();
@@ -119,10 +119,10 @@ public class EddTelemetrySampler {
         if (peer == null || peer.getRouter() == null) return;
         double pForHost = getPredFor(peer);
         Map<DTNHost, Double> othersPreds = null;
-        if (peer.getRouter() instanceof DtnmaRouter) {
-            DtnmaRouter pr = (DtnmaRouter) peer.getRouter();
-            if (pr.getEddSampler() != null) {
-                othersPreds = pr.getEddSampler().getDeliveryPreds();
+        if (peer.getRouter() instanceof DtnmaManagedRouter) {
+            DtnmaManagedRouter pr = (DtnmaManagedRouter) peer.getRouter();
+            if (pr.getDtnmaAgent() != null && pr.getDtnmaAgent().getEddSampler() != null) {
+                othersPreds = pr.getDtnmaAgent().getEddSampler().getDeliveryPreds();
             }
         } else if (peer.getRouter() instanceof ProphetRouter) {
             othersPreds = ((ProphetRouter) peer.getRouter()).getDeliveryPreds();

@@ -24,8 +24,24 @@ public class DtnmaConfig {
 
     public static final String CONFIG_FILE_SETTING = "configFile";
 
+    public enum ManagementMode {
+        AUTO,
+        M0_STATIC,
+        M1_REMOTE_ONLY,
+        M2_AUTONOMIC_SRL,
+        M3_AUTONOMIC_RL
+    }
+
     // Intelligence & Control-Plane Toggles (Default: Gossip + ACK Shielded CMDP RL)
     public DtnmaRouter.IntelligenceMode intelligenceMode = DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL;
+    public ManagementMode managementMode = ManagementMode.AUTO;
+    public int staticQuota = 6;
+    public int staticIngressMode = 0;
+    public boolean staticBackpressure = true;
+    public boolean enablePriorityProtection = true;
+    public boolean epidemicControlFlooding = false;
+    public boolean densityAdaptiveGossip = true;
+    public boolean openLoopAuditOnly = false;
     public boolean gossipEnabled = true;
     public boolean ackFeedbackEnabled = true;
     public double rlEpochInterval = 15.0;
@@ -75,6 +91,14 @@ public class DtnmaConfig {
     public DtnmaConfig(DtnmaConfig o) {
         if (o == null) return;
         this.intelligenceMode = o.intelligenceMode;
+        this.managementMode = o.managementMode;
+        this.staticQuota = o.staticQuota;
+        this.staticIngressMode = o.staticIngressMode;
+        this.staticBackpressure = o.staticBackpressure;
+        this.enablePriorityProtection = o.enablePriorityProtection;
+        this.epidemicControlFlooding = o.epidemicControlFlooding;
+        this.densityAdaptiveGossip = o.densityAdaptiveGossip;
+        this.openLoopAuditOnly = o.openLoopAuditOnly;
         this.gossipEnabled = o.gossipEnabled;
         this.ackFeedbackEnabled = o.ackFeedbackEnabled;
         this.rlEpochInterval = o.rlEpochInterval;
@@ -194,6 +218,16 @@ public class DtnmaConfig {
         if (params.containsKey("intelligenceMode")) {
             intelligenceMode = parseIntelligenceMode(params.get("intelligenceMode"), intelligenceMode);
         }
+        if (params.containsKey("managementMode")) {
+            managementMode = parseManagementMode(params.get("managementMode"), managementMode);
+        }
+        staticQuota = parseInt(params, "staticQuota", staticQuota);
+        staticIngressMode = parseInt(params, "staticIngressMode", staticIngressMode);
+        staticBackpressure = parseBool(params, "staticBackpressure", staticBackpressure);
+        enablePriorityProtection = parseBool(params, "enablePriorityProtection", enablePriorityProtection);
+        epidemicControlFlooding = parseBool(params, "epidemicControlFlooding", epidemicControlFlooding);
+        densityAdaptiveGossip = parseBool(params, "densityAdaptiveGossip", densityAdaptiveGossip);
+        openLoopAuditOnly = parseBool(params, "openLoopAuditOnly", openLoopAuditOnly);
         gossipEnabled = parseBool(params, "gossipEnabled", gossipEnabled);
         ackFeedbackEnabled = parseBool(params, "ackFeedbackEnabled", ackFeedbackEnabled);
         rlEpochInterval = parseDouble(params, "rlEpochInterval", rlEpochInterval);
@@ -239,6 +273,16 @@ public class DtnmaConfig {
         if (s.contains("intelligenceMode")) {
             intelligenceMode = parseIntelligenceMode(s.getSetting("intelligenceMode"), intelligenceMode);
         }
+        if (s.contains("managementMode")) {
+            managementMode = parseManagementMode(s.getSetting("managementMode"), managementMode);
+        }
+        if (s.contains("staticQuota")) staticQuota = s.getInt("staticQuota");
+        if (s.contains("staticIngressMode")) staticIngressMode = s.getInt("staticIngressMode");
+        if (s.contains("staticBackpressure")) staticBackpressure = s.getBoolean("staticBackpressure");
+        if (s.contains("enablePriorityProtection")) enablePriorityProtection = s.getBoolean("enablePriorityProtection");
+        if (s.contains("epidemicControlFlooding")) epidemicControlFlooding = s.getBoolean("epidemicControlFlooding");
+        if (s.contains("densityAdaptiveGossip")) densityAdaptiveGossip = s.getBoolean("densityAdaptiveGossip");
+        if (s.contains("openLoopAuditOnly")) openLoopAuditOnly = s.getBoolean("openLoopAuditOnly");
         if (s.contains("gossipEnabled")) gossipEnabled = s.getBoolean("gossipEnabled");
         if (s.contains("ackFeedbackEnabled")) ackFeedbackEnabled = s.getBoolean("ackFeedbackEnabled");
         if (s.contains("rlEpochInterval")) rlEpochInterval = s.getDouble("rlEpochInterval");
@@ -281,6 +325,8 @@ public class DtnmaConfig {
     }
 
     public void clampSafeBounds() {
+        staticQuota = Math.max(1, Math.min(32, staticQuota));
+        staticIngressMode = Math.max(0, Math.min(2, staticIngressMode));
         rlEpochInterval = Math.max(1.0, Math.min(600.0, rlEpochInterval));
         rlAlpha = Math.max(1e-4, Math.min(1.0, rlAlpha));
         rlGamma = Math.max(0.0, Math.min(0.999, rlGamma));
@@ -315,6 +361,24 @@ public class DtnmaConfig {
         shieldStormQueue = Math.max(0.30, Math.min(shieldCongestionQueue, shieldStormQueue));
         shieldStormDensity = Math.max(1.0, shieldStormDensity);
         shieldEnergyMin = Math.max(0.0, Math.min(0.90, shieldEnergyMin));
+    }
+
+    public ManagementMode getEffectiveManagementMode() {
+        if (managementMode != null && managementMode != ManagementMode.AUTO) {
+            return managementMode;
+        }
+        return (intelligenceMode == DtnmaRouter.IntelligenceMode.STATIC_RULES)
+                ? ManagementMode.M2_AUTONOMIC_SRL
+                : ManagementMode.M3_AUTONOMIC_RL;
+    }
+
+    private static ManagementMode parseManagementMode(String val, ManagementMode def) {
+        if (val == null) return def;
+        try {
+            return ManagementMode.valueOf(val.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return def;
+        }
     }
 
     private static DtnmaRouter.IntelligenceMode parseIntelligenceMode(String val, DtnmaRouter.IntelligenceMode def) {

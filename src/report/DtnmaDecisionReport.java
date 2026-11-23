@@ -17,6 +17,8 @@ import core.MessageListener;
 import core.SimClock;
 import core.SimScenario;
 import core.UpdateListener;
+import routing.DtnmaAgent;
+import routing.DtnmaManagedRouter;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
 
@@ -65,8 +67,9 @@ public class DtnmaDecisionReport extends Report implements UpdateListener, Messa
         lastLogTime = simTime;
 
         for (DTNHost host : hosts) {
-            if (host.getRouter() instanceof DtnmaRouter) {
-                DtnmaRouter router = (DtnmaRouter) host.getRouter();
+            if (host.getRouter() instanceof DtnmaManagedRouter) {
+                DtnmaAgent router = ((DtnmaManagedRouter) host.getRouter()).getDtnmaAgent();
+                if (router == null) continue;
                 double qRatio = host.getBufferOccupancy();
                 int action = router.getLastActionIndex();
                 String actionDesc = router.getActionDescription(action);
@@ -148,8 +151,9 @@ public class DtnmaDecisionReport extends Report implements UpdateListener, Messa
         List<DTNHost> hosts = SimScenario.getInstance().getHosts();
         if (hosts != null) {
             for (DTNHost h : hosts) {
-                if (h.getRouter() instanceof DtnmaRouter) {
-                    DtnmaSafetyShield shield = ((DtnmaRouter) h.getRouter()).getSafetyShield();
+                if (h.getRouter() instanceof DtnmaManagedRouter) {
+                    DtnmaAgent ag = ((DtnmaManagedRouter) h.getRouter()).getDtnmaAgent();
+                    DtnmaSafetyShield shield = (ag != null) ? ag.getSafetyShield() : null;
                     if (shield != null) {
                         shieldDecisions += shield.getTotalDecisions();
                         shieldInterventions += shield.getTotalInterventions();

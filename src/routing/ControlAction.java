@@ -82,7 +82,7 @@ public class ControlAction {
         }
     }
 
-    public void execute(DtnmaRouter router) {
+    public void execute(DtnmaManagedRouter router) {
         switch (type) {
             case SET_SPRAY_QUOTA:
                 router.setDynamicSprayQuota(intParam);
