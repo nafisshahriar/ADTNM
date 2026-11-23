@@ -106,6 +106,10 @@ public class DtnmaAgent {
     private double currentFocusMinPred = 0.45;
     private double currentFocusMargin = 0.25;
 
+    // Cached O(1) Critical Occupancy (recomputed only when a critical message enters/exits)
+    private double cachedCritOcc = 0.0;
+    private boolean critOccDirty = true;
+
     // Autonomy & RL Epoch Timing
     private double lastAutonomyEvalTime = -1.0;
     private double autonomyEvalInterval = 1.0;
@@ -459,6 +463,12 @@ public class DtnmaAgent {
         return (b != null) ? b.getQueueRatio() : 0.5;
     }
 
+    public double getBeaconNeighborEnergySoc(DTNHost peer) {
+        if (peer == null || neighborBeacons == null) return 1.0;
+        DtnmaContactBeacon b = neighborBeacons.get(peer.getAddress());
+        return (b != null) ? b.getEnergySoc() : 1.0;
+    }
+
     public void refreshStaleBeacons(double now) {
         DTNHost host = owner.getManagedHost();
         if (host == null || neighborBeacons == null) return;
@@ -516,6 +526,7 @@ public class DtnmaAgent {
     public void onBeforeUpdate(double now) {
         ensureSubsystemsInitialized();
         if (lastAutonomyEvalTime < 0 || (now - lastAutonomyEvalTime) >= autonomyEvalInterval) {
+            refreshStaleBeacons(now);
             long cpuStart = System.nanoTime();
             evaluateAutonomyEngine(now);
             this.decisionCpuNanosTotal += Math.max(0L, System.nanoTime() - cpuStart);
@@ -841,8 +852,23 @@ public class DtnmaAgent {
                 owner.getManagedActiveRouter(), copiesPropKey, ackMap, size);
     }
 
+    public void markCritOccDirty() {
+        this.critOccDirty = true;
+    }
+
+    public double getCachedCriticalOccupancyRatio() {
+        if (this.critOccDirty) {
+            this.cachedCritOcc = owner.getCriticalOccupancyRatio();
+            this.critOccDirty = false;
+        }
+        return this.cachedCritOcc;
+    }
+
     public void onAfterCreateNewMessage(Message msg, int initialCopies) {
         boolean isCrit = DtnmaRouter.isCriticalMessage(msg);
+        if (isCrit) {
+            this.critOccDirty = true;
+        }
         double qNow = owner.getBufferOccupancyRatio();
         if (!isCrit && qNow < 0.72) {
             this.epochCoverageGain += 0.50 * (1.0 - qNow) * Math.sqrt(Math.max(1, initialCopies));
@@ -856,6 +882,9 @@ public class DtnmaAgent {
     }
 
     public void onDeleteMessage(Message m, boolean drop) {
+        if (m != null && DtnmaRouter.isCriticalMessage(m)) {
+            this.critOccDirty = true;
+        }
         if (drop && m != null && m.getTtl() > 0) {
             this.epochActivityCount++;
             if (DtnmaRouter.isCriticalMessage(m)) {
@@ -879,26 +908,27 @@ public class DtnmaAgent {
             return null;
         }
 
+        if (isCrit || currentIngressMode == DtnmaRouter.INGRESS_ACCEPT_ALL) {
+            return null;
+        }
+
         double occ = owner.getBufferOccupancyRatio();
-        double critOcc = owner.getCriticalOccupancyRatio();
+        double critOcc = getCachedCriticalOccupancyRatio();
         Integer cProp = (copiesPropKey != null) ? (Integer) m.getProperty(copiesPropKey) : null;
         boolean singleCopyBulk = (cProp != null && cProp <= 1);
         int msgTtl = owner.getManagedMsgTtl();
         boolean finiteTtl = (msgTtl > 0 && msgTtl != Message.INFINITE_TTL);
 
-        if (!isCrit) {
-            if (currentIngressMode == DtnmaRouter.INGRESS_CRITICAL_ONLY) {
-                if (critOcc >= 0.40
-                        || (occ > 0.92 && (singleCopyBulk || (finiteTtl && m.getTtl() < 0.75 * msgTtl)))
-                        || (isAutonomicControlActive() && owner.getEnergySoc() < config.shieldEnergyMin)) {
-                    return MessageRouter.DENIED_NO_SPACE;
-                }
+        if (currentIngressMode == DtnmaRouter.INGRESS_CRITICAL_ONLY) {
+            if (critOcc >= 0.40
+                    || (occ > 0.92 && (singleCopyBulk || (finiteTtl && m.getTtl() < 0.75 * msgTtl)))
+                    || (isAutonomicControlActive() && owner.getEnergySoc() < config.shieldEnergyMin)) {
+                return MessageRouter.DENIED_NO_SPACE;
             }
-            if (currentIngressMode == DtnmaRouter.INGRESS_THROTTLE_BULK) {
-                if (critOcc >= 0.55
-                        || (occ > 0.94 && (singleCopyBulk || (finiteTtl && m.getTtl() < 0.50 * msgTtl)))) {
-                    return MessageRouter.DENIED_NO_SPACE;
-                }
+        } else if (currentIngressMode == DtnmaRouter.INGRESS_THROTTLE_BULK) {
+            if (critOcc >= 0.55
+                    || (occ > 0.94 && (singleCopyBulk || (finiteTtl && m.getTtl() < 0.50 * msgTtl)))) {
+                return MessageRouter.DENIED_NO_SPACE;
             }
         }
         return null;
@@ -941,6 +971,9 @@ public class DtnmaAgent {
 
     public void onMessageTransferred(Message m, DTNHost from, String copiesPropKey) {
         if (m == null) return;
+        if (DtnmaRouter.isCriticalMessage(m)) {
+            this.critOccDirty = true;
+        }
         this.epochActivityCount++;
         Map<String, Boolean> ackMap = this.ackFeedbackEnabled ? this.deliveredAckSet : null;
         DtnmaRouter.clampPostTransferDeficit(owner.getManagedActiveRouter(), m, copiesPropKey, ackMap);
@@ -1010,6 +1043,24 @@ public class DtnmaAgent {
      */
     public boolean allowNonDirectBulkForward(Message m, DTNHost peer, double myPred, double peerPred) {
         if (m == null || peer == null) return false;
+        return allowNonDirectBulkForward(
+                m,
+                owner.getBufferOccupancyRatio(),
+                getBeaconNeighborQueueRatio(peer),
+                getBeaconNeighborEnergySoc(peer),
+                peer.getRouter() instanceof DtnmaManagedRouter,
+                myPred,
+                peerPred);
+    }
+
+    /**
+     * Zero-lookup inner-loop overload where callers hoist myQ, peerQ, peerSoc, and peerIsManaged
+     * outside per-message loops.
+     */
+    public boolean allowNonDirectBulkForward(
+            Message m, double myQ, double peerQ, double peerSoc, boolean peerIsManaged,
+            double myPred, double peerPred) {
+        if (m == null) return false;
         if (DtnmaRouter.isCriticalMessage(m) || DtnmaRouter.isDownlinkControlMessage(m)) {
             return true;
         }
@@ -1019,10 +1070,11 @@ public class DtnmaAgent {
         if (currentIngressMode == DtnmaRouter.INGRESS_CRITICAL_ONLY) {
             return false;
         }
-        double myQ = owner.getBufferOccupancyRatio();
-        double peerQ = getBeaconNeighborQueueRatio(peer);
-        if (backpressureEnabled && peer.getRouter() instanceof DtnmaManagedRouter) {
-            if (peerQ >= 0.72 && peerQ >= myQ + currentBackpressureDelta) {
+        if (peerIsManaged) {
+            if (isAutonomicControlActive() && (peerQ >= 0.94 || peerSoc < config.shieldEnergyMin)) {
+                return false;
+            }
+            if (backpressureEnabled && peerQ >= 0.72 && peerQ >= myQ + currentBackpressureDelta) {
                 return false;
             }
         }

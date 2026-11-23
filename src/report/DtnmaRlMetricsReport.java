@@ -163,7 +163,11 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         if (msgId.startsWith("CTRL_UPDATE_V1")) return "V1";
         if (msgId.startsWith("CTRL_UPDATE_V2")) return "V2";
         if (msgId.startsWith("CTRL_UPDATE_V3")) return "V3";
-        return "V0";
+        int idx = msgId.length();
+        while (idx > 0 && Character.isDigit(msgId.charAt(idx - 1))) {
+            idx--;
+        }
+        return idx > 0 ? msgId.substring(0, idx) : "V0";
     }
 
     private static int countAliveHosts(List<DTNHost> hosts) {

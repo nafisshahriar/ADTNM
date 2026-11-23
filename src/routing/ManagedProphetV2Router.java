@@ -94,9 +94,7 @@ public class ManagedProphetV2Router extends ProphetV2Router implements DtnmaMana
 
     @Override
     public void update() {
-        double now = SimClock.getTime();
-        this.agent.onBeforeUpdate(now);
-        this.agent.refreshStaleBeacons(now);
+        this.agent.onBeforeUpdate(SimClock.getTime());
         super.update();
     }
 
@@ -152,53 +150,143 @@ public class ManagedProphetV2Router extends ProphetV2Router implements DtnmaMana
 
     @Override
     protected Tuple<Message, Connection> tryOtherMessages() {
-        List<Tuple<Message, Connection>> messages = new ArrayList<Tuple<Message, Connection>>();
-        Collection<Message> msgCollection = getMessageCollection();
+        List<Connection> connections = getConnections();
+        if (connections.isEmpty() || getNrofMessages() == 0) {
+            return null;
+        }
 
-        for (Connection con : getConnections()) {
+        List<Connection> readyCons = null;
+        for (Connection con : connections) {
+            if (!con.isReadyForTransfer()) continue;
             DTNHost other = con.getOtherNode(getHost());
-            if (!(other.getRouter() instanceof ProphetV2Router)) continue;
+            if (other == null || !(other.getRouter() instanceof ProphetV2Router)) continue;
             ProphetV2Router othRouter = (ProphetV2Router) other.getRouter();
             if (othRouter.isTransferring()) continue;
+            if (readyCons == null) {
+                readyCons = new ArrayList<Connection>(connections.size());
+            }
+            readyCons.add(con);
+        }
+        if (readyCons == null || readyCons.isEmpty()) {
+            return null;
+        }
 
-            for (Message m : msgCollection) {
-                if (this.agent.isAcked(m)) continue;
-                if (othRouter.hasMessage(m.getId())) continue;
+        int nReady = readyCons.size();
+        ProphetV2Router[] othRouters = new ProphetV2Router[nReady];
+        double[] peerQ = new double[nReady];
+        double[] peerSoc = new double[nReady];
+        boolean[] peerManaged = new boolean[nReady];
 
-                boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
-                double peerPred = othRouter.getPredFor(m.getTo());
-                double myPred = getPredFor(m.getTo());
+        double myQ = getBufferOccupancyRatio();
+        boolean critOnly = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY);
+        boolean autoActive = this.agent.isAutonomicControlActive();
+        double minSoc = this.agent.getConfig().shieldEnergyMin;
+        boolean bpEnabled = this.agent.isBackpressureEnabled();
+        double bpDelta = this.agent.getCurrentBackpressureDelta();
+        boolean throttleBulk = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK);
+        boolean[] peerCanTakeBulk = new boolean[nReady];
+
+        for (int i = 0; i < nReady; i++) {
+            DTNHost other = readyCons.get(i).getOtherNode(getHost());
+            othRouters[i] = (ProphetV2Router) other.getRouter();
+            peerManaged[i] = (othRouters[i] instanceof DtnmaManagedRouter);
+            if (peerManaged[i]) {
+                peerQ[i] = this.agent.getBeaconNeighborQueueRatio(other);
+                peerSoc[i] = this.agent.getBeaconNeighborEnergySoc(other);
+            } else {
+                peerQ[i] = 0.5;
+                peerSoc[i] = 1.0;
+            }
+            boolean ok = !critOnly;
+            if (ok && peerManaged[i]) {
+                if (autoActive && (peerQ[i] >= 0.94 || peerSoc[i] < minSoc)) ok = false;
+                else if (bpEnabled && peerQ[i] >= 0.72 && peerQ[i] >= myQ + bpDelta) ok = false;
+            }
+            if (ok && throttleBulk && peerQ[i] >= 0.85) ok = false;
+            peerCanTakeBulk[i] = ok;
+        }
+
+        Collection<Message> msgCollection = getMessageCollection();
+        List<Tuple<Message, Connection>> critTuples = null;
+        List<Tuple<Message, Connection>> bulkTuples = null;
+
+        for (Message m : msgCollection) {
+            if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
+            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
+            boolean isCritOrCtrl = epiCtrl || DtnmaRouter.isCriticalMessage(m);
+            if (!isCritOrCtrl && critOnly) continue;
+
+            double myPred = -1.0;
+            for (int i = 0; i < nReady; i++) {
+                if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
+                if (othRouters[i].hasMessage(m.getId())) continue;
 
                 if (epiCtrl) {
-                    messages.add(new Tuple<Message, Connection>(m, con));
-                } else if (peerPred >= myPred && this.agent.allowNonDirectBulkForward(m, other, myPred, peerPred)) {
-                    messages.add(new Tuple<Message, Connection>(m, con));
+                    if (critTuples == null) critTuples = new ArrayList<Tuple<Message, Connection>>();
+                    critTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
+                } else {
+                    if (myPred < 0.0) myPred = getPredFor(m.getTo());
+                    double peerPred = othRouters[i].getPredFor(m.getTo());
+                    if (peerPred >= myPred) {
+                        if (isCritOrCtrl) {
+                            if (critTuples == null) critTuples = new ArrayList<Tuple<Message, Connection>>();
+                            critTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
+                        } else if (this.agent.allowNonDirectBulkForward(
+                                m, myQ, peerQ[i], peerSoc[i], peerManaged[i], myPred, peerPred)) {
+                            if (bulkTuples == null) bulkTuples = new ArrayList<Tuple<Message, Connection>>();
+                            bulkTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
+                        }
+                    }
                 }
             }
         }
 
-        if (messages.isEmpty()) {
-            return null;
-        }
-
-        Collections.sort(messages, new Comparator<Tuple<Message, Connection>>() {
+        final java.util.Map<Connection, java.util.Map<DTNHost, Double>> predCache =
+                new java.util.HashMap<Connection, java.util.Map<DTNHost, Double>>(nReady);
+        final Comparator<Tuple<Message, Connection>> predComp = new Comparator<Tuple<Message, Connection>>() {
             @Override
             public int compare(Tuple<Message, Connection> t1, Tuple<Message, Connection> t2) {
                 Message m1 = t1.getKey();
                 Message m2 = t2.getKey();
-                boolean c1 = DtnmaRouter.isCriticalMessage(m1);
-                boolean c2 = DtnmaRouter.isCriticalMessage(m2);
-                if (c1 && !c2) return -1;
-                if (!c1 && c2) return 1;
-
-                double p1 = ((ProphetV2Router) t1.getValue().getOtherNode(getHost()).getRouter()).getPredFor(m1.getTo());
-                double p2 = ((ProphetV2Router) t2.getValue().getOtherNode(getHost()).getRouter()).getPredFor(m2.getTo());
+                double p1 = getCachedPeerPred(predCache, t1.getValue(), m1.getTo());
+                double p2 = getCachedPeerPred(predCache, t2.getValue(), m2.getTo());
                 int cmp = Double.compare(p2, p1);
                 return (cmp != 0) ? cmp : compareByQueueMode(m1, m2);
             }
-        });
+        };
 
-        return tryMessagesForConnected(messages);
+        if (critTuples != null && !critTuples.isEmpty()) {
+            if (critTuples.size() > 1) {
+                Collections.sort(critTuples, predComp);
+            }
+            Tuple<Message, Connection> critRes = tryMessagesForConnected(critTuples);
+            if (critRes != null) {
+                return critRes;
+            }
+        }
+
+        if (critOnly || bulkTuples == null || bulkTuples.isEmpty()) {
+            return null;
+        }
+        if (bulkTuples.size() > 1) {
+            Collections.sort(bulkTuples, predComp);
+        }
+        return tryMessagesForConnected(bulkTuples);
+    }
+
+    private double getCachedPeerPred(
+            java.util.Map<Connection, java.util.Map<DTNHost, Double>> cache,
+            Connection con, DTNHost dest) {
+        java.util.Map<DTNHost, Double> map = cache.get(con);
+        if (map == null) {
+            map = new java.util.HashMap<DTNHost, Double>();
+            cache.put(con, map);
+        }
+        Double cached = map.get(dest);
+        if (cached != null) return cached.doubleValue();
+        double val = ((ProphetV2Router) con.getOtherNode(getHost()).getRouter()).getPredFor(dest);
+        map.put(dest, val);
+        return val;
     }
 
     @Override

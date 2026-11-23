@@ -92,9 +92,7 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
 
     @Override
     public void update() {
-        double now = SimClock.getTime();
-        this.agent.onBeforeUpdate(now);
-        this.agent.refreshStaleBeacons(now);
+        this.agent.onBeforeUpdate(SimClock.getTime());
         super.update();
     }
 
@@ -154,29 +152,71 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
         if (connections.isEmpty() || getNrofMessages() == 0) {
             return null;
         }
-        List<Message> msgs = new ArrayList<Message>(getMessageCollection());
-        sortByQueueMode(msgs);
 
-        List<Tuple<Message, Connection>> tuples = new ArrayList<Tuple<Message, Connection>>();
+        List<Connection> readyCons = null;
+        for (Connection con : connections) {
+            if (!con.isReadyForTransfer()) continue;
+            DTNHost other = con.getOtherNode(getHost());
+            if (other == null || other.getRouter() == null) continue;
+            MessageRouter othR = other.getRouter();
+            if (othR instanceof ActiveRouter && ((ActiveRouter) othR).isTransferring()) continue;
+            if (readyCons == null) {
+                readyCons = new ArrayList<Connection>(connections.size());
+            }
+            readyCons.add(con);
+        }
+        if (readyCons == null || readyCons.isEmpty()) {
+            return null;
+        }
+
+        int nReady = readyCons.size();
+        MessageRouter[] othRouters = new MessageRouter[nReady];
+        double[] peerQ = new double[nReady];
+        double[] peerSoc = new double[nReady];
+        boolean[] peerManaged = new boolean[nReady];
+        for (int i = 0; i < nReady; i++) {
+            DTNHost other = readyCons.get(i).getOtherNode(getHost());
+            othRouters[i] = other.getRouter();
+            peerManaged[i] = (othRouters[i] instanceof DtnmaManagedRouter);
+            if (peerManaged[i]) {
+                peerQ[i] = this.agent.getBeaconNeighborQueueRatio(other);
+                peerSoc[i] = this.agent.getBeaconNeighborEnergySoc(other);
+            } else {
+                peerQ[i] = 0.5;
+                peerSoc[i] = 1.0;
+            }
+        }
+
+        boolean critOnly = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY);
+        List<Message> msgs = new ArrayList<Message>(getNrofMessages());
+        for (Message m : getMessageCollection()) {
+            if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
+            if (critOnly && !DtnmaRouter.isCriticalMessage(m) && !this.agent.isEpidemicControlPriority(m)) {
+                continue;
+            }
+            msgs.add(m);
+        }
+        if (msgs.isEmpty()) {
+            return null;
+        }
+
+        sortByQueueMode(msgs);
+        double myQ = getBufferOccupancyRatio();
+
         for (Message m : msgs) {
-            if (this.agent.isAcked(m)) continue;
-            for (Connection con : connections) {
-                DTNHost other = con.getOtherNode(getHost());
-                if (other == null || other.getRouter() == null) continue;
-                MessageRouter othR = other.getRouter();
-                if (othR instanceof ActiveRouter && ((ActiveRouter) othR).isTransferring()) continue;
-                if (othR.hasMessage(m.getId())) continue;
-                if (this.agent.isEpidemicControlPriority(m)
-                        || this.agent.allowNonDirectBulkForward(m, other, -1.0, -1.0)) {
-                    tuples.add(new Tuple<Message, Connection>(m, con));
+            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
+            for (int i = 0; i < nReady; i++) {
+                if (othRouters[i].hasMessage(m.getId())) continue;
+                if (epiCtrl || this.agent.allowNonDirectBulkForward(
+                        m, myQ, peerQ[i], peerSoc[i], peerManaged[i], -1.0, -1.0)) {
+                    Connection con = readyCons.get(i);
+                    if (startTransfer(m, con) == RCV_OK) {
+                        return con;
+                    }
                 }
             }
         }
-        if (tuples.isEmpty()) {
-            return null;
-        }
-        Tuple<Message, Connection> res = tryMessagesForConnected(DtnmaRouter.sortCriticalFirst(tuples));
-        return res != null ? res.getValue() : null;
+        return null;
     }
 
     @Override

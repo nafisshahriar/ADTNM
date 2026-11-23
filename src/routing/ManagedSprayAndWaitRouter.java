@@ -91,9 +91,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
 
     @Override
     public void update() {
-        double now = SimClock.getTime();
-        this.agent.onBeforeUpdate(now);
-        this.agent.refreshStaleBeacons(now);
+        this.agent.onBeforeUpdate(SimClock.getTime());
         super.update();
     }
 
@@ -155,24 +153,55 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
     @Override
     protected Connection tryMessagesToConnections(
             List<Message> messages, List<Connection> connections) {
-        if (messages == null || connections == null || connections.isEmpty()) {
+        if (messages == null || messages.isEmpty() || connections == null || connections.isEmpty()) {
             return null;
         }
-        List<Tuple<Message, Connection>> tuples = new ArrayList<Tuple<Message, Connection>>();
+        List<Connection> readyCons = null;
+        for (Connection con : connections) {
+            if (!con.isReadyForTransfer()) continue;
+            DTNHost other = con.getOtherNode(getHost());
+            if (other == null || other.getRouter() == null) continue;
+            if (other.getRouter() instanceof ActiveRouter
+                    && ((ActiveRouter) other.getRouter()).isTransferring()) continue;
+            if (readyCons == null) {
+                readyCons = new ArrayList<Connection>(connections.size());
+            }
+            readyCons.add(con);
+        }
+        if (readyCons == null || readyCons.isEmpty()) {
+            return null;
+        }
+
+        int nReady = readyCons.size();
+        double myQ = getBufferOccupancyRatio();
+        double[] peerQ = new double[nReady];
+        double[] peerSoc = new double[nReady];
+        boolean[] peerManaged = new boolean[nReady];
+        for (int i = 0; i < nReady; i++) {
+            DTNHost other = readyCons.get(i).getOtherNode(getHost());
+            peerManaged[i] = (other.getRouter() instanceof DtnmaManagedRouter);
+            if (peerManaged[i]) {
+                peerQ[i] = this.agent.getBeaconNeighborQueueRatio(other);
+                peerSoc[i] = this.agent.getBeaconNeighborEnergySoc(other);
+            } else {
+                peerQ[i] = 0.5;
+                peerSoc[i] = 1.0;
+            }
+        }
+
+        DtnmaRouter.sortCriticalFirst(messages);
         for (Message m : messages) {
-            for (Connection con : connections) {
-                DTNHost other = con.getOtherNode(getHost());
-                if (other == null || other.getRouter() == null) continue;
-                if (this.agent.allowNonDirectBulkForward(m, other, -1.0, -1.0)) {
-                    tuples.add(new Tuple<Message, Connection>(m, con));
+            for (int i = 0; i < nReady; i++) {
+                if (this.agent.allowNonDirectBulkForward(
+                        m, myQ, peerQ[i], peerSoc[i], peerManaged[i], -1.0, -1.0)) {
+                    Connection con = readyCons.get(i);
+                    if (startTransfer(m, con) == RCV_OK) {
+                        return con;
+                    }
                 }
             }
         }
-        if (tuples.isEmpty()) {
-            return null;
-        }
-        Tuple<Message, Connection> res = tryMessagesForConnected(DtnmaRouter.sortCriticalFirst(tuples));
-        return res != null ? res.getValue() : null;
+        return null;
     }
 
     @Override

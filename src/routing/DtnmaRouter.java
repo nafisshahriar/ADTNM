@@ -171,8 +171,6 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
             return;
         }
 
-        this.agent.refreshStaleBeacons(now);
-
         if (exchangeDeliverableMessages() != null) {
             return;
         }
@@ -240,108 +238,131 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         Collection<Message> msgColl = getMessageCollection();
         if (msgColl.isEmpty()) return;
 
-        List<Message> messages = new ArrayList<Message>(msgColl);
-        sortMessagesDualTier(messages);
+        int activeQuota = this.agent.getCurrentSprayQuota();
+        boolean critOnly = (this.agent.getCurrentIngressMode() == INGRESS_CRITICAL_ONLY);
+
+        // Linear O(N) 5-tier bucketing: avoids double-sorting all messages every tick
+        // Buckets: 0=epidemicCtrl, 1=crit(L>1), 2=crit(L<=1), 3=bulk(L>1), 4=bulk(L<=1)
+        @SuppressWarnings("unchecked")
+        List<Message>[] buckets = (List<Message>[]) new List<?>[5];
+        for (Message m : msgColl) {
+            if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
+            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
+            boolean isCrit = epiCtrl || isCriticalMessage(m);
+            if (!isCrit && critOnly) continue;
+
+            Integer copiesObj = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+            int copies = (copiesObj != null) ? copiesObj.intValue() : (isCrit ? DEFAULT_CRITICAL_QUOTA : activeQuota);
+            int b = epiCtrl ? 0 : (isCrit ? (copies > 1 ? 1 : 2) : (copies > 1 ? 3 : 4));
+            if (buckets[b] == null) {
+                buckets[b] = new ArrayList<Message>();
+            }
+            buckets[b].add(m);
+        }
 
         EddTelemetrySampler edd = this.agent.getEddSampler();
-        int activeQuota = this.agent.getCurrentSprayQuota();
         boolean bpEnabled = this.agent.isBackpressureEnabled();
         double bpDelta = this.agent.getCurrentBackpressureDelta();
         double focusMinPred = this.agent.getCurrentFocusMinPred();
         double focusMargin = this.agent.getCurrentFocusMargin();
 
-        for (Message m : messages) {
-            if (isSending(m.getId())) continue;
-            if (this.agent.isAcked(m)) continue;
-
-            boolean isCritical = isCriticalMessage(m);
-            boolean epidemicCtrl = this.agent.isEpidemicControlPriority(m);
-            Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-            if (copies == null) {
-                copies = isCritical ? DEFAULT_CRITICAL_QUOTA : activeQuota;
-                m.updateProperty(MSG_COPIES_PROPERTY, copies);
+        for (int b = 0; b < 5; b++) {
+            List<Message> bucket = buckets[b];
+            if (bucket == null || bucket.isEmpty()) continue;
+            if (bucket.size() > 1) {
+                super.sortByQueueMode(bucket);
             }
 
-            DTNHost dest = m.getTo();
-            double myPred = (edd != null && dest != null) ? edd.getPredFor(dest) : 0.0;
-
-            for (int i = 0; i < nReady; i++) {
-                Connection con = readyConnections.get(i);
-                DTNHost other = peerHosts[i];
-                if (other == null) continue;
-
-                // 1. Direct delivery to final recipient always executes immediately
-                if (dest == other) {
-                    m.updateProperty(MSG_SPLIT_PROPERTY, 0);
-                    if (startTransfer(m, con) == RCV_OK) {
-                        return;
-                    }
-                    continue;
+            for (Message m : bucket) {
+                boolean isCritical = isCriticalMessage(m);
+                boolean epidemicCtrl = (b == 0);
+                Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+                if (copies == null) {
+                    copies = isCritical ? DEFAULT_CRITICAL_QUOTA : activeQuota;
+                    m.updateProperty(MSG_COPIES_PROPERTY, copies);
                 }
 
-                // 1b. Optional Epidemic Control Flooding for M1/M2/M3 convergence upper bound
-                if (epidemicCtrl) {
-                    if (other.getRouter() != null && other.getRouter().hasMessage(m.getId())) {
+                DTNHost dest = m.getTo();
+                double myPred = -1.0;
+
+                for (int i = 0; i < nReady; i++) {
+                    Connection con = readyConnections.get(i);
+                    DTNHost other = peerHosts[i];
+                    if (other == null) continue;
+
+                    // 1. Direct delivery to final recipient always executes immediately
+                    if (dest == other) {
+                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                        if (startTransfer(m, con) == RCV_OK) {
+                            return;
+                        }
                         continue;
                     }
-                    m.updateProperty(MSG_SPLIT_PROPERTY, -1);
-                    if (startTransfer(m, con) == RCV_OK) {
-                        return;
-                    }
-                    m.updateProperty(MSG_SPLIT_PROPERTY, 0);
-                    continue;
-                }
 
-                double peerQueue = peerQueueRatios[i];
-
-                // 2. SPRAY PHASE (copies > 1)
-                if (copies > 1) {
-                    if (!isCritical && bpEnabled && peerManaged[i] != null) {
-                        if (peerQueue >= 0.65 && peerQueue >= myQueueRatio + bpDelta) {
+                    // 1b. Optional Epidemic Control Flooding for M1/M2/M3 convergence upper bound
+                    if (epidemicCtrl) {
+                        if (other.getRouter() != null && other.getRouter().hasMessage(m.getId())) {
                             continue;
                         }
-                    }
-
-                    int toSend = computeRelaySplit(copies, activeQuota, isCritical);
-                    int naturalSplit = Math.max(1, (int) Math.floor(copies / 2.0));
-                    if (!isCritical) {
-                        this.agent.recordStarvationCheck(peerQueue, toSend, naturalSplit);
-                    }
-                    if (toSend <= 0) {
+                        m.updateProperty(MSG_SPLIT_PROPERTY, -1);
+                        if (startTransfer(m, con) == RCV_OK) {
+                            return;
+                        }
+                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                         continue;
                     }
 
-                    m.updateProperty(MSG_SPLIT_PROPERTY, toSend);
-                    if (startTransfer(m, con) == RCV_OK) {
-                        return;
-                    }
-                    m.updateProperty(MSG_SPLIT_PROPERTY, 0);
-                }
-                // 3. COGNITIVE FOCUS HANDOFF PHASE (copies == 1)
-                else {
-                    if (!isCritical && this.agent.getCurrentIngressMode() == INGRESS_CRITICAL_ONLY) {
-                        continue;
-                    }
-                    if (!isCritical && m.getTtl() < 15) {
-                        continue;
-                    }
-                    int maxHops = isCritical ? 3 : 2;
-                    if (m.getHopCount() < maxHops) {
-                        double peerPred = 0.0;
-                        if (peerManaged[i] != null && peerManaged[i].getDtnmaAgent() != null
-                                && peerManaged[i].getDtnmaAgent().getEddSampler() != null) {
-                            peerPred = peerManaged[i].getDtnmaAgent().getEddSampler().getPredFor(dest);
-                        } else if (prophetRouters[i] != null) {
-                            peerPred = prophetRouters[i].getPredFor(dest);
+                    double peerQueue = peerQueueRatios[i];
+
+                    // 2. SPRAY PHASE (copies > 1)
+                    if (copies > 1) {
+                        if (!isCritical && bpEnabled && peerManaged[i] != null) {
+                            if (peerQueue >= 0.65 && peerQueue >= myQueueRatio + bpDelta) {
+                                continue;
+                            }
                         }
 
-                        double minAbsolutePred = isCritical ? 0.35 : Math.max(0.60, focusMinPred);
-                        double requiredAdvantage = isCritical ? 0.20 : Math.max(0.30, focusMargin);
-                        double maxPeerQ = isCritical ? 0.90 : 0.70;
-                        if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < maxPeerQ) {
-                            m.updateProperty(MSG_SPLIT_PROPERTY, 0);
-                            if (startTransfer(m, con) == RCV_OK) {
-                                return;
+                        int toSend = computeRelaySplit(copies, activeQuota, isCritical);
+                        int naturalSplit = Math.max(1, (int) Math.floor(copies / 2.0));
+                        if (!isCritical) {
+                            this.agent.recordStarvationCheck(peerQueue, toSend, naturalSplit);
+                        }
+                        if (toSend <= 0) {
+                            continue;
+                        }
+
+                        m.updateProperty(MSG_SPLIT_PROPERTY, toSend);
+                        if (startTransfer(m, con) == RCV_OK) {
+                            return;
+                        }
+                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                    }
+                    // 3. COGNITIVE FOCUS HANDOFF PHASE (copies == 1)
+                    else {
+                        if (!isCritical && m.getTtl() < 15) {
+                            continue;
+                        }
+                        int maxHops = isCritical ? 3 : 2;
+                        if (m.getHopCount() < maxHops) {
+                            if (myPred < 0.0) {
+                                myPred = (edd != null && dest != null) ? edd.getPredFor(dest) : 0.0;
+                            }
+                            double peerPred = 0.0;
+                            if (peerManaged[i] != null && peerManaged[i].getDtnmaAgent() != null
+                                    && peerManaged[i].getDtnmaAgent().getEddSampler() != null) {
+                                peerPred = peerManaged[i].getDtnmaAgent().getEddSampler().getPredFor(dest);
+                            } else if (prophetRouters[i] != null) {
+                                peerPred = prophetRouters[i].getPredFor(dest);
+                            }
+
+                            double minAbsolutePred = isCritical ? 0.35 : Math.max(0.60, focusMinPred);
+                            double requiredAdvantage = isCritical ? 0.20 : Math.max(0.30, focusMargin);
+                            double maxPeerQ = isCritical ? 0.90 : 0.70;
+                            if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < maxPeerQ) {
+                                m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                                if (startTransfer(m, con) == RCV_OK) {
+                                    return;
+                                }
                             }
                         }
                     }
@@ -507,42 +528,29 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         return this.agent.selectNextMessageToRemove(excludeMsgBeingSent, null);
     }
 
-    private int getForwardTier(Message m) {
-        if (this.agent.isEpidemicControlPriority(m)) {
-            return -1;
-        }
-        boolean isCritical = isCriticalMessage(m);
-        Integer prop = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-        int copies = (prop != null) ? prop : (isCritical ? DEFAULT_CRITICAL_QUOTA : this.agent.getCurrentSprayQuota());
-        if (isCritical) {
-            return (copies > 1) ? 0 : 1;
-        }
-        return (copies > 1) ? 2 : 3;
-    }
-
-    private void sortMessagesDualTier(List<Message> list) {
-        super.sortByQueueMode(list);
-        Collections.sort(list, new Comparator<Message>() {
-            public int compare(Message m1, Message m2) {
-                return Integer.compare(getForwardTier(m1), getForwardTier(m2));
-            }
-        });
-    }
-
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public static List sortCriticalFirst(List list) {
-        Collections.sort(list, new Comparator() {
-            public int compare(Object o1, Object o2) {
-                Message m1 = (o1 instanceof Tuple) ? ((Tuple<Message, Connection>) o1).getKey() : (Message) o1;
-                Message m2 = (o2 instanceof Tuple) ? ((Tuple<Message, Connection>) o2).getKey() : (Message) o2;
-                boolean c1 = isCriticalMessage(m1);
-                boolean c2 = isCriticalMessage(m2);
-
-                if (c1 && !c2) return -1;
-                if (!c1 && c2) return 1;
-                return 0;
+        if (list == null || list.size() <= 1) {
+            return list;
+        }
+        List crit = null;
+        List nonCrit = null;
+        for (Object o : list) {
+            Message m = (o instanceof Tuple) ? ((Tuple<Message, Connection>) o).getKey() : (Message) o;
+            if (isCriticalMessage(m)) {
+                if (crit == null) crit = new ArrayList();
+                crit.add(o);
+            } else {
+                if (nonCrit == null) nonCrit = new ArrayList();
+                nonCrit.add(o);
             }
-        });
+        }
+        if (crit == null || nonCrit == null) {
+            return list;
+        }
+        list.clear();
+        list.addAll(crit);
+        list.addAll(nonCrit);
         return list;
     }
 
@@ -573,7 +581,11 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
     }
 
     public static boolean isCriticalMessage(String id) {
-        if (id == null) return false;
+        if (id == null || id.isEmpty()) return false;
+        char c = id.charAt(0);
+        if (c != 'C' && c != 'F' && c != 'A' && c != 'T') {
+            return false;
+        }
         return id.startsWith("CRITICAL_FAULT")
             || id.startsWith("FAULT")
             || id.startsWith("CRIT")

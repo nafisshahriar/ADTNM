@@ -25,15 +25,18 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
 
     private final DtnmaAgent agent;
     private double initialEnergy = 1.0;
+    private java.util.Map<DTNHost, java.util.Map<DTNHost, Double>> persistentPeerCostCache;
 
     public ManagedMaxPropRouter(Settings s) {
         super(s);
         this.agent = new DtnmaAgent(this, s);
+        this.persistentPeerCostCache = new java.util.HashMap<DTNHost, java.util.Map<DTNHost, Double>>();
     }
 
     protected ManagedMaxPropRouter(ManagedMaxPropRouter r) {
         super(r);
         this.agent = new DtnmaAgent(this, r.agent);
+        this.persistentPeerCostCache = new java.util.HashMap<DTNHost, java.util.Map<DTNHost, Double>>();
         if (this.energy != null && this.energy.getEnergy() > 0.0) {
             this.initialEnergy = this.energy.getEnergy();
         } else {
@@ -87,17 +90,24 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
         return (double) critBytes / bSize;
     }
 
+    private void invalidatePeerCostCache() {
+        if (this.persistentPeerCostCache != null && !this.persistentPeerCostCache.isEmpty()) {
+            this.persistentPeerCostCache.clear();
+        }
+    }
+
     @Override
     public void changedConnection(Connection con) {
+        if (con != null && con.isUp()) {
+            invalidatePeerCostCache();
+        }
         super.changedConnection(con);
         this.agent.onChangedConnection(con);
     }
 
     @Override
     public void update() {
-        double now = SimClock.getTime();
-        this.agent.onBeforeUpdate(now);
-        this.agent.refreshStaleBeacons(now);
+        this.agent.onBeforeUpdate(SimClock.getTime());
         super.update();
     }
 
@@ -108,6 +118,7 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
         }
         boolean ok = super.createNewMessage(msg);
         if (ok) {
+            invalidatePeerCostCache();
             this.agent.onAfterCreateNewMessage(msg, 1);
         }
         return ok;
@@ -117,6 +128,7 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
     public void deleteMessage(String id, boolean drop) {
         this.agent.onDeleteMessage(getMessage(id), drop);
         super.deleteMessage(id, drop);
+        invalidatePeerCostCache();
     }
 
     @Override
@@ -149,6 +161,7 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
     @Override
     public Message messageTransferred(String id, DTNHost from) {
         Message m = super.messageTransferred(id, from);
+        invalidatePeerCostCache();
         if (m != null) {
             this.agent.onMessageTransferred(m, from, null);
         }
@@ -157,46 +170,187 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
 
     @Override
     protected Tuple<Message, Connection> tryOtherMessages() {
-        List<Tuple<Message, Connection>> messages = new ArrayList<Tuple<Message, Connection>>();
-        Collection<Message> msgCollection = getMessageCollection();
+        List<Connection> connections = getConnections();
+        if (connections.isEmpty() || getNrofMessages() == 0) {
+            return null;
+        }
 
-        for (Connection con : getConnections()) {
+        List<Connection> readyCons = null;
+        for (Connection con : connections) {
+            if (!con.isReadyForTransfer()) continue;
             DTNHost other = con.getOtherNode(getHost());
-            if (!(other.getRouter() instanceof MaxPropRouter)) continue;
+            if (other == null || !(other.getRouter() instanceof MaxPropRouter)) continue;
             MaxPropRouter othRouter = (MaxPropRouter) other.getRouter();
             if (othRouter.isTransferring()) continue;
-            Set<String> sentMsgIds = this.sentMessages.get(other);
+            if (readyCons == null) {
+                readyCons = new ArrayList<Connection>(connections.size());
+            }
+            readyCons.add(con);
+        }
+        if (readyCons == null || readyCons.isEmpty()) {
+            return null;
+        }
 
-            for (Message m : msgCollection) {
-                if (this.agent.isAcked(m)) continue;
-                if (othRouter.hasMessage(m.getId()) || m.getHops().contains(other)) continue;
-                if (sentMsgIds != null && sentMsgIds.contains(m.getId())) continue;
+        int nReady = readyCons.size();
+        DTNHost[] peerHosts = new DTNHost[nReady];
+        MaxPropRouter[] othRouters = new MaxPropRouter[nReady];
+        @SuppressWarnings("unchecked")
+        Set<String>[] sentSets = (Set<String>[]) new Set<?>[nReady];
+        double[] peerQ = new double[nReady];
+        double[] peerSoc = new double[nReady];
+        boolean[] peerManaged = new boolean[nReady];
 
-                boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
-                if (epiCtrl || this.agent.allowNonDirectBulkForward(m, other, -1.0, -1.0)) {
-                    messages.add(new Tuple<Message, Connection>(m, con));
+        double myQ = getBufferOccupancyRatio();
+        boolean critOnly = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY);
+        boolean autoActive = this.agent.isAutonomicControlActive();
+        double minSoc = this.agent.getConfig().shieldEnergyMin;
+        boolean bpEnabled = this.agent.isBackpressureEnabled();
+        double bpDelta = this.agent.getCurrentBackpressureDelta();
+        boolean throttleBulk = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK);
+        boolean[] peerCanTakeBulk = new boolean[nReady];
+
+        for (int i = 0; i < nReady; i++) {
+            DTNHost other = readyCons.get(i).getOtherNode(getHost());
+            peerHosts[i] = other;
+            othRouters[i] = (MaxPropRouter) other.getRouter();
+            sentSets[i] = this.sentMessages.get(other);
+            peerManaged[i] = (othRouters[i] instanceof DtnmaManagedRouter);
+            if (peerManaged[i]) {
+                peerQ[i] = this.agent.getBeaconNeighborQueueRatio(other);
+                peerSoc[i] = this.agent.getBeaconNeighborEnergySoc(other);
+            } else {
+                peerQ[i] = 0.5;
+                peerSoc[i] = 1.0;
+            }
+            boolean ok = !critOnly;
+            if (ok && peerManaged[i]) {
+                if (autoActive && (peerQ[i] >= 0.94 || peerSoc[i] < minSoc)) ok = false;
+                else if (bpEnabled && peerQ[i] >= 0.72 && peerQ[i] >= myQ + bpDelta) ok = false;
+            }
+            if (ok && throttleBulk && peerQ[i] >= 0.85) ok = false;
+            peerCanTakeBulk[i] = ok;
+        }
+
+        Collection<Message> msgCollection = getMessageCollection();
+        List<Tuple<Message, Connection>> critTuples = null;
+        List<Tuple<Message, Connection>> bulkTuples = null;
+
+        for (Message m : msgCollection) {
+            if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
+            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m) || this.agent.isEpidemicControlPriority(m);
+            if (!isCritOrCtrl && critOnly) continue;
+
+            for (int i = 0; i < nReady; i++) {
+                if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
+                if (othRouters[i].hasMessage(m.getId()) || m.getHops().contains(peerHosts[i])) continue;
+                if (sentSets[i] != null && sentSets[i].contains(m.getId())) continue;
+
+                if (isCritOrCtrl) {
+                    if (critTuples == null) critTuples = new ArrayList<Tuple<Message, Connection>>();
+                    critTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
+                } else if (this.agent.allowNonDirectBulkForward(
+                        m, myQ, peerQ[i], peerSoc[i], peerManaged[i], -1.0, -1.0)) {
+                    if (bulkTuples == null) bulkTuples = new ArrayList<Tuple<Message, Connection>>();
+                    bulkTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
                 }
             }
         }
 
-        if (messages.isEmpty()) {
-            return null;
+        if (critTuples != null && !critTuples.isEmpty()) {
+            if (critTuples.size() > 1) {
+                sortTuplesByCachedMaxProp(critTuples);
+            }
+            Tuple<Message, Connection> critRes = tryMessagesForConnected(critTuples);
+            if (critRes != null) {
+                return critRes;
+            }
         }
 
-        final Comparator<Tuple<Message, Connection>> baseComp =
-                new MaxPropTupleComparator(calcThreshold());
-        Collections.sort(messages, new Comparator<Tuple<Message, Connection>>() {
+        if (critOnly || bulkTuples == null || bulkTuples.isEmpty()) {
+            return null;
+        }
+        if (bulkTuples.size() > 1) {
+            sortTuplesByCachedMaxProp(bulkTuples);
+        }
+        return tryMessagesForConnected(bulkTuples);
+    }
+
+    /**
+     * Exact MaxPropTupleComparator ordering reusing persistentPeerCostCache across ticks
+     * until changedConnection(isUp) / messageTransferred / create / delete invalidates costs.
+     */
+    private void sortTuplesByCachedMaxProp(List<Tuple<Message, Connection>> tuples) {
+        final int threshold = calcThreshold();
+        if (this.persistentPeerCostCache == null) {
+            this.persistentPeerCostCache = new java.util.HashMap<DTNHost, java.util.Map<DTNHost, Double>>(8);
+        }
+        final java.util.Map<DTNHost, java.util.Map<DTNHost, Double>> costCache = this.persistentPeerCostCache;
+
+        // Populate missing (fromHost, dest) entries grouped by fromHost so lastCostFrom stays hot
+        java.util.Map<DTNHost, List<Tuple<Message, Connection>>> byPeerMiss = null;
+        for (Tuple<Message, Connection> t : tuples) {
+            if (t.getKey().getHopCount() < threshold) continue;
+            DTNHost fromHost = t.getValue().getOtherNode(getHost());
+            java.util.Map<DTNHost, Double> cachedPeer = costCache.get(fromHost);
+            if (cachedPeer != null && cachedPeer.containsKey(t.getKey().getTo())) {
+                continue;
+            }
+            if (byPeerMiss == null) {
+                byPeerMiss = new java.util.HashMap<DTNHost, List<Tuple<Message, Connection>>>(8);
+            }
+            List<Tuple<Message, Connection>> bucket = byPeerMiss.get(fromHost);
+            if (bucket == null) {
+                bucket = new ArrayList<Tuple<Message, Connection>>();
+                byPeerMiss.put(fromHost, bucket);
+            }
+            bucket.add(t);
+        }
+        if (byPeerMiss != null) {
+            for (java.util.Map.Entry<DTNHost, List<Tuple<Message, Connection>>> entry : byPeerMiss.entrySet()) {
+                DTNHost fromHost = entry.getKey();
+                java.util.Map<DTNHost, Double> destCosts = costCache.get(fromHost);
+                if (destCosts == null) {
+                    destCosts = new java.util.HashMap<DTNHost, Double>();
+                    costCache.put(fromHost, destCosts);
+                }
+                for (Tuple<Message, Connection> t : entry.getValue()) {
+                    DTNHost dest = t.getKey().getTo();
+                    if (!destCosts.containsKey(dest)) {
+                        destCosts.put(dest, getCost(fromHost, dest));
+                    }
+                }
+            }
+        }
+
+        Collections.sort(tuples, new Comparator<Tuple<Message, Connection>>() {
             @Override
             public int compare(Tuple<Message, Connection> t1, Tuple<Message, Connection> t2) {
-                boolean c1 = DtnmaRouter.isCriticalMessage(t1.getKey());
-                boolean c2 = DtnmaRouter.isCriticalMessage(t2.getKey());
-                if (c1 && !c2) return -1;
-                if (!c1 && c2) return 1;
-                return baseComp.compare(t1, t2);
+                Message msg1 = t1.getKey();
+                Message msg2 = t2.getKey();
+                if (msg1 == msg2 && t1.getValue() == t2.getValue()) {
+                    return 0;
+                }
+                int hopc1 = msg1.getHopCount();
+                int hopc2 = msg2.getHopCount();
+                if (hopc1 < threshold && hopc2 >= threshold) return -1;
+                if (hopc2 < threshold && hopc1 >= threshold) return 1;
+                if (hopc1 < threshold && hopc2 < threshold) return hopc1 - hopc2;
+
+                DTNHost f1 = t1.getValue().getOtherNode(getHost());
+                DTNHost f2 = t2.getValue().getOtherNode(getHost());
+                java.util.Map<DTNHost, Double> cMap1 = costCache.get(f1);
+                java.util.Map<DTNHost, Double> cMap2 = costCache.get(f2);
+                double p1 = (cMap1 != null && cMap1.containsKey(msg1.getTo()))
+                        ? cMap1.get(msg1.getTo()) : getCost(f1, msg1.getTo());
+                double p2 = (cMap2 != null && cMap2.containsKey(msg2.getTo()))
+                        ? cMap2.get(msg2.getTo()) : getCost(f2, msg2.getTo());
+
+                if (p1 - p2 == 0) {
+                    return (hopc1 == hopc2) ? compareByQueueMode(msg1, msg2) : (hopc1 - hopc2);
+                }
+                return (p1 - p2 < 0) ? -1 : 1;
             }
         });
-
-        return tryMessagesForConnected(messages);
     }
 
     @Override
