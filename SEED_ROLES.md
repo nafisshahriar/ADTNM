@@ -1,0 +1,30 @@
+# ADTNM Seed Governance and Scenario Freeze Record
+
+To eliminate post-hoc tuning on evaluation seeds or scenario-shopping across
+management paradigms, random seeds and stressor calibrations follow a strict
+train/dev vs. held-out test separation.
+
+## 1. Seed Partitions
+
+| Role | Seeds | Usage Policy |
+|---|---|---|
+| **Development & Calibration** | `4001, 4003, 4007, 4009, 4021` | Bug-hunting, reward shaping verification, M0a/M0b stressor calibration, and matched single-seed pilot verification (`4001`). Never cited as final paper tables without held-out replication. |
+| **Final Paper Campaigns** | `7103, 7109, 7121, 7127, 7129, 7151, 7159` | 7 fresh prime seeds reserved exclusively for final camera-ready campaigns (Comparison A, Comparison A Intervention Tiers, Comparison B Multi-Timescale, and Regression/Oracle checks). Prime count `7` is coprime to router sweep counts (`2, 4, 5, 8, 9, 12`) to prevent ONE modular-index collisions. |
+
+## 2. Comparison B Stressor Calibration Record (Seed `4001`, `M0a`/`M0b` Only)
+
+Target band chosen before running `M1`/`M2`/`M3`: `M0b` (`DtnmaM0bStaticRouter`)
+must enter **35–60% field blackout** (`alive_nodes_end` in `[54, 84]` out of 126 hosts,
+i.e., `42–72` depleted out of 120 field agents) or **>= 20 pp post-fault delivery drop**.
+
+Calibration iterations executed exclusively on `SprayAndWaitRouter` (`M0a`) and
+`DtnmaM0bStaticRouter` (`M0b`) with CompA-matched physical radio power
+(`scanEnergy = 0.05`, `scanResponseEnergy = 0.02`, `transmitEnergy = 0.90`):
+
+1. **Iter #1 (`initialEnergy = 2900, 4100`)**: `M0b` `alive_nodes_end = 91` (`35` depleted, `29.2%` field blackout), `CrDel = 0.9818`, `BkDel = 0.8005`. Too mild.
+2. **Iter #2 (`initialEnergy = 2400, 3300`)**: `M0b` `alive_nodes_end = 24` (`102` depleted, `85.0%` field blackout), `CrDel = 0.9245`, `BkDel = 0.7027`. Too harsh.
+3. **Iter #3 (`initialEnergy = 2650, 3650`)**: `M0b` `alive_nodes_end = 55` (`71` depleted, **`59.2%` field blackout**), `CrDel = 0.9691`, `CrLst = 0`, `BkDel = 0.7706`, `PostFault = 0.7592`; `M0a` `alive_nodes_end = 56` (`70` depleted), `CrDel = 0.8626`, `CrLst = 117`, `BkDel = 0.7357`. **Within target band -> `compB_multitimescale.txt` FROZEN prior to running `M1`/`M2`/`M3`.**
+
+## 3. Control-Transport Equalization Note
+
+The first Step 4a Comparison B pilot revealed that setting `epidemicControlFlooding = true` only on `M1`/`M2`/`M3` flooded `6 × 120 = 720` distinct unicast `CTRL_UPDATE_*` IDs across every encounter, draining `~650–800 J` extra battery (`12–17` alive vs `55–56` on `M0a`/`M0b`). Equalizing `DtnmaRouter.epidemicControlFlooding = false` across all four managed modes (`M0b`/`M1`/`M2`/`M3`, retaining `M0a`/`M0b` frozen calibration values unchanged) removes that medium/energy confound.

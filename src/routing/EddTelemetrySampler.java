@@ -24,6 +24,7 @@ public class EddTelemetrySampler {
 
     // Standardized EDD ARIs
     public static final String EDD_QUEUE_RATIO = "EDD_QUEUE_RATIO";
+    public static final String EDD_CRIT_QUEUE_RATIO = "EDD_CRIT_QUEUE_RATIO";
     public static final String EDD_QUEUE_DRIFT = "EDD_QUEUE_DRIFT";
     public static final String EDD_NODE_DENSITY = "EDD_NODE_DENSITY";
     public static final String EDD_ACTIVE_CONNECTIONS = "EDD_ACTIVE_CONNECTIONS";
@@ -251,6 +252,10 @@ public class EddTelemetrySampler {
     public double getEddValue(String eddName) {
         if (EDD_QUEUE_RATIO.equals(eddName)) {
             return router != null ? router.getBufferOccupancyRatio() : 0.0;
+        } else if (EDD_CRIT_QUEUE_RATIO.equals(eddName)) {
+            if (router == null) return 0.0;
+            DtnmaAgent ag = router.getDtnmaAgent();
+            return ag != null ? ag.getCachedCriticalOccupancyRatio() : router.getCriticalOccupancyRatio();
         } else if (EDD_QUEUE_DRIFT.equals(eddName)) {
             return this.queueDrift;
         } else if (EDD_NODE_DENSITY.equals(eddName)) {

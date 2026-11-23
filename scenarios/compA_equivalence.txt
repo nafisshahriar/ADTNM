@@ -1,0 +1,160 @@
+# ====================================================================
+# COMPARISON A EQUIVALENCE VERIFICATION:
+# Checks architectural equivalence between hand-coded PrioritySprayAndWaitRouter
+# and composed ManagedSprayAndWaitRouter in M0_STATIC + TIER1_PROTECTION_ONLY
+# (ACK feedback & gossip disabled) on exact matched seed 4001.
+# ====================================================================
+
+Scenario.name = CompA_Equiv_%%Group.router%%_%%MovementModel.rngSeed%%
+Scenario.simulateConnections = true
+Scenario.updateInterval = 0.5
+Scenario.endTime = 43200
+Scenario.nrofHostGroups = 7
+
+btInterface.type = SimpleBroadcastInterface
+btInterface.transmitSpeed = 250k
+btInterface.transmitRange = 35
+
+highspeedInterface.type = SimpleBroadcastInterface
+highspeedInterface.transmitSpeed = 10M
+highspeedInterface.transmitRange = 1000
+
+Group.movementModel = ShortestPathMapBasedMovement
+Group.router = [PrioritySprayAndWaitRouter; ManagedSprayAndWaitRouter]
+Group.bufferSize = 15M
+Group.waitTime = 0, 60
+Group.nrofInterfaces = 1
+Group.interface1 = btInterface
+Group.speed = 0.5, 1.5
+Group.msgTtl = 300
+Group.rulesFile = scenarios/rules_vdtn.txt
+
+Group.initialEnergy = 4500, 6000
+Group.scanEnergy = 0.05
+Group.scanResponseEnergy = 0.02
+Group.transmitEnergy = 0.90
+Group.energyWarmup = 0
+
+DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
+DtnmaRouter.managementMode = M0_STATIC
+DtnmaRouter.interventionTier = TIER1_PROTECTION_ONLY
+DtnmaRouter.staticQuota = 6
+DtnmaRouter.staticIngressMode = 0
+DtnmaRouter.staticBackpressure = false
+DtnmaRouter.ackFeedbackEnabled = false
+DtnmaRouter.gossipEnabled = false
+
+SprayAndWaitRouter.nrofCopies = 6
+SprayAndWaitRouter.binaryMode = true
+ProphetRouter.secondsInTimeUnit = 30
+
+Group1.groupID = p
+Group1.nrofHosts = 40
+
+Group2.groupID = c
+Group2.okMaps = 1
+Group2.speed = 2.7, 13.9
+Group2.nrofHosts = 40
+
+Group3.groupID = v
+Group3.okMaps = 1
+Group3.speed = 2.5, 11.5
+Group3.nrofHosts = 34
+
+Group4.groupID = t
+Group4.bufferSize = 50M
+Group4.movementModel = MapRouteMovement
+Group4.routeFile = data/tram3.wkt
+Group4.routeType = 1
+Group4.waitTime = 10, 30
+Group4.speed = 7, 10
+Group4.nrofHosts = 2
+Group4.nrofInterfaces = 2
+Group4.interface1 = btInterface
+Group4.interface2 = highspeedInterface
+
+Group5.groupID = t
+Group5.bufferSize = 50M
+Group5.movementModel = MapRouteMovement
+Group5.routeFile = data/tram4.wkt
+Group5.routeType = 2
+Group5.waitTime = 10, 30
+Group5.speed = 7, 10
+Group5.nrofHosts = 2
+Group5.nrofInterfaces = 2
+Group5.interface1 = btInterface
+Group5.interface2 = highspeedInterface
+
+Group6.groupID = t
+Group6.bufferSize = 50M
+Group6.movementModel = MapRouteMovement
+Group6.routeFile = data/tram10.wkt
+Group6.routeType = 2
+Group6.waitTime = 10, 30
+Group6.speed = 7, 10
+Group6.nrofHosts = 2
+Group6.nrofInterfaces = 2
+Group6.interface1 = btInterface
+Group6.interface2 = highspeedInterface
+
+Group7.groupID = mgr
+Group7.nrofHosts = 6
+Group7.bufferSize = 100M
+Group7.okMaps = 1
+Group7.waitTime = 300, 600
+Group7.speed = 0.5, 1.0
+Group7.initialEnergy = 500000
+Group7.scanEnergy = 0.0
+Group7.scanResponseEnergy = 0.0
+Group7.transmitEnergy = 0.0
+
+Events.nrof = 4
+
+Events1.class = MessageEventGenerator
+Events1.interval = 14, 20
+Events1.size = 400k, 800k
+Events1.hosts = 0, 120
+Events1.tohosts = 0, 120
+Events1.prefix = BULK_
+
+Events2.class = MessageEventGenerator
+Events2.interval = 30, 45
+Events2.size = 32k, 64k
+Events2.hosts = 0, 120
+Events2.tohosts = 120, 126
+Events2.prefix = TELEM_NORM_
+
+Events3.class = MessageEventGenerator
+Events3.interval = 90, 140
+Events3.size = 16k, 32k
+Events3.hosts = 0, 120
+Events3.tohosts = 120, 126
+Events3.prefix = CRITICAL_FAULT_
+
+Events4.class = MessageEventGenerator
+Events4.interval = 3, 5
+Events4.size = 500k, 900k
+Events4.hosts = 0, 120
+Events4.tohosts = 0, 120
+Events4.time = 7200, 14400
+Events4.prefix = BULK_SHOCK_
+
+MovementModel.rngSeed = 4001
+MovementModel.worldSize = 4500, 3400
+MovementModel.warmup = 1000
+
+MapBasedMovement.nrofMapFiles = 4
+MapBasedMovement.mapFile1 = data/roads.wkt
+MapBasedMovement.mapFile2 = data/main_roads.wkt
+MapBasedMovement.mapFile3 = data/pedestrian_paths.wkt
+MapBasedMovement.mapFile4 = data/shops.wkt
+
+Optimization.cellSizeMult = 5
+Optimization.randomizeUpdateOrder = true
+
+Report.nrofReports = 3
+Report.warmup = 0
+Report.reportDir = reports/compA_equivalence
+Report.report1 = DtnmaRlMetricsReport
+Report.report2 = DtnmaRecoveryTimelineReport
+Report.report3 = MessageStatsReport

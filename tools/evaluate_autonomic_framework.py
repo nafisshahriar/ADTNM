@@ -281,7 +281,28 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
     v1_overlay = {
         "ari": "ARI://DTNMA/SRL/DOWNLINK_V1_ENERGY_GUARD",
         "priority": 110,
+        "if": (False, [("EDD_ENERGY_SOC", "<", 0.25), ("EDD_CRIT_QUEUE_RATIO", ">=", 0.40)]),
+        "max_quota": 1,
+        "min_ingress": 2,
+    }
+    v1_overlay_legacy = {
+        "ari": "ARI://DTNMA/SRL/DOWNLINK_V1_ENERGY_GUARD",
+        "priority": 110,
         "if": (False, [("EDD_ENERGY_SOC", "<", 0.25), ("EDD_QUEUE_RATIO", ">=", 0.90)]),
+        "max_quota": 1,
+        "min_ingress": 2,
+    }
+    throttle_overlay = {
+        "ari": "ARI://DTNMA/SRL/DOWNLINK_THROTTLE",
+        "priority": 110,
+        "if": (False, [("EDD_ENERGY_SOC", "<", 0.25), ("EDD_CRIT_QUEUE_RATIO", ">=", 0.35)]),
+        "max_quota": 2,
+        "min_ingress": 1,
+    }
+    severe_throttle_overlay = {
+        "ari": "ARI://DTNMA/SRL/DOWNLINK_THROTTLE",
+        "priority": 110,
+        "if": (False, [("EDD_ENERGY_SOC", "<", 0.25), ("EDD_CRIT_QUEUE_RATIO", ">=", 0.35)]),
         "max_quota": 1,
         "min_ingress": 2,
     }
@@ -314,10 +335,14 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
             allow_v1 = True
 
         last_ari_by_node = {}
+        has_crit_q = False
         with open(af, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 s = line.strip()
                 if not s:
+                    continue
+                if s.startswith("# SimTime\t") and "\tCritQ\t" in s:
+                    has_crit_q = True
                     continue
                 if s.startswith("# AUDIT_SUMMARY log_bytes_per_node_hour:"):
                     bytes_per_node_hr_list.append(float(s.split(":", 1)[1].strip()))
@@ -325,33 +350,55 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
                 if s.startswith("#"):
                     continue
                 toks = s.split("\t")
-                if len(toks) < 20:
+                min_cols = 21 if has_crit_q else 20
+                if len(toks) < min_cols:
                     continue
                 total_rows += 1
                 node_id = toks[2]
                 mode = toks[3]
-                q = float(toks[4])
-                dq = float(toks[5])
-                dens = float(toks[6])
-                speed = float(toks[7])
-                soc = float(toks[8])
-                conn = float(toks[9])
-                ctrl_ver = int(toks[10])
-                sh_emin = float(toks[11])
-                sh_cong_q = float(toks[12])
-                prop_name = toks[13]
-                fb_name = toks[14]
-                exec_name = toks[15]
-                sh_status = toks[16]
-                logged_mask = toks[17]
-                active_ari = toks[18]
-                expl = toks[19]
+                if has_crit_q:
+                    q = float(toks[4])
+                    crit_q = float(toks[5])
+                    dq = float(toks[6])
+                    dens = float(toks[7])
+                    speed = float(toks[8])
+                    soc = float(toks[9])
+                    conn = float(toks[10])
+                    ctrl_ver = int(toks[11])
+                    sh_emin = float(toks[12])
+                    sh_warn_crit_q = float(toks[13])
+                    prop_name = toks[14]
+                    fb_name = toks[15]
+                    exec_name = toks[16]
+                    sh_status = toks[17]
+                    logged_mask = toks[18]
+                    active_ari = toks[19]
+                    expl = toks[20]
+                else:
+                    q = float(toks[4])
+                    crit_q = 0.0
+                    dq = float(toks[5])
+                    dens = float(toks[6])
+                    speed = float(toks[7])
+                    soc = float(toks[8])
+                    conn = float(toks[9])
+                    ctrl_ver = int(toks[10])
+                    sh_emin = float(toks[11])
+                    sh_warn_crit_q = float(toks[12])
+                    prop_name = toks[13]
+                    fb_name = toks[14]
+                    exec_name = toks[15]
+                    sh_status = toks[16]
+                    logged_mask = toks[17]
+                    active_ari = toks[18]
+                    expl = toks[19]
 
                 if active_ari.startswith("ARI://") and expl:
                     traceable_rows += 1
 
                 edd = {
                     "EDD_QUEUE_RATIO": q,
+                    "EDD_CRIT_QUEUE_RATIO": crit_q,
                     "EDD_QUEUE_DRIFT": dq,
                     "EDD_NODE_DENSITY": dens,
                     "EDD_NODE_SPEED": speed,
@@ -359,20 +406,36 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
                     "EDD_ACTIVE_CONNECTIONS": conn,
                 }
                 active_rules = list(file_rules)
-                if ctrl_ver == 1 and allow_v1:
-                    active_rules = [v1_overlay] + active_rules
+                if allow_v1 and ctrl_ver >= 1:
+                    if not has_crit_q:
+                        if ctrl_ver == 1:
+                            active_rules = [v1_overlay_legacy] + active_rules
+                    else:
+                        if sh_emin >= 0.249:
+                            active_rules = [v1_overlay] + active_rules
+                        elif sh_warn_crit_q <= 0.31:
+                            ov = severe_throttle_overlay if "SEVERE" in active_ari else throttle_overlay
+                            active_rules = [ov] + active_rules
                     active_rules.sort(key=lambda r: r["priority"], reverse=True)
 
                 if mode in ("SHIELDED_CMDP_RL", "SHIELDED_RL_PASSIVE"):
                     rl_mask_checked += 1
                     # Reconstruct S1-S4 SafeActionMask
                     mask = [True] * 8
-                    if q >= 0.94:
-                        for i in range(1, 8):
-                            mask[i] = False
-                    elif q >= sh_cong_q or (q >= 0.82 and dq > 0.015):
-                        for i in range(2, 8):
-                            mask[i] = False
+                    if has_crit_q:
+                        if crit_q >= 0.50 or (q >= 0.94 and dq >= 0.015):
+                            for i in range(1, 8):
+                                mask[i] = False
+                        elif crit_q >= sh_warn_crit_q or (q >= 0.82 and dq > 0.015):
+                            for i in range(3, 8):
+                                mask[i] = False
+                    else:
+                        if q >= 0.94:
+                            for i in range(1, 8):
+                                mask[i] = False
+                        elif q >= sh_warn_crit_q or (q >= 0.82 and dq > 0.015):
+                            for i in range(2, 8):
+                                mask[i] = False
                     if soc < sh_emin:
                         for i in range(2, 8):
                             mask[i] = False
@@ -404,7 +467,7 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
                             rep_exec_idx = next((i for i in range(p_idx, -1, -1) if mask[i]), 0)
                     if rep_status == sh_status and PROFILES[rep_exec_idx][0] == exec_name:
                         rl_action_matched += 1
-                elif mode == "STATIC_RULES":
+                elif mode in ("STATIC_RULES", "M2_AUTONOMIC_SRL"):
                     static_checked += 1
                     matched_ari = None
                     for r in active_rules:

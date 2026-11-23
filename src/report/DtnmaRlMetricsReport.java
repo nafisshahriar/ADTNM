@@ -96,6 +96,11 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
     private int aliveNodes4h = -1;
     private double firstShieldOrRuleTimeAfter7200 = -1.0;
 
+    // Threshold-crossing autonomic reaction latency tracking (from t >= 3600s)
+    private Map<Integer, Double> pendingHazardCrossingTime = new HashMap<Integer, Double>();
+    private Set<Integer> prevHazardHosts = new HashSet<Integer>();
+    private List<Double> localReactionDelaysSec = new ArrayList<Double>();
+
     public DtnmaRlMetricsReport() {
         super();
         init();
@@ -156,6 +161,13 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         this.aliveNodes2h = -1;
         this.aliveNodes4h = -1;
         this.firstShieldOrRuleTimeAfter7200 = -1.0;
+
+        if (this.pendingHazardCrossingTime == null) this.pendingHazardCrossingTime = new HashMap<Integer, Double>();
+        else this.pendingHazardCrossingTime.clear();
+        if (this.prevHazardHosts == null) this.prevHazardHosts = new HashSet<Integer>();
+        else this.prevHazardHosts.clear();
+        if (this.localReactionDelaysSec == null) this.localReactionDelaysSec = new ArrayList<Double>();
+        else this.localReactionDelaysSec.clear();
     }
 
     private static String extractWaveKey(String msgId) {
@@ -212,17 +224,60 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         }
 
         // Track earliest autonomic shield/safe-rule activation after fault onset (t >= 7200)
-        if (now >= FAULT_ONSET_SEC && this.firstShieldOrRuleTimeAfter7200 < 0.0) {
-            for (DTNHost h : hosts) {
-                if (h.getRouter() instanceof DtnmaManagedRouter) {
-                    DtnmaAgent dr = ((DtnmaManagedRouter) h.getRouter()).getDtnmaAgent();
-                    if (dr != null && dr.getEffectiveManagementMode() != DtnmaConfig.ManagementMode.M0_STATIC
-                            && (dr.isLastShieldIntervened()
-                                || dr.getLastActionIndex() == DtnmaRouter.REGIME_CONGESTED_SAFE
-                                || dr.getCurrentIngressMode() >= DtnmaRouter.INGRESS_THROTTLE_BULK)) {
-                        this.firstShieldOrRuleTimeAfter7200 = now;
-                        break;
+        // and threshold-crossing reaction latencies (t >= 3600) across alive autonomic nodes
+        for (DTNHost h : hosts) {
+            if (!(h.getRouter() instanceof DtnmaManagedRouter)) continue;
+            DtnmaManagedRouter mr = (DtnmaManagedRouter) h.getRouter();
+            DtnmaAgent dr = mr.getDtnmaAgent();
+            if (dr == null) continue;
+
+            if (now >= FAULT_ONSET_SEC && this.firstShieldOrRuleTimeAfter7200 < 0.0
+                    && dr.getEffectiveManagementMode() != DtnmaConfig.ManagementMode.M0_STATIC
+                    && (dr.isLastShieldIntervened()
+                        || dr.getLastActionIndex() == DtnmaRouter.REGIME_CONGESTED_SAFE
+                        || dr.getCurrentIngressMode() >= DtnmaRouter.INGRESS_THROTTLE_BULK)) {
+                this.firstShieldOrRuleTimeAfter7200 = now;
+            }
+
+            if (now >= 3600.0 && dr.isAutonomicControlActive()) {
+                Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
+                if (!h.isRadioActive() || (eObj instanceof Double && ((Double) eObj) <= 1e-9)) {
+                    this.pendingHazardCrossingTime.remove(h.getAddress());
+                    this.prevHazardHosts.remove(h.getAddress());
+                    continue;
+                }
+                DtnmaConfig cfg = dr.getConfig();
+                double soc = mr.getEnergySoc();
+                double q = mr.getBufferOccupancyRatio();
+                double critQ = dr.getCachedCriticalOccupancyRatio();
+                double dq = (dr.getEddSampler() != null) ? dr.getEddSampler().getQueueDrift() : 0.0;
+                double eMin = (cfg != null) ? cfg.shieldEnergyMin : 0.20;
+                double wCritQ = (cfg != null) ? cfg.shieldWarnCritQueue : 0.35;
+
+                boolean hazardNow = (soc < eMin) || (critQ >= wCritQ) || (q >= 0.88 && dq >= 0.008);
+                boolean inThrottleOrSafe = dr.isLastShieldIntervened()
+                        || dr.getLastActionIndex() == DtnmaRouter.REGIME_CONGESTED_SAFE
+                        || dr.getCurrentIngressMode() >= DtnmaRouter.INGRESS_THROTTLE_BULK;
+                int addr = h.getAddress();
+
+                if (hazardNow && !this.prevHazardHosts.contains(addr)) {
+                    if (inThrottleOrSafe) {
+                        this.localReactionDelaysSec.add(0.0);
+                    } else {
+                        this.pendingHazardCrossingTime.put(addr, now);
                     }
+                } else if (this.pendingHazardCrossingTime.containsKey(addr)) {
+                    if (inThrottleOrSafe) {
+                        double tStart = this.pendingHazardCrossingTime.remove(addr);
+                        this.localReactionDelaysSec.add(Math.max(0.0, now - tStart));
+                    } else if (!hazardNow) {
+                        this.pendingHazardCrossingTime.remove(addr);
+                    }
+                }
+                if (hazardNow) {
+                    this.prevHazardHosts.add(addr);
+                } else {
+                    this.prevHazardHosts.remove(addr);
                 }
             }
         }
@@ -684,7 +739,14 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         sb.append(String.format(Locale.US, "post_fault_critical_delivery_prob: %.4f\n", postFaultCritDeliv));
         sb.append(String.format(Locale.US, "recovery_ratio: %.4f\n", recoveryRatio));
         sb.append(String.format(Locale.US, "recovery_time_to_95pct_sec: %.4f\n", recTime95));
+        double localReactionMean = this.localReactionDelaysSec.isEmpty()
+                ? -1.0 : computeMean(this.localReactionDelaysSec);
+        double localReactionP95 = this.localReactionDelaysSec.isEmpty()
+                ? -1.0 : computePercentile(this.localReactionDelaysSec, 0.95);
         sb.append(String.format(Locale.US, "first_shield_or_rule_response_sec: %.4f\n", firstRuleRespSec));
+        sb.append("threshold_crossings_count: ").append(this.localReactionDelaysSec.size()).append("\n");
+        sb.append(String.format(Locale.US, "local_reaction_delay_mean_sec: %.4f\n", localReactionMean));
+        sb.append(String.format(Locale.US, "local_reaction_delay_p95_sec: %.4f\n", localReactionP95));
         sb.append("alive_nodes_2h: ").append(this.aliveNodes2h).append("\n");
         sb.append("alive_nodes_4h: ").append(this.aliveNodes4h).append("\n");
         sb.append("alive_nodes_end: ").append(aliveEnd).append("\n");
@@ -720,6 +782,45 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         sb.append(String.format(Locale.US, "avg_energy_soc: %.4f\n", avgEnergySoc));
         sb.append("depleted_nodes_count: ").append(depletedNodes).append("\n");
         sb.append(String.format(Locale.US, "avg_energy_remaining_soc: %.4f", avgEnergySoc));
+
+        if (!this.waveStartTime.isEmpty()) {
+            List<String> waveKeys = new ArrayList<String>(this.waveStartTime.keySet());
+            Collections.sort(waveKeys, (a, b) -> {
+                int cmp = Double.compare(this.waveStartTime.get(a), this.waveStartTime.get(b));
+                return (cmp != 0) ? cmp : a.compareTo(b);
+            });
+            for (String wk : waveKeys) {
+                double wStart = this.waveStartTime.get(wk);
+                int nTarg = this.waveTargets.containsKey(wk) ? this.waveTargets.get(wk).size() : 0;
+                List<Double> offs = this.waveDelivOffsets.get(wk);
+                List<Double> sorted = (offs != null) ? new ArrayList<Double>(offs) : Collections.<Double>emptyList();
+                if (!sorted.isEmpty()) {
+                    Collections.sort(sorted);
+                }
+                int nDeliv = sorted.size();
+                double[] pcts = new double[] { 0.10, 0.25, 0.50, 0.75, 0.90, 0.95 };
+                double[] qVals = new double[pcts.length];
+                for (int pi = 0; pi < pcts.length; pi++) {
+                    int need = Math.max(1, (int) Math.ceil(pcts[pi] * nTarg));
+                    qVals[pi] = (nTarg > 0 && nDeliv >= need) ? sorted.get(need - 1) : -1.0;
+                }
+                StringBuilder bins = new StringBuilder();
+                int ptr = 0;
+                int denom = Math.max(1, nTarg);
+                for (int b = 0; b <= 60; b++) {
+                    double limitSec = b * 60.0;
+                    while (ptr < nDeliv && sorted.get(ptr) <= limitSec) {
+                        ptr++;
+                    }
+                    if (b > 0) bins.append(',');
+                    bins.append(String.format(Locale.US, "%.4f", (double) ptr / denom));
+                }
+                sb.append(String.format(Locale.US,
+                        "\n# WAVE_ADOPTION_CDF\t%s\t%.1f\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%s",
+                        wk, wStart, nTarg, nDeliv,
+                        qVals[0], qVals[1], qVals[2], qVals[3], qVals[4], qVals[5], bins.toString()));
+            }
+        }
 
         write(sb.toString());
         super.done();

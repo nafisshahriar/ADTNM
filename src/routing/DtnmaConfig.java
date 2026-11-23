@@ -32,9 +32,16 @@ public class DtnmaConfig {
         M3_AUTONOMIC_RL
     }
 
+    public enum InterventionTier {
+        TIER1_PROTECTION_ONLY,
+        TIER2_PROTECTION_INGRESS_ENERGY,
+        TIER3_FULL_WITH_REPLICA_CAPS
+    }
+
     // Intelligence & Control-Plane Toggles (Default: Gossip + ACK Shielded CMDP RL)
     public DtnmaRouter.IntelligenceMode intelligenceMode = DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL;
     public ManagementMode managementMode = ManagementMode.AUTO;
+    public InterventionTier interventionTier = InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS;
     public int staticQuota = 6;
     public int staticIngressMode = 0;
     public boolean staticBackpressure = true;
@@ -80,6 +87,8 @@ public class DtnmaConfig {
     // RFC 9675 Safety Shield Thresholds
     public double shieldCriticalQueue = 0.94;
     public double shieldCongestionQueue = 0.90;
+    public double shieldCriticalCritQueue = 0.50;
+    public double shieldWarnCritQueue = 0.35;
     public double shieldSurgeQueue = 0.82;
     public double shieldSurgeDrift = 0.015;
     public double shieldStormQueue = 0.78;
@@ -92,6 +101,7 @@ public class DtnmaConfig {
         if (o == null) return;
         this.intelligenceMode = o.intelligenceMode;
         this.managementMode = o.managementMode;
+        this.interventionTier = o.interventionTier;
         this.staticQuota = o.staticQuota;
         this.staticIngressMode = o.staticIngressMode;
         this.staticBackpressure = o.staticBackpressure;
@@ -133,6 +143,8 @@ public class DtnmaConfig {
 
         this.shieldCriticalQueue = o.shieldCriticalQueue;
         this.shieldCongestionQueue = o.shieldCongestionQueue;
+        this.shieldCriticalCritQueue = o.shieldCriticalCritQueue;
+        this.shieldWarnCritQueue = o.shieldWarnCritQueue;
         this.shieldSurgeQueue = o.shieldSurgeQueue;
         this.shieldSurgeDrift = o.shieldSurgeDrift;
         this.shieldStormQueue = o.shieldStormQueue;
@@ -221,6 +233,9 @@ public class DtnmaConfig {
         if (params.containsKey("managementMode")) {
             managementMode = parseManagementMode(params.get("managementMode"), managementMode);
         }
+        if (params.containsKey("interventionTier")) {
+            interventionTier = parseInterventionTier(params.get("interventionTier"), interventionTier);
+        }
         staticQuota = parseInt(params, "staticQuota", staticQuota);
         staticIngressMode = parseInt(params, "staticIngressMode", staticIngressMode);
         staticBackpressure = parseBool(params, "staticBackpressure", staticBackpressure);
@@ -262,6 +277,8 @@ public class DtnmaConfig {
 
         shieldCriticalQueue = parseDouble(params, "shieldCriticalQueue", shieldCriticalQueue);
         shieldCongestionQueue = parseDouble(params, "shieldCongestionQueue", shieldCongestionQueue);
+        shieldCriticalCritQueue = parseDouble(params, "shieldCriticalCritQueue", shieldCriticalCritQueue);
+        shieldWarnCritQueue = parseDouble(params, "shieldWarnCritQueue", shieldWarnCritQueue);
         shieldSurgeQueue = parseDouble(params, "shieldSurgeQueue", shieldSurgeQueue);
         shieldSurgeDrift = parseDouble(params, "shieldSurgeDrift", shieldSurgeDrift);
         shieldStormQueue = parseDouble(params, "shieldStormQueue", shieldStormQueue);
@@ -275,6 +292,9 @@ public class DtnmaConfig {
         }
         if (s.contains("managementMode")) {
             managementMode = parseManagementMode(s.getSetting("managementMode"), managementMode);
+        }
+        if (s.contains("interventionTier")) {
+            interventionTier = parseInterventionTier(s.getSetting("interventionTier"), interventionTier);
         }
         if (s.contains("staticQuota")) staticQuota = s.getInt("staticQuota");
         if (s.contains("staticIngressMode")) staticIngressMode = s.getInt("staticIngressMode");
@@ -317,6 +337,8 @@ public class DtnmaConfig {
 
         if (s.contains("shieldCriticalQueue")) shieldCriticalQueue = s.getDouble("shieldCriticalQueue");
         if (s.contains("shieldCongestionQueue")) shieldCongestionQueue = s.getDouble("shieldCongestionQueue");
+        if (s.contains("shieldCriticalCritQueue")) shieldCriticalCritQueue = s.getDouble("shieldCriticalCritQueue");
+        if (s.contains("shieldWarnCritQueue")) shieldWarnCritQueue = s.getDouble("shieldWarnCritQueue");
         if (s.contains("shieldSurgeQueue")) shieldSurgeQueue = s.getDouble("shieldSurgeQueue");
         if (s.contains("shieldSurgeDrift")) shieldSurgeDrift = s.getDouble("shieldSurgeDrift");
         if (s.contains("shieldStormQueue")) shieldStormQueue = s.getDouble("shieldStormQueue");
@@ -356,6 +378,8 @@ public class DtnmaConfig {
 
         shieldCriticalQueue = Math.max(0.50, Math.min(1.0, shieldCriticalQueue));
         shieldCongestionQueue = Math.max(0.40, Math.min(shieldCriticalQueue, shieldCongestionQueue));
+        shieldCriticalCritQueue = Math.max(0.10, Math.min(1.0, shieldCriticalCritQueue));
+        shieldWarnCritQueue = Math.max(0.05, Math.min(shieldCriticalCritQueue, shieldWarnCritQueue));
         shieldSurgeQueue = Math.max(0.30, Math.min(shieldCongestionQueue, shieldSurgeQueue));
         shieldSurgeDrift = Math.max(0.001, Math.min(0.50, shieldSurgeDrift));
         shieldStormQueue = Math.max(0.30, Math.min(shieldCongestionQueue, shieldStormQueue));
@@ -376,6 +400,19 @@ public class DtnmaConfig {
         if (val == null) return def;
         try {
             return ManagementMode.valueOf(val.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return def;
+        }
+    }
+
+    private static InterventionTier parseInterventionTier(String val, InterventionTier def) {
+        if (val == null) return def;
+        String norm = val.trim().toUpperCase();
+        if ("1".equals(norm) || "TIER1".equals(norm)) return InterventionTier.TIER1_PROTECTION_ONLY;
+        if ("2".equals(norm) || "TIER2".equals(norm)) return InterventionTier.TIER2_PROTECTION_INGRESS_ENERGY;
+        if ("3".equals(norm) || "TIER3".equals(norm)) return InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS;
+        try {
+            return InterventionTier.valueOf(norm);
         } catch (IllegalArgumentException e) {
             return def;
         }

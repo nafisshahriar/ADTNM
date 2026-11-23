@@ -8,7 +8,7 @@
 # 2 hour sustained regime shift (21600s), plus paired THROTTLE/NOMINAL waves.
 # ====================================================================
 
-Scenario.name = CompB_MultiScale_%%DtnmaRouter.managementMode%%_%%MovementModel.rngSeed%%
+Scenario.name = CompB_MultiScale_%%Group.router%%_%%MovementModel.rngSeed%%
 Scenario.simulateConnections = true
 Scenario.updateInterval = 0.5
 Scenario.endTime = 43200
@@ -23,7 +23,7 @@ highspeedInterface.transmitSpeed = 10M
 highspeedInterface.transmitRange = 1000
 
 Group.movementModel = ShortestPathMapBasedMovement
-Group.router = DtnmaRouter
+Group.router = [SprayAndWaitRouter; DtnmaM0bStaticRouter; DtnmaM1RemoteRouter; DtnmaM2SrlRouter; DtnmaM3RlRouter]
 Group.bufferSize = 10M
 Group.waitTime = 0, 60
 Group.nrofInterfaces = 1
@@ -32,18 +32,17 @@ Group.speed = 0.5, 1.5
 Group.msgTtl = 300
 Group.rulesFile = scenarios/rules_vdtn.txt
 
-Group.initialEnergy = 5500, 7500
-Group.scanEnergy = 0.04
+Group.initialEnergy = 2650, 3650
+Group.scanEnergy = 0.05
 Group.scanResponseEnergy = 0.02
-Group.transmitEnergy = 0.85
+Group.transmitEnergy = 0.90
 Group.energyWarmup = 0
 
 DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
-DtnmaRouter.managementMode = [M0_STATIC; M1_REMOTE_ONLY; M2_AUTONOMIC_SRL; M3_AUTONOMIC_RL]
 DtnmaRouter.staticQuota = 6
 DtnmaRouter.staticIngressMode = 0
 DtnmaRouter.staticBackpressure = true
-DtnmaRouter.epidemicControlFlooding = true
+DtnmaRouter.epidemicControlFlooding = false
 DtnmaRouter.densityAdaptiveGossip = true
 DtnmaRouter.ackFeedbackEnabled = true
 DtnmaRouter.gossipEnabled = true
@@ -217,7 +216,7 @@ Events12.tohosts = 0, 120
 Events12.time = 28800, 28930
 Events12.prefix = CTRL_UPDATE_NOMINAL_W3_
 
-MovementModel.rngSeed = [4001; 4003; 4007; 4009; 4021]
+MovementModel.rngSeed = 4001
 MovementModel.worldSize = 4500, 3400
 MovementModel.warmup = 1000
 

@@ -6,6 +6,7 @@
  * and Fair Baselines (PriorityMaxPropRouter & DtnmaStaticAckTunedRouter).
  */
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,9 +29,14 @@ import routing.DtnmaAgent;
 import routing.DtnmaConfig;
 import routing.DtnmaContactBeacon;
 import routing.DtnmaFixedAckRouter;
+import routing.DtnmaM0bStaticRouter;
+import routing.DtnmaM1RemoteRouter;
+import routing.DtnmaM2SrlRouter;
+import routing.DtnmaM3RlRouter;
 import routing.DtnmaManagedRouter;
 import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
+import routing.DtnmaRuleParser;
 import routing.DtnmaSafetyShield;
 import routing.DtnmaShieldedAckRLRouter;
 import routing.DtnmaStaticAckL2Router;
@@ -66,6 +72,7 @@ public class DtnmaUnitTests {
 
     private static class StubSampler extends EddTelemetrySampler {
         double q = 0.0;
+        double critQ = 0.0;
         double drift = 0.0;
         double dens = 0.0;
         double soc = 1.0;
@@ -77,6 +84,7 @@ public class DtnmaUnitTests {
         @Override
         public double getEddValue(String eddName) {
             if (EDD_QUEUE_RATIO.equals(eddName)) return q;
+            if (EDD_CRIT_QUEUE_RATIO.equals(eddName)) return critQ;
             if (EDD_QUEUE_DRIFT.equals(eddName)) return drift;
             if (EDD_NODE_DENSITY.equals(eddName)) return dens;
             if (EDD_ENERGY_SOC.equals(eddName)) return soc;
@@ -96,20 +104,28 @@ public class DtnmaUnitTests {
         critRule.addAction(ControlAction.setIngressMode(1));
         List<StateBasedRule> rules = Collections.singletonList(critRule);
 
-        // S1 Critical Q >= 0.94 -> only action 0 admissible
-        sampler.q = 0.95; sampler.drift = 0.0; sampler.dens = 1.0; sampler.soc = 1.0;
+        // S1 Critical saturation (CritQ >= 0.50) OR active surge (Q>=0.94 && dQ>=0.015) -> only {0}
+        // Whereas steady full evictable bulk cache (Q=0.95, CritQ=0.05, dQ=0.0) keeps P4 admissible!
+        sampler.q = 0.95; sampler.critQ = 0.55; sampler.drift = 0.0; sampler.dens = 1.0; sampler.soc = 1.0;
         boolean[] mCrit = shield.computeSafeActionMask(sampler, rules, new StringBuilder());
-        boolean onlyZero = mCrit[0];
+        boolean onlyZeroCrit = mCrit[0];
         for (int a = 1; a < DtnmaPolicyProfile.NUM_ACTIONS; a++) {
-            onlyZero = onlyZero && !mCrit[a];
+            onlyZeroCrit = onlyZeroCrit && !mCrit[a];
         }
         DtnmaSafetyShield.ShieldDecision dCrit = shield.enforce(7, 7, 0, sampler, rules);
-        check(onlyZero && dCrit.getExecutedAction() == 0 && dCrit.isIntervened(),
-                "Test1a: Shield S1 critical Q>=0.94 forces Profile 0 & preserves liveness",
-                "mask=" + Arrays.toString(mCrit));
+
+        sampler.q = 0.95; sampler.critQ = 0.05; sampler.drift = 0.0;
+        boolean[] mSteadyBulk = shield.computeSafeActionMask(sampler, Collections.<StateBasedRule>emptyList(), new StringBuilder());
+        sampler.drift = 0.02;
+        boolean[] mSurge = shield.computeSafeActionMask(sampler, Collections.<StateBasedRule>emptyList(), new StringBuilder());
+        boolean onlyZeroSurge = mSurge[0] && !mSurge[1] && !mSurge[4];
+        check(onlyZeroCrit && dCrit.getExecutedAction() == 0 && dCrit.isIntervened()
+                && mSteadyBulk[4] && onlyZeroSurge,
+                "Test1a: Shield S1 distinguishes CritQ/active-surge {0} from steady full bulk cache (P4 admissible)",
+                "crit=" + Arrays.toString(mCrit) + " steady=" + Arrays.toString(mSteadyBulk) + " surge=" + Arrays.toString(mSurge));
 
         // S2 Low Energy SoC < 0.20 -> restrict to {0, 1} with mask[0]=true
-        sampler.q = 0.30; sampler.soc = 0.15;
+        sampler.q = 0.30; sampler.critQ = 0.0; sampler.drift = 0.0; sampler.soc = 0.15;
         boolean[] mEnergy = shield.computeSafeActionMask(sampler, rules, new StringBuilder());
         check(mEnergy[0] && mEnergy[1] && !mEnergy[2] && !mEnergy[7],
                 "Test1b: Shield S2 energy SoC<0.20 survival failsafe restricts to {0,1}",
@@ -158,9 +174,11 @@ public class DtnmaUnitTests {
                 "Test2a: Safe-Anchored shaping drives Q(s_cong, unsafe) < Q(s_cong, safe) in single-critic mode",
                 String.format("unsafe=%.3f safe=%.3f", qUnsafeCong, qSafeCong));
 
-        check(healthyGreedy != 0 && healthyGreedy == 4,
-                "Test2b: Hazard-localized penalty keeps healthy Q=0.25 regime anchored to optimal Profile 4",
-                "healthyGreedy=" + healthyGreedy);
+        boolean steadyPhi16Zero = agent.extractFeatures(
+                new double[] { 0.95, 0.50, 0.20, 0.20, 0.50, 1.0 })[16] == 0.0;
+        check(healthyGreedy != 0 && healthyGreedy == 4 && steadyPhi16Zero,
+                "Test2b: Hazard-localized penalty keeps healthy Q=0.25 at Profile 4 & phi[16]=0 on steady full bulk",
+                "healthyGreedy=" + healthyGreedy + " steadyPhi16Zero=" + steadyPhi16Zero);
     }
 
     private static void test3SymmetricAtomicGossipConsensus() {
@@ -909,6 +927,102 @@ public class DtnmaUnitTests {
                 String.format("L8=%d L12=%d", r8.getCurrentSprayQuota(), r12.getCurrentSprayQuota()));
     }
 
+    private static void test18InterventionTiersPresetsAndCatchAllRule() {
+        // 1. Verify updated rules_vdtn.txt catch-all release on steady Q=0.90, dQ=0.0, CritQ=0.05
+        String rulePath = new File("scenarios/rules_vdtn.txt").isFile()
+                ? "scenarios/rules_vdtn.txt" : "../ADTNM/scenarios/rules_vdtn.txt";
+        boolean rulesOk = false;
+        String ruleInfo = "missing";
+        try {
+            List<StateBasedRule> rules = DtnmaRuleParser.parseFile(rulePath);
+            StubSampler s = new StubSampler();
+            s.q = 0.90; s.critQ = 0.05; s.drift = 0.0; s.soc = 0.80; s.dens = 2.0;
+            StateBasedRule firedSteady = null;
+            for (StateBasedRule r : rules) {
+                if (r.isTriggered(s)) { firedSteady = r; break; }
+            }
+            s.q = 0.90; s.drift = 0.010;
+            StateBasedRule firedSurge = null;
+            for (StateBasedRule r : rules) {
+                if (r.isTriggered(s)) { firedSurge = r; break; }
+            }
+            s.q = 0.40; s.drift = 0.0; s.soc = 0.15;
+            StateBasedRule firedLowSoc = null;
+            for (StateBasedRule r : rules) {
+                if (r.isTriggered(s)) { firedLowSoc = r; break; }
+            }
+            rulesOk = (firedSteady != null && "ARI://DTNMA/SRL/VDTN_URBAN_NOMINAL".equals(firedSteady.getAri()))
+                    && (firedSurge != null && firedSurge.getPriority() == 80)
+                    && (firedLowSoc != null && firedLowSoc.getPriority() == 100);
+            ruleInfo = String.format("steady=%s surge=%s lowSoc=%s",
+                    firedSteady != null ? firedSteady.getAri() : "null",
+                    firedSurge != null ? firedSurge.getAri() : "null",
+                    firedLowSoc != null ? firedLowSoc.getAri() : "null");
+        } catch (Exception e) {
+            ruleInfo = e.getMessage();
+        }
+
+        // 2. Verify M0b/M1/M2/M3 presets & InterventionTier 1 vs Tier 3
+        String baseCfg =
+                "Scenario.endTime = 200\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "bt.transmitSpeed = 250000\n" +
+                "bt.transmitRange = 100\n" +
+                "Group.bufferSize = 500000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 5\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "SprayAndWaitRouter.nrofCopies = 6\n" +
+                "SprayAndWaitRouter.binaryMode = true\n" +
+                "DtnmaRouter.staticQuota = 6\n";
+        Settings.initFromStream(new ByteArrayInputStream(baseCfg.getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp = new Settings("Group");
+        SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
+        ifc.setGroupSettings(grp);
+        MovementModel mm = new StationaryMovement(grp);
+
+        DtnmaM0bStaticRouter p0b = new DtnmaM0bStaticRouter(grp);
+        DtnmaM1RemoteRouter p1 = new DtnmaM1RemoteRouter(grp);
+        DtnmaM2SrlRouter p2 = new DtnmaM2SrlRouter(grp);
+        DtnmaM3RlRouter p3 = new DtnmaM3RlRouter(grp);
+
+        DTNHost h0b = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m0b", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, p0b);
+        DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m1", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, p1);
+        DTNHost h2 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m2", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, p2);
+        DTNHost h3 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m3", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, p3);
+
+        boolean presetsOk = ((DtnmaRouter) h0b.getRouter()).getDtnmaAgent().getEffectiveManagementMode() == DtnmaConfig.ManagementMode.M0_STATIC
+                && !((DtnmaRouter) h0b.getRouter()).getConfig().epidemicControlFlooding
+                && ((DtnmaRouter) h1.getRouter()).getDtnmaAgent().getEffectiveManagementMode() == DtnmaConfig.ManagementMode.M1_REMOTE_ONLY
+                && !((DtnmaRouter) h1.getRouter()).getConfig().epidemicControlFlooding
+                && ((DtnmaRouter) h2.getRouter()).getDtnmaAgent().getEffectiveManagementMode() == DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL
+                && !((DtnmaRouter) h2.getRouter()).isGossipEnabled()
+                && ((DtnmaRouter) h3.getRouter()).getDtnmaAgent().getEffectiveManagementMode() == DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL
+                && ((DtnmaRouter) h3.getRouter()).isGossipEnabled();
+
+        Settings.initFromStream(new ByteArrayInputStream(
+                (baseCfg + "DtnmaRouter.interventionTier = TIER1_PROTECTION_ONLY\n").getBytes(StandardCharsets.UTF_8)));
+        ManagedSprayAndWaitRouter pmTier1 = new ManagedSprayAndWaitRouter(new Settings("Group"));
+        pmTier1.getDtnmaAgent().setDynamicSprayQuota(1);
+        pmTier1.getDtnmaAgent().setIngressMode(DtnmaRouter.INGRESS_CRITICAL_ONLY);
+        boolean tier1Ok = pmTier1.getDtnmaAgent().getInterventionTier() == DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY
+                && pmTier1.getDtnmaAgent().getEffectiveBulkSprayQuota(6) == 6
+                && !pmTier1.getDtnmaAgent().isCriticalOnlyBulkSheddingActive()
+                && pmTier1.getDtnmaAgent().allowNonDirectBulkForward(
+                        new Message(h0b, h1, "BULK_T1", 1024), 0.90, 0.96, 0.10, true, 0.1, 0.2);
+
+        check(rulesOk && presetsOk && tier1Ok,
+                "Test18: InterventionTier 1/3, M0b..M3 presets, & rules_vdtn catch-all release work correctly",
+                String.format("rules=%s(%s) presets=%s tier1=%s", rulesOk, ruleInfo, presetsOk, tier1Ok));
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -929,6 +1043,7 @@ public class DtnmaUnitTests {
         test15ManagementParadigmsM0M1M2();
         test16DensityGossipBackoffAndOpenLoopAudit();
         test17StaticOracleFamilyL8L12();
+        test18InterventionTiersPresetsAndCatchAllRule();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");

@@ -102,7 +102,9 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
         }
         msg.setTtl(this.msgTtl);
         boolean isCrit = DtnmaRouter.isCriticalMessage(msg);
-        int copies = isCrit ? DtnmaRouter.DEFAULT_CRITICAL_QUOTA : this.agent.getCurrentSprayQuota();
+        int copies = isCrit
+                ? DtnmaRouter.DEFAULT_CRITICAL_QUOTA
+                : this.agent.getEffectiveBulkSprayQuota(this.initialNrofCopies);
         msg.addProperty(MSG_COUNT_PROPERTY, copies);
         addToMessages(msg, true);
         this.agent.onAfterCreateNewMessage(msg, copies);
@@ -132,7 +134,8 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
     @Override
     protected List<Message> getMessagesWithCopiesLeft() {
         List<Message> list = new ArrayList<Message>();
-        int quota = this.agent.getCurrentSprayQuota();
+        int quota = this.agent.getEffectiveBulkSprayQuota(this.initialNrofCopies);
+        boolean critOnly = this.agent.isCriticalOnlyBulkSheddingActive();
         for (Message m : getMessageCollection()) {
             if (this.agent.isAcked(m)) continue;
             if (this.agent.isEpidemicControlPriority(m)) {
@@ -140,8 +143,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
                 continue;
             }
             boolean isCrit = DtnmaRouter.isCriticalMessage(m);
-            if (!isCrit && quota <= 1) continue;
-            if (!isCrit && this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY) continue;
+            if (!isCrit && (quota <= 1 || critOnly)) continue;
             Integer nrofCopies = (Integer) m.getProperty(MSG_COUNT_PROPERTY);
             if (nrofCopies != null && nrofCopies > 1) {
                 list.add(m);
@@ -177,6 +179,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
         double[] peerQ = new double[nReady];
         double[] peerSoc = new double[nReady];
         boolean[] peerManaged = new boolean[nReady];
+        boolean[] peerCanTakeBulk = new boolean[nReady];
         for (int i = 0; i < nReady; i++) {
             DTNHost other = readyCons.get(i).getOtherNode(getHost());
             peerManaged[i] = (other.getRouter() instanceof DtnmaManagedRouter);
@@ -187,11 +190,14 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
                 peerQ[i] = 0.5;
                 peerSoc[i] = 1.0;
             }
+            peerCanTakeBulk[i] = this.agent.isPeerSelectableForBulk(myQ, peerQ[i], peerSoc[i], peerManaged[i]);
         }
 
         DtnmaRouter.sortCriticalFirst(messages);
         for (Message m : messages) {
+            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m) || this.agent.isEpidemicControlPriority(m);
             for (int i = 0; i < nReady; i++) {
+                if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
                 if (this.agent.allowNonDirectBulkForward(
                         m, myQ, peerQ[i], peerSoc[i], peerManaged[i], -1.0, -1.0)) {
                     Connection con = readyCons.get(i);
@@ -228,7 +234,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
                     : Math.max(1, beforeCopies - 1);
             int cap = DtnmaRouter.isCriticalMessage(msg)
                     ? DtnmaRouter.DEFAULT_CRITICAL_QUOTA
-                    : this.agent.getCurrentSprayQuota();
+                    : this.agent.getEffectiveBulkSprayQuota(this.initialNrofCopies);
             if (!DtnmaRouter.isCriticalMessage(msg) && beforeCopies > cap) {
                 afterCopies = Math.max(1, (int) Math.ceil(cap / 2.0));
             }
@@ -247,7 +253,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
                 m.updateProperty(MSG_COUNT_PROPERTY, DtnmaRouter.DEFAULT_CRITICAL_QUOTA);
             } else if (!DtnmaRouter.isCriticalMessage(m)) {
                 Integer cp = (Integer) m.getProperty(MSG_COUNT_PROPERTY);
-                int quota = Math.max(1, this.agent.getCurrentSprayQuota());
+                int quota = Math.max(1, this.agent.getEffectiveBulkSprayQuota(this.initialNrofCopies));
                 if (cp != null && cp > quota) {
                     m.updateProperty(MSG_COUNT_PROPERTY, Math.max(1, quota / 2));
                 }

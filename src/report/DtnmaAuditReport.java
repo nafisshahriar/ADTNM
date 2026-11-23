@@ -41,7 +41,7 @@ public class DtnmaAuditReport extends Report implements UpdateListener {
         writeLineTracked("# RFC 9675 DTNMA + SHIELDED CMDP RL EXPLAINABILITY AUDIT LOG");
         writeLineTracked("# Decision-time EDD state snapshot + SafeMask + Causal ARI for Replay");
         writeLineTracked("# ====================================================================");
-        writeLineTracked("# SimTime\tDecisionTime\tNodeID\tMode\tQ\tdQ\tDensity\tSpeed\tSoC\tActiveConn\tCtrlVer\tShieldEnergyMin\tShieldCongQ\tProposedAct\tRlFallbackAct\tExecutedAct\tShieldStatus\tSafeMask\tActiveRuleARI\tCausalExplanation");
+        writeLineTracked("# SimTime\tDecisionTime\tNodeID\tMode\tQ\tCritQ\tdQ\tDensity\tSpeed\tSoC\tActiveConn\tCtrlVer\tShieldEnergyMin\tShieldWarnCritQ\tProposedAct\tRlFallbackAct\tExecutedAct\tShieldStatus\tSafeMask\tActiveRuleARI\tCausalExplanation");
     }
 
     @Override
@@ -97,9 +97,8 @@ public class DtnmaAuditReport extends Report implements UpdateListener {
                 String maskStr = formatMaskBits(router.getLastSafeMaskBits());
                 String curRule = router.getActiveRuleAri();
                 String explanation = router.getLastExplanation();
-                DtnmaConfig cfg = router.getConfig();
-                double shEnergyMin = (cfg != null) ? cfg.shieldEnergyMin : 0.20;
-                double shCongQ = (cfg != null) ? cfg.shieldCongestionQueue : 0.90;
+                double shEnergyMin = router.getLastDecisionShieldEnergyMin();
+                double shWarnCritQ = router.getLastDecisionShieldWarnCritQ();
 
                 if (curRule != null && curRule.startsWith("ARI://")
                         && explanation != null && !explanation.trim().isEmpty()) {
@@ -108,12 +107,12 @@ public class DtnmaAuditReport extends Report implements UpdateListener {
                 this.totalRows++;
 
                 String row = String.format(Locale.US,
-                        "%.1f\t%.1f\t%d\t%s\t%.9f\t%.9f\t%.9f\t%.9f\t%.9f\t%d\t%d\t%.9f\t%.9f\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
+                        "%.1f\t%.1f\t%d\t%s\t%.9f\t%.9f\t%.9f\t%.9f\t%.9f\t%.9f\t%d\t%d\t%.9f\t%.9f\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
                         simTime, router.getLastDecisionTime(), host.getAddress(), mode,
-                        router.getLastDecisionQ(), router.getLastDecisionDq(),
+                        router.getLastDecisionQ(), router.getLastDecisionCritQ(), router.getLastDecisionDq(),
                         router.getLastDecisionDensity(), router.getLastDecisionSpeed(),
                         router.getLastDecisionSoc(), router.getLastDecisionActiveConn(),
-                        router.getAppliedControlVersion(), shEnergyMin, shCongQ,
+                        router.getLastDecisionCtrlVer(), shEnergyMin, shWarnCritQ,
                         propAct, fbAct, execAct, shieldStatus, maskStr, curRule, explanation);
                 writeLineTracked(row);
             }

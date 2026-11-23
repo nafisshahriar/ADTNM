@@ -89,6 +89,7 @@ public class DtnmaSafetyShield {
         }
 
         double q = sampler.getEddValue(EddTelemetrySampler.EDD_QUEUE_RATIO);
+        double critQ = sampler.getEddValue(EddTelemetrySampler.EDD_CRIT_QUEUE_RATIO);
         double drift = sampler.getEddValue(EddTelemetrySampler.EDD_QUEUE_DRIFT);
         double density = sampler.getEddValue(EddTelemetrySampler.EDD_NODE_DENSITY);
         double soc = sampler.getEddValue(EddTelemetrySampler.EDD_ENERGY_SOC);
@@ -96,16 +97,19 @@ public class DtnmaSafetyShield {
         String primaryAri = "ARI://DTNMA/SHIELD/NOMINAL_PASS";
         boolean constrained = false;
 
-        // Invariant S1: Buffer Criticality Protection
-        if (q >= cfg.shieldCriticalQueue) {
+        // Invariant S1: Buffer Criticality & Active Surge Protection
+        // Distinguishes genuine critical saturation or active buffer surge from steady-state evictable bulk caches
+        if (critQ >= cfg.shieldCriticalCritQueue || (q >= cfg.shieldCriticalQueue && drift >= cfg.shieldSurgeDrift)) {
             restrictToMaxIndex(mask, 0); // Only {0}
             primaryAri = "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
-            if (reasonOut != null) reasonOut.append(String.format("Q=%.2f>=%.2f ", q, cfg.shieldCriticalQueue));
+            if (reasonOut != null) {
+                reasonOut.append(String.format("CritQ=%.2f,Q=%.2f,dQ=%.3f ", critQ, q, drift));
+            }
             constrained = true;
-        } else if (q >= cfg.shieldCongestionQueue || (q >= cfg.shieldSurgeQueue && drift > cfg.shieldSurgeDrift)) {
-            restrictToMaxIndex(mask, 1); // Only {0, 1}
+        } else if (critQ >= cfg.shieldWarnCritQueue || (q >= cfg.shieldSurgeQueue && drift > cfg.shieldSurgeDrift)) {
+            restrictToMaxIndex(mask, 2); // {0, 1, 2}
             primaryAri = "ARI://DTNMA/SHIELD/BUF_CONGESTION_SURGE";
-            if (reasonOut != null) reasonOut.append(String.format("Q=%.2f,dQ=%.3f ", q, drift));
+            if (reasonOut != null) reasonOut.append(String.format("CritQ=%.2f,Q=%.2f,dQ=%.3f ", critQ, q, drift));
             constrained = true;
         }
 
@@ -245,12 +249,15 @@ public class DtnmaSafetyShield {
     private String extractPrimaryAri(EddTelemetrySampler sampler, List<StateBasedRule> rules) {
         if (sampler == null) return "ARI://DTNMA/SHIELD/SAFE_FALLBACK";
         double q = sampler.getEddValue(EddTelemetrySampler.EDD_QUEUE_RATIO);
+        double critQ = sampler.getEddValue(EddTelemetrySampler.EDD_CRIT_QUEUE_RATIO);
         double drift = sampler.getEddValue(EddTelemetrySampler.EDD_QUEUE_DRIFT);
         double density = sampler.getEddValue(EddTelemetrySampler.EDD_NODE_DENSITY);
         double soc = sampler.getEddValue(EddTelemetrySampler.EDD_ENERGY_SOC);
 
-        if (q >= cfg.shieldCriticalQueue) return "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
-        if (q >= cfg.shieldCongestionQueue || (q >= cfg.shieldSurgeQueue && drift > cfg.shieldSurgeDrift)) {
+        if (critQ >= cfg.shieldCriticalCritQueue || (q >= cfg.shieldCriticalQueue && drift >= cfg.shieldSurgeDrift)) {
+            return "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
+        }
+        if (critQ >= cfg.shieldWarnCritQueue || (q >= cfg.shieldSurgeQueue && drift > cfg.shieldSurgeDrift)) {
             return "ARI://DTNMA/SHIELD/BUF_CONGESTION_SURGE";
         }
         if (soc < cfg.shieldEnergyMin) return "ARI://DTNMA/SHIELD/ENERGY_CRITICAL";

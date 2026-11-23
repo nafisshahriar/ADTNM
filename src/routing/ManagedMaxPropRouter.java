@@ -201,12 +201,7 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
         boolean[] peerManaged = new boolean[nReady];
 
         double myQ = getBufferOccupancyRatio();
-        boolean critOnly = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY);
-        boolean autoActive = this.agent.isAutonomicControlActive();
-        double minSoc = this.agent.getConfig().shieldEnergyMin;
-        boolean bpEnabled = this.agent.isBackpressureEnabled();
-        double bpDelta = this.agent.getCurrentBackpressureDelta();
-        boolean throttleBulk = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK);
+        boolean critOnly = this.agent.isCriticalOnlyBulkSheddingActive();
         boolean[] peerCanTakeBulk = new boolean[nReady];
 
         for (int i = 0; i < nReady; i++) {
@@ -222,13 +217,7 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
                 peerQ[i] = 0.5;
                 peerSoc[i] = 1.0;
             }
-            boolean ok = !critOnly;
-            if (ok && peerManaged[i]) {
-                if (autoActive && (peerQ[i] >= 0.94 || peerSoc[i] < minSoc)) ok = false;
-                else if (bpEnabled && peerQ[i] >= 0.72 && peerQ[i] >= myQ + bpDelta) ok = false;
-            }
-            if (ok && throttleBulk && peerQ[i] >= 0.85) ok = false;
-            peerCanTakeBulk[i] = ok;
+            peerCanTakeBulk[i] = this.agent.isPeerSelectableForBulk(myQ, peerQ[i], peerSoc[i], peerManaged[i]);
         }
 
         Collection<Message> msgCollection = getMessageCollection();

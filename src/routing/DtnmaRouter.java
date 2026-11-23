@@ -110,6 +110,11 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         this.agent.config.rlEpochInterval = this.rlEpochInterval;
     }
 
+    protected final void applyBaselinePresetKnobs() {
+        syncPrototypeToAgent();
+        this.agent.applyConfiguredBaselineKnobs();
+    }
+
     protected final void loadRulesFromFile(String rFile) {
         this.agent.loadRulesFromFile(rFile);
     }
@@ -671,6 +676,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
     public long getDecisionCpuCount() { return this.agent.getDecisionCpuCount(); }
     public double getLastDecisionTime() { return this.agent.getLastDecisionTime(); }
     public double getLastDecisionQ() { return this.agent.getLastDecisionQ(); }
+    public double getLastDecisionCritQ() { return this.agent.getLastDecisionCritQ(); }
     public double getLastDecisionDq() { return this.agent.getLastDecisionDq(); }
     public double getLastDecisionDensity() { return this.agent.getLastDecisionDensity(); }
     public double getLastDecisionSpeed() { return this.agent.getLastDecisionSpeed(); }

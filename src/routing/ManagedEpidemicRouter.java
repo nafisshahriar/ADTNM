@@ -174,6 +174,8 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
         double[] peerQ = new double[nReady];
         double[] peerSoc = new double[nReady];
         boolean[] peerManaged = new boolean[nReady];
+        boolean[] peerCanTakeBulk = new boolean[nReady];
+        double myQ = getBufferOccupancyRatio();
         for (int i = 0; i < nReady; i++) {
             DTNHost other = readyCons.get(i).getOtherNode(getHost());
             othRouters[i] = other.getRouter();
@@ -185,9 +187,10 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
                 peerQ[i] = 0.5;
                 peerSoc[i] = 1.0;
             }
+            peerCanTakeBulk[i] = this.agent.isPeerSelectableForBulk(myQ, peerQ[i], peerSoc[i], peerManaged[i]);
         }
 
-        boolean critOnly = (this.agent.getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY);
+        boolean critOnly = this.agent.isCriticalOnlyBulkSheddingActive();
         List<Message> msgs = new ArrayList<Message>(getNrofMessages());
         for (Message m : getMessageCollection()) {
             if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
@@ -201,11 +204,12 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
         }
 
         sortByQueueMode(msgs);
-        double myQ = getBufferOccupancyRatio();
 
         for (Message m : msgs) {
             boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
+            boolean isCritOrCtrl = epiCtrl || DtnmaRouter.isCriticalMessage(m);
             for (int i = 0; i < nReady; i++) {
+                if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
                 if (othRouters[i].hasMessage(m.getId())) continue;
                 if (epiCtrl || this.agent.allowNonDirectBulkForward(
                         m, myQ, peerQ[i], peerSoc[i], peerManaged[i], -1.0, -1.0)) {

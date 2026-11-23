@@ -91,11 +91,15 @@ public class DtnmaAgent {
     // Exact Decision-Time Input Snapshot (for deterministic audit replay, RQ4)
     private double lastDecisionTime = -1.0;
     private double lastDecisionQ = 0.0;
+    private double lastDecisionCritQ = 0.0;
     private double lastDecisionDq = 0.0;
     private double lastDecisionDensity = 0.0;
     private double lastDecisionSpeed = 0.0;
     private double lastDecisionSoc = 1.0;
     private int lastDecisionActiveConn = 0;
+    private int lastDecisionCtrlVer = 0;
+    private double lastDecisionShieldEnergyMin = 0.20;
+    private double lastDecisionShieldWarnCritQ = 0.35;
 
     // Dynamic Policy Knobs (actuated by SRL / Shield / RL / Downlink)
     private int currentSprayQuota = DtnmaRouter.DEFAULT_SPARSE_QUOTA;
@@ -214,7 +218,7 @@ public class DtnmaAgent {
         this.decisionCpuCount = 0L;
     }
 
-    private void applyConfiguredBaselineKnobs() {
+    public void applyConfiguredBaselineKnobs() {
         if (this.config == null) return;
         DtnmaConfig.ManagementMode eff = this.config.getEffectiveManagementMode();
         if (eff == DtnmaConfig.ManagementMode.M0_STATIC
@@ -294,32 +298,42 @@ public class DtnmaAgent {
 
     private void initDefaultRuleDatabase() {
         PredicateExpression pCrit = new PredicateExpression(false);
-        pCrit.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.95);
         pCrit.addClause(EddTelemetrySampler.EDD_ENERGY_SOC, PredicateExpression.Operator.LESS_THAN, 0.20);
+        pCrit.addClause(EddTelemetrySampler.EDD_CRIT_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.50);
         StateBasedRule rCrit = new StateBasedRule("ARI://DTNMA/SRL/CRITICAL_CONGESTION",
-                "Severe queue congestion or low energy: Restrict quota to 2 and enable backpressure", 100, pCrit);
-        rCrit.addAction(ControlAction.setSprayQuota(2));
-        rCrit.addAction(ControlAction.setIngressMode(DtnmaRouter.INGRESS_THROTTLE_BULK));
+                "Low energy survival guard or heavy critical telemetry pressure", 100, pCrit);
+        rCrit.addAction(ControlAction.setSprayQuota(1));
+        rCrit.addAction(ControlAction.setIngressMode(DtnmaRouter.INGRESS_CRITICAL_ONLY));
         rCrit.addAction(ControlAction.setTelemetryInterval(600.0));
         rCrit.addAction(ControlAction.setBackpressure(true));
         this.ruleDatabase.add(rCrit);
 
+        PredicateExpression pSurge = new PredicateExpression(true);
+        pSurge.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.88);
+        pSurge.addClause(EddTelemetrySampler.EDD_QUEUE_DRIFT, PredicateExpression.Operator.GREATER_EQUAL, 0.008);
+        StateBasedRule rSurge = new StateBasedRule("ARI://DTNMA/SRL/SURGE_THROTTLE",
+                "Active positive buffer surge: damp bulk spray temporarily", 80, pSurge);
+        rSurge.addAction(ControlAction.setSprayQuota(2));
+        rSurge.addAction(ControlAction.setIngressMode(DtnmaRouter.INGRESS_THROTTLE_BULK));
+        rSurge.addAction(ControlAction.setTelemetryInterval(300.0));
+        rSurge.addAction(ControlAction.setBackpressure(true));
+        this.ruleDatabase.add(rSurge);
+
         PredicateExpression pDense = new PredicateExpression(true);
-        pDense.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.65);
+        pDense.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.75);
         pDense.addClause(EddTelemetrySampler.EDD_NODE_DENSITY, PredicateExpression.Operator.GREATER_EQUAL, 4.0);
         StateBasedRule rDense = new StateBasedRule("ARI://DTNMA/SRL/DENSE_CLUSTER",
-                "Congested high-density cluster: Set balanced spray quota to 3", 50, pDense);
-        rDense.addAction(ControlAction.setSprayQuota(3));
+                "Congested dense cluster: Set balanced spray quota to 4 with backpressure", 60, pDense);
+        rDense.addAction(ControlAction.setSprayQuota(4));
         rDense.addAction(ControlAction.setIngressMode(DtnmaRouter.INGRESS_ACCEPT_ALL));
-        rDense.addAction(ControlAction.setTelemetryInterval(300.0));
+        rDense.addAction(ControlAction.setTelemetryInterval(180.0));
         rDense.addAction(ControlAction.setBackpressure(true));
         this.ruleDatabase.add(rDense);
 
         PredicateExpression pSparse = new PredicateExpression(true);
-        pSparse.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.LESS_THAN, 0.85);
-        pSparse.addClause(EddTelemetrySampler.EDD_NODE_DENSITY, PredicateExpression.Operator.LESS_THAN, 4.0);
+        pSparse.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.0);
         StateBasedRule rSparse = new StateBasedRule("ARI://DTNMA/SRL/SPARSE_EXPLORATION",
-                "Sparse topology with healthy buffer: Use exploratory spray quota 6", 10, pSparse);
+                "Catch-all nominal release: restore exploratory spray quota 6", 10, pSparse);
         rSparse.addAction(ControlAction.setSprayQuota(DtnmaRouter.DEFAULT_SPARSE_QUOTA));
         rSparse.addAction(ControlAction.setIngressMode(DtnmaRouter.INGRESS_ACCEPT_ALL));
         rSparse.addAction(ControlAction.setTelemetryInterval(60.0));
@@ -331,6 +345,21 @@ public class DtnmaAgent {
 
     public DtnmaConfig.ManagementMode getEffectiveManagementMode() {
         return config != null ? config.getEffectiveManagementMode() : DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL;
+    }
+
+    public DtnmaConfig.InterventionTier getInterventionTier() {
+        return (config != null && config.interventionTier != null)
+                ? config.interventionTier : DtnmaConfig.InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS;
+    }
+
+    public boolean isCriticalOnlyBulkSheddingActive() {
+        return getInterventionTier() != DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY
+                && currentIngressMode == DtnmaRouter.INGRESS_CRITICAL_ONLY;
+    }
+
+    public int getEffectiveBulkSprayQuota(int routerDefaultQuota) {
+        return (getInterventionTier() == DtnmaConfig.InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS)
+                ? this.currentSprayQuota : routerDefaultQuota;
     }
 
     public boolean isSafetyLockEnforced() {
@@ -543,11 +572,15 @@ public class DtnmaAgent {
         // Exact decision-time snapshot for deterministic audit replay (RQ4)
         this.lastDecisionTime = now;
         this.lastDecisionQ = owner.getBufferOccupancyRatio();
+        this.lastDecisionCritQ = getCachedCriticalOccupancyRatio();
         this.lastDecisionDq = eddSampler.getQueueDrift();
         this.lastDecisionDensity = eddSampler.getNodeDensity();
         this.lastDecisionSpeed = eddSampler.getNodeSpeed();
         this.lastDecisionSoc = owner.getEnergySoc();
         this.lastDecisionActiveConn = (host != null) ? host.getConnections().size() : 0;
+        this.lastDecisionCtrlVer = this.appliedControlVersion;
+        this.lastDecisionShieldEnergyMin = (this.config != null) ? this.config.shieldEnergyMin : 0.20;
+        this.lastDecisionShieldWarnCritQ = (this.config != null) ? this.config.shieldWarnCritQueue : 0.35;
 
         DtnmaConfig.ManagementMode effMode = getEffectiveManagementMode();
 
@@ -563,6 +596,9 @@ public class DtnmaAgent {
             this.activeRuleAri = "ARI://DTNMA/M0/STATIC";
             this.shieldTriggerAri = "ARI://DTNMA/M0/STATIC";
             this.lastExplanation = "M0_STATIC(Quota=" + currentSprayQuota + ",Ingress=" + currentIngressMode + ")";
+            if (profileExecCounts != null && mapped >= 0 && mapped < profileExecCounts.length) {
+                profileExecCounts[mapped]++;
+            }
             return;
         }
 
@@ -579,6 +615,9 @@ public class DtnmaAgent {
             this.shieldTriggerAri = "ARI://DTNMA/M1/REMOTE_ONLY";
             this.lastExplanation = "M1_REMOTE_HOLD(Quota=" + currentSprayQuota
                     + ",Ingress=" + currentIngressMode + ",CtrlVer=" + appliedControlVersion + ")";
+            if (profileExecCounts != null && mapped >= 0 && mapped < profileExecCounts.length) {
+                profileExecCounts[mapped]++;
+            }
             return;
         }
 
@@ -604,7 +643,7 @@ public class DtnmaAgent {
             this.lastSafeMaskBits = useMask ? encodeMaskBits(nextMask) : 0xFF;
 
             if (prevEpochState != null && prevExecutedAction >= 0 && rlAgent != null) {
-                if (epochActivityCount > 0 || qNow >= 0.75) {
+                if (epochActivityCount > 0 || qNow >= 0.75 || prevExecutedAction <= 1) {
                     double reward = computeLocalEpochReward(qNow);
                     double cost = computeLocalEpochCost(qNow);
                     rlAgent.updateTransition(prevEpochState, prevExecutedAction, reward, cost,
@@ -781,13 +820,27 @@ public class DtnmaAgent {
     }
 
     private double computeLocalEpochReward(double qNow) {
-        double bufPenalty = 1.5 * Math.pow(Math.max(0.0, qNow - 0.80), 2);
+        double critQ = getCachedCriticalOccupancyRatio();
+        double soc = owner.getEnergySoc();
+        double drift = (eddSampler != null) ? eddSampler.getQueueDrift() : 0.0;
+        boolean localHazard = (soc < config.shieldEnergyMin)
+                || (critQ >= config.shieldWarnCritQueue)
+                || (qNow >= config.shieldSurgeQueue && drift >= config.shieldSurgeDrift);
+
+        double bufPenalty = 0.50 * Math.pow(Math.max(0.0, critQ - 0.20), 2)
+                + 0.25 * Math.pow(Math.max(0.0, qNow - 0.90), 2);
         double starvePenalty = 0.35 * Math.min(3, epochStarvationCount);
+        if (!localHazard && prevExecutedAction == 0) {
+            starvePenalty += 1.50;
+        } else if (!localHazard && prevExecutedAction == 1) {
+            starvePenalty += 0.45;
+        }
+        int cappedBulkDrops = Math.min(3, epochBulkDrops);
         return config.rewardPredProgress * epochPredProgressSum
              + config.rewardCoverageGain * epochCoverageGain
-             - config.penaltyBulkDrop * epochBulkDrops
+             - config.penaltyBulkDrop * cappedBulkDrops
              - 2.5 * epochCritDrops
-             - 0.30 * epochRedundantForwards
+             - 0.20 * epochRedundantForwards
              - config.penaltyRelayCost * epochRelayTransfers
              - bufPenalty
              - starvePenalty;
@@ -908,6 +961,10 @@ public class DtnmaAgent {
             return null;
         }
 
+        if (getInterventionTier() == DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY) {
+            return null;
+        }
+
         if (isCrit || currentIngressMode == DtnmaRouter.INGRESS_ACCEPT_ALL) {
             return null;
         }
@@ -1020,9 +1077,9 @@ public class DtnmaAgent {
             double deltaP = Math.max(0.0, peerPred - myPred);
             double peerQ = getBeaconNeighborQueueRatio(recipient);
 
-            if (peerQ < 0.78) {
-                this.epochCoverageGain += 0.40 * (1.0 - peerQ) * Math.sqrt(Math.max(1, actualSentCopies));
-            } else if (!DtnmaRouter.isCriticalMessage(m) && deltaP <= 0.05) {
+            if (peerQ < 0.92) {
+                this.epochCoverageGain += 0.35 * (1.0 - 0.50 * peerQ) * Math.sqrt(Math.max(1, actualSentCopies));
+            } else if (!DtnmaRouter.isCriticalMessage(m) && deltaP <= 0.02) {
                 this.epochRedundantForwards++;
             }
             if (deltaP > 0.05) {
@@ -1067,6 +1124,10 @@ public class DtnmaAgent {
         if (isAcked(m)) {
             return false;
         }
+        DtnmaConfig.InterventionTier tier = getInterventionTier();
+        if (tier == DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY) {
+            return true;
+        }
         if (currentIngressMode == DtnmaRouter.INGRESS_CRITICAL_ONLY) {
             return false;
         }
@@ -1078,7 +1139,8 @@ public class DtnmaAgent {
                 return false;
             }
         }
-        if (currentIngressMode == DtnmaRouter.INGRESS_THROTTLE_BULK) {
+        if (tier == DtnmaConfig.InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS
+                && currentIngressMode == DtnmaRouter.INGRESS_THROTTLE_BULK) {
             if (peerQ >= 0.85) {
                 return false;
             }
@@ -1094,8 +1156,36 @@ public class DtnmaAgent {
         return true;
     }
 
+    public boolean isPeerSelectableForBulk(double myQ, double peerQ, double peerSoc, boolean peerIsManaged) {
+        DtnmaConfig.InterventionTier tier = getInterventionTier();
+        if (tier == DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY) {
+            return true;
+        }
+        if (currentIngressMode == DtnmaRouter.INGRESS_CRITICAL_ONLY) {
+            return false;
+        }
+        if (peerIsManaged) {
+            if (isAutonomicControlActive() && (peerQ >= 0.94 || peerSoc < config.shieldEnergyMin)) {
+                return false;
+            }
+            if (backpressureEnabled && peerQ >= 0.72 && peerQ >= myQ + currentBackpressureDelta) {
+                return false;
+            }
+        }
+        if (tier == DtnmaConfig.InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS
+                && currentIngressMode == DtnmaRouter.INGRESS_THROTTLE_BULK && peerQ >= 0.85) {
+            return false;
+        }
+        return true;
+    }
+
     public void recordStarvationCheck(double peerQueueRatio, int toSend, int naturalSplit) {
-        if (owner.getBufferOccupancyRatio() < 0.65 && peerQueueRatio < 0.65 && toSend < naturalSplit) {
+        boolean needlessThrottle = (currentIngressMode > DtnmaRouter.INGRESS_ACCEPT_ALL)
+                && getCachedCriticalOccupancyRatio() < config.shieldWarnCritQueue
+                && owner.getEnergySoc() >= config.shieldEnergyMin
+                && (eddSampler == null || eddSampler.getQueueDrift() < config.shieldSurgeDrift);
+        if ((owner.getBufferOccupancyRatio() < 0.65 && peerQueueRatio < 0.65 && toSend < naturalSplit)
+                || (needlessThrottle && toSend < naturalSplit)) {
             this.epochStarvationCount++;
             this.epochActivityCount++;
         }
@@ -1125,11 +1215,11 @@ public class DtnmaAgent {
                         applyPolicyProfile(1);
                     } else {
                         this.config.shieldEnergyMin = Math.max(this.config.shieldEnergyMin, 0.25);
-                        this.config.shieldCongestionQueue = Math.min(this.config.shieldCongestionQueue, 0.88);
+                        this.config.shieldWarnCritQueue = Math.min(this.config.shieldWarnCritQueue, 0.30);
                         upsertDownlinkOverlayRule(
                                 "ARI://DTNMA/SRL/DOWNLINK_V1_ENERGY_GUARD",
-                                "Manager-pushed V1 Energy and Congestion Guard",
-                                110, 0.25, 0.90, 1, DtnmaRouter.INGRESS_CRITICAL_ONLY);
+                                "Manager-pushed V1 Energy and Critical Guard",
+                                110, 0.25, 0.40, 1, DtnmaRouter.INGRESS_CRITICAL_ONLY);
                     }
                     this.activeRuleAri = this.lastControlAri;
                     this.lastExplanation = "DOWNLINK_CTRL_ADOPTED(V1:SoC>=0.25,Q>=0.90)";
@@ -1146,6 +1236,7 @@ public class DtnmaAgent {
                         applyConfiguredBaselineKnobs();
                     } else {
                         this.config.shieldEnergyMin = 0.20;
+                        this.config.shieldWarnCritQueue = 0.35;
                         this.config.shieldCongestionQueue = 0.90;
                         removeDownlinkOverlayRules();
                     }
@@ -1166,11 +1257,11 @@ public class DtnmaAgent {
                     if (effMode == DtnmaConfig.ManagementMode.M1_REMOTE_ONLY) {
                         applyPolicyProfile(severe ? 0 : 1);
                     } else {
-                        this.config.shieldCongestionQueue = Math.min(this.config.shieldCongestionQueue, 0.80);
+                        this.config.shieldWarnCritQueue = Math.min(this.config.shieldWarnCritQueue, 0.30);
                         upsertDownlinkOverlayRule(
                                 "ARI://DTNMA/SRL/DOWNLINK_THROTTLE",
-                                "Manager-pushed burst throttle rule",
-                                110, 0.25, 0.80,
+                                "Manager-pushed burst hazard guard",
+                                110, 0.25, 0.35,
                                 severe ? 1 : 2,
                                 severe ? DtnmaRouter.INGRESS_CRITICAL_ONLY : DtnmaRouter.INGRESS_THROTTLE_BULK);
                     }
@@ -1189,6 +1280,7 @@ public class DtnmaAgent {
                         applyConfiguredBaselineKnobs();
                     } else {
                         this.config.shieldEnergyMin = 0.20;
+                        this.config.shieldWarnCritQueue = 0.35;
                         this.config.shieldCongestionQueue = 0.90;
                         removeDownlinkOverlayRules();
                     }
@@ -1207,12 +1299,12 @@ public class DtnmaAgent {
     }
 
     private void upsertDownlinkOverlayRule(String ari, String desc, int priority,
-                                           double energyMin, double queueMax,
+                                           double energyMin, double critQueueMin,
                                            int targetQuota, int targetIngress) {
         removeDownlinkOverlayRules();
         PredicateExpression pred = new PredicateExpression(false);
         pred.addClause(EddTelemetrySampler.EDD_ENERGY_SOC, PredicateExpression.Operator.LESS_THAN, energyMin);
-        pred.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, queueMax);
+        pred.addClause(EddTelemetrySampler.EDD_CRIT_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, critQueueMin);
         StateBasedRule overlay = new StateBasedRule(ari, desc, priority, pred);
         overlay.addAction(ControlAction.setSprayQuota(targetQuota));
         overlay.addAction(ControlAction.setIngressMode(targetIngress));
@@ -1287,11 +1379,15 @@ public class DtnmaAgent {
     public long getDecisionCpuCount() { return decisionCpuCount; }
     public double getLastDecisionTime() { return lastDecisionTime; }
     public double getLastDecisionQ() { return lastDecisionQ; }
+    public double getLastDecisionCritQ() { return lastDecisionCritQ; }
     public double getLastDecisionDq() { return lastDecisionDq; }
     public double getLastDecisionDensity() { return lastDecisionDensity; }
     public double getLastDecisionSpeed() { return lastDecisionSpeed; }
     public double getLastDecisionSoc() { return lastDecisionSoc; }
     public int getLastDecisionActiveConn() { return lastDecisionActiveConn; }
+    public int getLastDecisionCtrlVer() { return lastDecisionCtrlVer; }
+    public double getLastDecisionShieldEnergyMin() { return lastDecisionShieldEnergyMin; }
+    public double getLastDecisionShieldWarnCritQ() { return lastDecisionShieldWarnCritQ; }
     public DtnmaConfig getConfig() { return config; }
     public Map<String, Boolean> getDeliveredAckSet() { return deliveredAckSet; }
 }

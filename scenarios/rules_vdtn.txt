@@ -1,28 +1,26 @@
 # ====================================================================
 # RFC 9675 DTNMA DECLARATIVE RULES: VEHICULAR DTN (VDTN / ITS)
-# Targeted for highway speeds, urban clusters, and road intersection dwell times
+# Separates genuine hazards (low energy / high critical occupancy / positive
+# buffer surge) from healthy full carry-forward DTN caches, with explicit
+# catch-all release back to nominal (eliminates hysteresis dead-zone lockup).
 # ====================================================================
 
-# Rule 0: Hard Safety Failsafe - Critical Buffer Saturation or Low Energy
-# Priority >= 100 is reserved strictly for inviolable safety constraints
-RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Critical buffer congestion or low energy across any vehicular speed regime
-IF: (EDD_QUEUE_RATIO >= 0.95) || (EDD_ENERGY_SOC < 0.20)
+# Rule 0 (Priority 100): Hard Safety Failsafe - Critical Telemetry Saturation or Low Battery
+RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Low energy survival guard or heavy critical telemetry pressure
+IF: (EDD_ENERGY_SOC < 0.20) || (EDD_CRIT_QUEUE_RATIO >= 0.50)
 THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)
 
-# Rule 1: Traffic Jam / Intersection Gridlock (Operational Heuristic)
-# High vehicle density with near-zero speed AND elevated buffer occupancy
-RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 60 | DESC: Congested vehicle cluster at intersection or traffic jam
-IF: (EDD_QUEUE_RATIO >= 0.65) && (EDD_NODE_DENSITY >= 5.0) && (EDD_NODE_SPEED < 2.0)
-THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
+# Rule 1 (Priority 80): Active Buffer Surge (auto-releases when drift subsides)
+RULE: ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE | PRIORITY: 80 | DESC: Rapid positive buffer fill surge: temporarily damp bulk spray & ingress
+IF: (EDD_QUEUE_RATIO >= 0.88) && (EDD_QUEUE_DRIFT >= 0.008)
+THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
 
-# Rule 2: Highway High-Speed Transit Under Buffer Pressure
-# Moving at high speed (>= 10 m/s) with rising buffer load: balanced spray with backpressure
-RULE: ARI://DTNMA/SRL/VDTN_HIGHWAY_PASS | PRIORITY: 50 | DESC: Congested high-speed highway passing encounter
-IF: (EDD_QUEUE_RATIO >= 0.65) && (EDD_NODE_SPEED >= 10.0)
-THEN: CTRL_SET_SPRAY_QUOTA(4); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(true)
+# Rule 2 (Priority 60): Dense Low-Speed Intersection Cluster Under Pressure
+RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 60 | DESC: Congested dense low-speed cluster: moderate spray and enable backpressure
+IF: (EDD_QUEUE_RATIO >= 0.75) && (EDD_NODE_DENSITY >= 5.0) && (EDD_NODE_SPEED < 2.0)
+THEN: CTRL_SET_SPRAY_QUOTA(4); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(180); CTRL_SET_BACKPRESSURE(true)
 
-# Rule 3: Urban Nominal Cruising
-# Uncongested operation across urban/suburban mobility regimes
-RULE: ARI://DTNMA/SRL/VDTN_URBAN_NOMINAL | PRIORITY: 10 | DESC: Uncongested nominal cruising across vehicular regimes
-IF: (EDD_QUEUE_RATIO < 0.85)
+# Rule 3 (Priority 10): Catch-All Nominal Release (no dead-zone hysteresis)
+RULE: ARI://DTNMA/SRL/VDTN_URBAN_NOMINAL | PRIORITY: 10 | DESC: Nominal operation across vehicular regimes (releases throttle promptly)
+IF: (EDD_QUEUE_RATIO >= 0.0)
 THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)

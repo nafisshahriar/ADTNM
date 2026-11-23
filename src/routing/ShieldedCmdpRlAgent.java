@@ -85,7 +85,7 @@ public class ShieldedCmdpRlAgent {
         double stormDensNorm = (cfg.shieldStormDensity / 15.0) - 1e-6;
         phi[14] = (z0 >= 0.50 && z0 < cfg.shieldCongestionQueue && z2 < 0.35) ? 1.0 : 0.0;
         phi[15] = (z0 >= cfg.shieldStormQueue && z0 < cfg.shieldCongestionQueue && z2 >= stormDensNorm) ? 1.0 : 0.0;
-        phi[16] = (z0 >= cfg.shieldCongestionQueue) ? 1.0 : 0.0;
+        phi[16] = (z0 >= cfg.shieldCongestionQueue && z1 >= 0.55) ? 1.0 : 0.0;
         phi[17] = (z0 >= 0.80 && z1 > 0.55) ? 1.0 : 0.0;
         phi[18] = (z3 < 0.15) ? 1.0 : 0.0;
         phi[19] = (z3 >= 0.50) ? 1.0 : 0.0;
