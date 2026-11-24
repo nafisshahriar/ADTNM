@@ -17,6 +17,7 @@
 | **DISC-07** | Exploratory Report Sentinel | Medium | `src/report/DtnmaRlMetricsReport.java` (`downlink_t90_sec`) | Emits `30849.0` end-of-horizon sentinel when `downlink_90pct_reached == 0.0` (e.g., `M2`) |
 | **DISC-08** | Retired Config Shims | Low | `src/routing/DtnmaConfig.java:63-66`, `scenarios/dtnma_params_default.txt:29-32` | Retains zeroed primal-dual keys (`rlLambdaInit=0.0`, `rlEtaLambda=0.0`) & `getLagrangianValue()` name |
 | **DISC-09** | Test Label Count Mismatch | Low | `tests/DtnmaUnitTests.java` vs summary footer | Contains `27` test methods (`Test1a..Test22`), `30` `check()` assertions (`Test7`+`Test8` inside `test7...`) |
+| **DISC-10** | Batch Runner Path Assumption | Low | `tools/parallel_batch_runner.py:253` | Sets `the_one_dir` to `__file__`'s directory (expects `install.py` copy inside `the-one/`), whereas `--dry-run` works from `ADTNM/tools/` with explicit `--scenario` |
 
 ---
 
@@ -66,3 +67,7 @@
 ### DISC-09 — `DtnmaUnitTests.java` Method vs. Label Count
 - **Where:** `tests/DtnmaUnitTests.java` (`27` `test*` methods, `30` `check()` calls).
 - **Observed behavior:** `test7AllCriticalFullBufferZeroOvershoot` emits both `Test7` and `Test8` check labels inside a single test method, producing `30` `check()` assertions across `27` test functions.
+
+### DISC-10 — `parallel_batch_runner.py` Expects Script Location Inside `the-one/`
+- **Where:** `tools/parallel_batch_runner.py:253`.
+- **Observed behavior:** `the_one_dir = os.path.dirname(os.path.abspath(__file__))` assumes `install.py` copied the script into `n:\R&D\cog\the-one\`. Passing `--scenario "$ADTNM\scenarios\..." --dry-run` works cleanly directly from `ADTNM/tools/`, whereas live batch runs execute via the installed `the-one/` copy.

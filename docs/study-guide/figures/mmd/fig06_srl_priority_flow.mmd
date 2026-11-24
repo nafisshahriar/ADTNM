@@ -1,0 +1,4 @@
+flowchart TD
+  P100["PRIO 100: VDTN_BUFFER_CRITICAL (SoC<0.20 || CritQ>=0.50)"] -->|False| P80["PRIO 80: VDTN_SURGE_THROTTLE (Q>=0.88 && dQ>=0.008)"]
+  P80 -->|False| P60["PRIO 60: VDTN_TRAFFIC_JAM (Q>=0.75 && Dens>=5 && Speed<2)"]
+  P60 -->|False| P10["PRIO 10: VDTN_URBAN_NOMINAL (Q>=0.0 Catch-All Recovery)"]

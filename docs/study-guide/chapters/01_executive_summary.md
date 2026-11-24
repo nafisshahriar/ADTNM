@@ -19,6 +19,8 @@
    11 EDDs (30s) -> SRL Rule Matcher (P0..P7) -> [Opt. M3 RL] -> Shield S1..S4 -> Thin Adapter -> Substrate Router
 ```
 
+![ADTNM Architecture Overview](../figures/svg/fig01_architecture_overview.svg)
+
 ---
 
 ## 2. Headline Empirical Evidence (Confirmatory vs. Exploratory Separated)

@@ -1,0 +1,4 @@
+flowchart LR
+  SNAP["Atomic Lock: eddSnapshot[11]"] --> DEC["Evaluate SRL / RL / Shield"]
+  DEC --> LOG["Write 16-Col DtnmaAuditReport"]
+  LOG --> REPLAY["Offline verify_audit_replay (Python): 100.00% Match"]

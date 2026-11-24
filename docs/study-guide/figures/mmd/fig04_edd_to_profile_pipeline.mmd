@@ -1,0 +1,5 @@
+flowchart LR
+  EDDS["11 EDDs"] --> EVAL["Rule / [Opt. M3]"]
+  EVAL --> MASK["DtnmaSafetyShield (S1..S4 mask)"]
+  MASK --> PROF["Selected Profile (P0..P7)"]
+  PROF --> ACT["Actuators: L_i, bpRatio, ingressMode, backpressure"]

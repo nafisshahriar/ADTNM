@@ -99,3 +99,11 @@ Comparison B compares **architecture operating modes** using a shared substrate 
 | **Self-\* + Bounded Autonomy** | RFC 7575 Sec 3–4 | Shield `S1–S4` hard-masks unsafe actions before actuator dispatch | Does **not** allow unconstrained dynamic goal invention outside safe bounds |
 
 See [Chapter 4a](04a_mechanisms_telemetry_and_profiles.md) through [Chapter 4d](04d_mechanisms_rl_and_reporting.md) for full `11`-part specifications of all `23` mechanisms, and [Appendix A](../appendices/appendix_a_rfc_conformance.md) for clause-by-clause RFC traceability.
+
+## Architectural Diagrams (`Figures 01–03`)
+
+![ADTNM Four-Plane Architecture](../figures/svg/fig01_architecture_overview.svg)
+
+![Three Coupled Control Timescales](../figures/svg/fig02_three_timescales.svg)
+
+![Additive Intervention Tiers](../figures/svg/fig03_intervention_tiers.svg)

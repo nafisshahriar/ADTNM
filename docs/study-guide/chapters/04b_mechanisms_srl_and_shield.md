@@ -241,3 +241,13 @@ Row from seed `7103` `M2` stress audit log (`t = 3360.5 s`, node `53`):
 
 ### 11. Supervisor Rationale
 Core scientific provenance mechanism — guarantees black-box behavior is never left unverified.
+
+## Visual Architecture & Sequence Diagrams (`Figures 06–09`)
+
+![SRL Priority Cascade](../figures/svg/fig06_srl_priority_flow.svg)
+
+![Safety Shield Bitmask Intersection](../figures/svg/fig07_safety_shield_bitmask.svg)
+
+![Delayed 4-Byte ACK Exchange Sequence](../figures/svg/fig08_ack_pruning_seq.svg)
+
+![Atomic Snapshot Capture and Offline Replay](../figures/svg/fig09_atomic_replay_flow.svg)

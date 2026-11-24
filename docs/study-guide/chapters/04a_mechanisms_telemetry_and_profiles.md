@@ -289,3 +289,9 @@ During dense congestion in `M3` (seed `7103`, node `53`, `t = 3300.5 s`), RL pro
 
 ### 11. Supervisor Rationale
 Finite discrete action bundling keeps safety verification decidable in `O(8)` bit checks while covering an order-of-magnitude span of replication aggressiveness (`L = 1..12`).
+
+## Visual Flow Diagrams (`Figures 04–05`)
+
+![EDD to Profile Closed-Loop Pipeline](../figures/svg/fig04_edd_to_profile_pipeline.svg)
+
+![Five-Tier O(N) Buffer Eviction Hierarchy](../figures/svg/fig05_five_tier_eviction.svg)

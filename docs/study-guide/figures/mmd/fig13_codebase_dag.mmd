@@ -1,0 +1,8 @@
+flowchart TB
+  CFG["DtnmaConfig / ControlAction / DtnmaPolicyProfile"] --> AST["PredicateExpression -> StateBasedRule -> DtnmaRuleParser"]
+  CFG --> EDD["EddTelemetrySampler"]
+  CFG --> SH["DtnmaSafetyShield"]
+  CFG --> RL["ShieldedCmdpRlAgent [Exp]"]
+  AST & EDD & SH & RL --> AG["DtnmaAgent"]
+  AG <--> MR["DtnmaManagedRouter & Managed*Router / DtnmaRouter"]
+  AG --> REP["src/report/*"]

@@ -19,7 +19,7 @@ javac -cp "$THE_ONE\target;$THE_ONE\lib\*" -d "$THE_ONE\target" `
   "$ADTNM\src\routing\*.java" "$ADTNM\src\report\*.java" "$ADTNM\tests\DtnmaUnitTests.java"
 
 # 2. Run unit suite (27 tests, 30 check() assertions)
-java -cp "$THE_ONE\target;$THE_ONE\lib\*" routing.DtnmaUnitTests
+java -cp "$THE_ONE\target;$THE_ONE\lib\*" DtnmaUnitTests
 ```
 
 **Expected Output Tail:**
@@ -95,8 +95,14 @@ Create an overlay scenario pointing `Group.rulesFile` and `DtnmaRouter.rulesFile
 
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = '1'
-python "$ADTNM\tools\parallel_batch_runner.py" --suite compB_exp_controls --dry-run
+python "$ADTNM\tools\parallel_batch_runner.py" --scenario "$ADTNM\scenarios\compB_exp_controls_stress.txt" --dry-run
 # Re-run read-only statistics over existing reports (no simulation executed):
 python "$ADTNM\tools\analyze_final_11seed.py" --skip-replay --out-json "$env:TEMP\check_f11.json" --out-md "$env:TEMP\check_f11.md"
 python "$ADTNM\tools\analyze_exploratory_controls.py" --skip-replay --out-dir "$env:TEMP"
 ```
+
+## Verified Tutorial Execution Screenshots
+
+![Unit Tests and 1h Smoke Verification](../screenshots/annotated/02_compile_tests_smoke_annotated.png)
+
+![Batch Runner Dry-Run and Immutable Tag Check](../screenshots/annotated/04_batch_dryrun_and_tags_annotated.png)

@@ -75,3 +75,5 @@ Every mechanism in Chapters `04a`–`04d` traces directly to five failure behavi
 3. **Battery Blackout Collapse:** Aggressive routers (`Epidemic`, `MaxProp`) transmit bulk relays until `SoC -> 0`, knocking out `87%–89%` of the fleet (`14–16/126` survivors) and severing connectivity for future critical dispatches.
 4. **Delayed Remote Stale-Throttling:** Unicast/flooded Manager rules (`M1-U`, `M1-F`) suffer delayed delivery, throttling nodes after short surges recover and crippling benign/post-event throughput (`389.1` stale throttle node-s/N in Event A).
 5. **Unsafe Exploration & Voluntary Hold Bugs:** Early unshielded RL policies (`M3` predecessors) explored aggressive `HIGH_SPRAY_OPEN` during dense storms (`41%` critical occupancy buildup) or stalled on `P0` when mis-rewarded — fixed via hard shield `S1–S4` and reward recalibration (`M3` still remains optional and secondary to `M2`).
+
+![The ONE Swing GUI Live Capture at t=360s on Helsinki Map](../screenshots/annotated/01_the_one_gui_annotated.png)

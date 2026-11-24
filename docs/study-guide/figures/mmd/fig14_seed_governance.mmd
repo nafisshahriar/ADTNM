@@ -1,0 +1,4 @@
+flowchart LR
+  CAL["Calibration (M0 Only): 4001..4003"] --> FREEZE["Tag v1.0-tnsm-freeze (ca5d9ac)"]
+  FREEZE --> CONF["Confirmatory (715 runs): 7103..7207 (Holm m=4)"]
+  CONF -. Disjoint Fresh Seeds .-> EXP["Exploratory (176 runs): 7211..7307 (p_unadj)"]

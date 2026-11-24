@@ -84,3 +84,7 @@ DTNSim.main -> SimScenario parses dtnma_params_default.txt + scenario.txt
 
 > [!WARNING] GOTCHA / PITFALL
 > Never read un-sanitized `CONTRIBUTING.md` line pointers (`DISC-03`) — telemetry now lives in `EddTelemetrySampler`, actuators in `ControlAction` / `DtnmaPolicyProfile`, and `verify_and_plot.py` has been removed (`DISC-02`).
+
+## Dependency DAG (`Figure 13`)
+
+![ADTNM Package and Class Dependency DAG](../figures/svg/fig13_codebase_dag.svg)

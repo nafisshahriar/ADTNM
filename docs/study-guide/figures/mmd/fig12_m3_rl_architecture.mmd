@@ -1,0 +1,5 @@
+flowchart LR
+  S["20 Normalized EDD Features (phi)"] --> Q["wReward[8][20] Linear Critic (lambda=0)"]
+  Q --> SH["DtnmaSafetyShield Masking"]
+  SH --> EPS["Epsilon-Greedy Action"]
+  GOS["648B Symmetric Gossip on Contact"] <--> Q

@@ -78,3 +78,7 @@ Because Event A's traffic spike runs only from **`3600–3900 s` (`300 s` durati
 - `DtnmaRlMetricsReport`: `unique_critical_lost = 0`, `critical_buffer_dropped = 0`, `critical_buffer_dropped_acked = 53`
 
 **Reconciliation:** Once `CRIT_` bundles reach their destination, peers exchange `4 B` ACK IDs and move redundant replicas from protected Tier 4 down into Tier 1 (`deliveredAckSet`). When bulk traffic later needs RAM, Tier 1 safely evicts those **`53` already-delivered duplicate copies**, freeing buffer space with **`0` live information loss** — while `DtnmaDecisionReport.messageDeleted` mistakenly counts Tier 1 evictions inside `criticalMessagesDropped` (`DISC-01`).
+
+## Captured Log Evidence
+
+![Annotated Raw Audit and Blackout Log Comparison](../screenshots/annotated/03_audit_rl_excerpts_annotated.png)

@@ -112,3 +112,21 @@ Added strictly *after* freeze on disjoint prime seeds (`7211..7307`) to investig
 
 ### Reproducibility & Post-Freeze Regression Check (`SEED_ROLES.md`)
 Re-running `M0b`, `M1-U`, `M2` across seeds `{7103, 7109}` at `d4a159f` confirmed **`6/6` SHA-256 exact match** on `MessageStatsReport`, `6/6` exact match on `DtnmaRecoveryTimelineReport`, and `6/6` exact non-CPU metrics against the frozen `v1.0-tnsm-freeze` reports.
+
+## Empirical Figures (`Figures 14–21`)
+
+![Seed Governance and Isolation](../figures/svg/fig14_seed_governance.svg)
+
+![Comparison A Across 4 Regimes and 4 Substrates](../figures/svg/fig15_compA_regimes.svg)
+
+![Tier Decomposition and Seed 7103 Blackout Curve](../figures/svg/fig16_compA_tiers_blackout.svg)
+
+![A3 Non-Comment LOC Reuse Efficiency](../figures/svg/fig17_a3_loc_efficiency.svg)
+
+![Confirmatory H1-H4 Forest Plot and Failed H2 Survival NI](../figures/svg/fig18_compB_hypotheses.svg)
+
+![Comparison B Mode Tradeoffs and M3 Negative Result](../figures/svg/fig19_compB_global_vs_event.svg)
+
+![Exploratory Survival Attribution and Flooding Energy](../figures/svg/fig20_exp_survival_attribution.svg)
+
+![Exploratory Wave Adoption CDF curves on Seed 7211](../figures/svg/fig21_exp_wave_adoption_cdf.svg)

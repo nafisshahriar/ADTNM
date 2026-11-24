@@ -269,3 +269,9 @@ When node `53` hits `Q = 0.92` (`P1`, `bpRatio = 0.08`), if its neighbor reports
 
 ### 11. Supervisor Rationale
 Enables distributed congestion backpressure (`VDTN_NEIGHBOR_RELIEF`) and energy relief at fixed `16 B` wire budget per handshake.
+
+## Visual Diagrams (`Figures 10–11`)
+
+![Composition Adapters vs Hand-Coded Inheritance](../figures/svg/fig10_adapter_composition.svg)
+
+![Remote Dissemination Modes vs Local SRL](../figures/svg/fig11_dissemination_modes.svg)

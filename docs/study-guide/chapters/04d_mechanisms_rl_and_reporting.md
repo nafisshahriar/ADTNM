@@ -262,3 +262,7 @@ Smoke row: `30.5  30.5  0  M2_AUTONOMIC_SRL  0.000  ...  STANDARD_SPRAY_FOCUS  P
 
 ### 11. Supervisor Rationale
 Transforms ADTNM from simulation prototype into an auditable management architecture aligned with **RFC 9675 Sec 4.1** traceability goals.
+
+## Experimental RL Architecture (`Figure 12`)
+
+![Optional Shielded CMDP RL Planner Architecture](../figures/svg/fig12_m3_rl_architecture.svg)

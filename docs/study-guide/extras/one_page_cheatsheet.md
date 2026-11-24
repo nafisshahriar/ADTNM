@@ -6,8 +6,8 @@
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE='1'; $THE_ONE="n:\R&D\cog\the-one"; $ADTNM="n:\R&D\cog\ADTNM"
 javac -cp "$THE_ONE\target;$THE_ONE\lib\*" -d "$THE_ONE\target" "$ADTNM\src\routing\*.java" "$ADTNM\src\report\*.java" "$ADTNM\tests\DtnmaUnitTests.java"
-java -cp "$THE_ONE\target;$THE_ONE\lib\*" routing.DtnmaUnitTests   # 27 tests, 30 check() assertions
-python "$ADTNM\tools\parallel_batch_runner.py" --suite compB_exp_controls --dry-run
+java -cp "$THE_ONE\target;$THE_ONE\lib\*" DtnmaUnitTests   # 27 tests, 30 check() assertions
+python "$ADTNM\tools\parallel_batch_runner.py" --scenario "$ADTNM\scenarios\compB_exp_controls_stress.txt" --dry-run
 ```
 
 ## 2. Core Data Flow & Hard Shield (`S1–S4`)
