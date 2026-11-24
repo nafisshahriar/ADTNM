@@ -126,7 +126,7 @@ Events4.tohosts = 0, 120
 Events4.time = 7200, 10800
 Events4.prefix = BULK_SHOCK_
 
-MovementModel.rngSeed = 4001
+MovementModel.rngSeed = [7103; 7109; 7121; 7127; 7129; 7151; 7159; 7177; 7187; 7193; 7207]
 MovementModel.worldSize = 4500, 3400
 MovementModel.warmup = 1000
 
@@ -141,7 +141,7 @@ Optimization.randomizeUpdateOrder = true
 
 Report.nrofReports = 3
 Report.warmup = 0
-Report.reportDir = reports/compA_vdtn_overload
+Report.reportDir = reports/final_11seed/compA_vdtn_overload
 Report.report1 = DtnmaRlMetricsReport
 Report.report2 = DtnmaRecoveryTimelineReport
 Report.report3 = MessageStatsReport

@@ -93,7 +93,7 @@ Events3.hosts = 0, 96
 Events3.tohosts = 96, 100
 Events3.prefix = CRITICAL_FAULT_
 
-MovementModel.rngSeed = 4001
+MovementModel.rngSeed = [7103; 7109; 7121; 7127; 7129; 7151; 7159; 7177; 7187; 7193; 7207]
 MovementModel.worldSize = 9000, 7000
 MovementModel.warmup = 1000
 
@@ -102,7 +102,7 @@ Optimization.randomizeUpdateOrder = true
 
 Report.nrofReports = 3
 Report.warmup = 0
-Report.reportDir = reports/compA_ntn_space
+Report.reportDir = reports/final_11seed/compA_ntn_space
 Report.report1 = DtnmaRlMetricsReport
 Report.report2 = DtnmaRecoveryTimelineReport
 Report.report3 = MessageStatsReport

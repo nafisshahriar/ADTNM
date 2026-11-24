@@ -216,7 +216,7 @@ Events12.tohosts = 0, 120
 Events12.time = 28800, 28930
 Events12.prefix = CTRL_UPDATE_NOMINAL_W3_
 
-MovementModel.rngSeed = 4001
+MovementModel.rngSeed = [7103; 7109; 7121; 7127; 7129; 7151; 7159; 7177; 7187; 7193; 7207]
 MovementModel.worldSize = 4500, 3400
 MovementModel.warmup = 1000
 
@@ -231,7 +231,7 @@ Optimization.randomizeUpdateOrder = true
 
 Report.nrofReports = 4
 Report.warmup = 0
-Report.reportDir = reports/compB_multitimescale
+Report.reportDir = reports/final_11seed/compB_multitimescale
 Report.report1 = DtnmaRlMetricsReport
 Report.report2 = DtnmaRecoveryTimelineReport
 Report.report3 = DtnmaAuditReport
