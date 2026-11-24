@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Statistical analysis and audit-replay verification for post-freeze exploratory controls (v1.0-exp-controls).
 
-Analyzes all 154 fresh-seed runs (seeds 7211..7307, n=11 paired primes) across:
-  - exploratory_v1_0_controls/controls_stress   (M0b, M0e-20, M0e-25, M1-U, M2 -> 55 runs)
-  - exploratory_v1_0_controls/controls_benign   (M0b, M0e-20, M0e-25, M1-U, M2 -> 55 runs)
-  - exploratory_v1_0_controls/groupflood_stress (M1-F-Group, M2                 -> 22 runs)
-  - exploratory_v1_0_controls/groupflood_benign (M1-F-Group, M2                 -> 22 runs)
+Analyzes all 176 fresh-seed runs (seeds 7211..7307, n=11 paired primes) across:
+  - exploratory_v1_0_controls/controls_stress     (M0b, M0e-20, M0e-25, M1-U, M2 -> 55 runs)
+  - exploratory_v1_0_controls/controls_benign     (M0b, M0e-20, M0e-25, M1-U, M2 -> 55 runs)
+  - exploratory_v1_0_controls/m2_localonly_stress (M2-LocalOnly                  -> 11 runs)
+  - exploratory_v1_0_controls/m2_localonly_benign (M2-LocalOnly                  -> 11 runs)
+  - exploratory_v1_0_controls/groupflood_stress   (M1-F-Group, M2                 -> 22 runs)
+  - exploratory_v1_0_controls/groupflood_benign   (M1-F-Group, M2                 -> 22 runs)
 
 Does NOT modify or mix with the frozen v1.0-tnsm-freeze campaign (seeds 7103..7207).
 """
@@ -39,12 +41,13 @@ ROUTER_TO_MODE = {
     "DtnmaM0bStaticRouter": "M0b",
     "DtnmaM0eEnergy20Router": "M0e-20",
     "DtnmaM0eEnergy25Router": "M0e-25",
+    "DtnmaM2LocalOnlyRouter": "M2-LocalOnly",
     "DtnmaM1RemoteRouter": "M1-U",
     "DtnmaM1FloodGroupRouter": "M1-F-Group",
     "DtnmaM2SrlRouter": "M2",
 }
 
-CONTROLS_MODES = ["M0b", "M0e-20", "M0e-25", "M1-U", "M2"]
+CONTROLS_MODES = ["M0b", "M0e-20", "M0e-25", "M2-LocalOnly", "M1-U", "M2"]
 GROUPFLOOD_MODES = ["M1-F-Group", "M2"]
 
 
@@ -254,6 +257,9 @@ def summarize_waves(records: Dict[str, Dict[int, Dict[str, Any]]], mode: str) ->
         "CTRL_GROUP_THROTTLE_W1", "CTRL_GROUP_NOMINAL_W1",
         "CTRL_GROUP_THROTTLE_W2", "CTRL_GROUP_NOMINAL_W2",
         "CTRL_GROUP_THROTTLE_W3", "CTRL_GROUP_NOMINAL_W3",
+        "CTRL_UPDATE_THROTTLE_W1", "CTRL_UPDATE_NOMINAL_W1",
+        "CTRL_UPDATE_THROTTLE_W2", "CTRL_UPDATE_NOMINAL_W2",
+        "CTRL_UPDATE_THROTTLE_W3", "CTRL_UPDATE_NOMINAL_W3",
         "CTRL_THROTTLE_W1", "CTRL_NOMINAL_W1",
         "CTRL_THROTTLE_W2", "CTRL_NOMINAL_W2",
         "CTRL_THROTTLE_W3", "CTRL_NOMINAL_W3",
@@ -293,15 +299,21 @@ def fmt_ps(p: Dict[str, Any], prec: int = 2, unit: str = "") -> str:
     return (
         f"{p['diff']:+.{prec}f} ± {p['ci95_diff']:.{prec}f}{u} "
         f"[{p['low']:+.{prec}f}, {p['high']:+.{prec}f}] "
-        f"(p={p['p_raw']:.3e}, g={p['hedges_g_av']:+.2f}, {p['wins']}/{p['n']})"
+        f"(p_unadj={p['p_raw']:.3e}, g={p['hedges_g_av']:+.2f}, {p['wins']}/{p['n']})"
     )
 
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    ctrl_stress = load_exploratory_dir(REPORTS_BASE / "controls_stress", CONTROLS_MODES)
-    ctrl_benign = load_exploratory_dir(REPORTS_BASE / "controls_benign", CONTROLS_MODES)
+    ctrl_stress_modes = ["M0b", "M0e-20", "M0e-25", "M1-U", "M2"]
+    ctrl_stress = load_exploratory_dir(REPORTS_BASE / "controls_stress", ctrl_stress_modes)
+    ctrl_benign = load_exploratory_dir(REPORTS_BASE / "controls_benign", ctrl_stress_modes)
+    loc_stress = load_exploratory_dir(REPORTS_BASE / "m2_localonly_stress", ["M2-LocalOnly"])
+    loc_benign = load_exploratory_dir(REPORTS_BASE / "m2_localonly_benign", ["M2-LocalOnly"])
+    ctrl_stress["M2-LocalOnly"] = loc_stress["M2-LocalOnly"]
+    ctrl_benign["M2-LocalOnly"] = loc_benign["M2-LocalOnly"]
+
     grp_stress = load_exploratory_dir(REPORTS_BASE / "groupflood_stress", GROUPFLOOD_MODES)
     grp_benign = load_exploratory_dir(REPORTS_BASE / "groupflood_benign", GROUPFLOOD_MODES)
 
@@ -352,7 +364,8 @@ def main() -> None:
     summary: Dict[str, Any] = {
         "campaign": "v1.0-exp-controls",
         "seeds": EXP_SEEDS_11,
-        "runs_verified": 154,
+        "runs_verified": 176,
+        "p_value_note": "All exploratory paired p-values (n=11, df=10) are unadjusted (no multiplicity correction).",
         "tables": {
             "controls_stress": summarize_mode_table(ctrl_stress, CONTROLS_MODES, metrics_spec),
             "controls_benign": summarize_mode_table(ctrl_benign, CONTROLS_MODES, metrics_spec),
@@ -375,6 +388,11 @@ def main() -> None:
         ("M2_vs_M0e-25", "M2", "M0e-25"),
         ("M2_vs_M0b", "M2", "M0b"),
         ("M2_vs_M1-U", "M2", "M1-U"),
+        ("M2_vs_M2-LocalOnly", "M2", "M2-LocalOnly"),
+        ("M2-LocalOnly_vs_M0e-20", "M2-LocalOnly", "M0e-20"),
+        ("M2-LocalOnly_vs_M0e-25", "M2-LocalOnly", "M0e-25"),
+        ("M2-LocalOnly_vs_M1-U", "M2-LocalOnly", "M1-U"),
+        ("M2-LocalOnly_vs_M0b", "M2-LocalOnly", "M0b"),
         ("M0e-25_vs_M1-U", "M0e-25", "M1-U"),
         ("M0e-25_vs_M0b", "M0e-25", "M0b"),
         ("M0e-20_vs_M0b", "M0e-20", "M0b"),
@@ -402,9 +420,6 @@ def main() -> None:
         }
 
     # Group-flood contrasts on matched 7211..7307:
-    # 1) M1-F-Group vs M2 within groupflood_{stress,benign}
-    # 2) M1-F-Group vs M1-U across groupflood_* and controls_* on exact same seed partition 7211..7307
-    # 3) M2 consistency check between groupflood_* and controls_* on matched 7211..7307
     summary["paired"]["groupflood_stress_M1-F-Group_vs_M2"] = {
         m: paired_stats([grp_stress["M1-F-Group"][s][m] for s in EXP_SEEDS_11], [grp_stress["M2"][s][m] for s in EXP_SEEDS_11], better)
         for m, better in pair_metrics
@@ -426,8 +441,12 @@ def main() -> None:
         for m, better in [("alive_frac_pct", "higher"), ("bulk_delivery_pct", "higher"), ("critical_delivery_pct", "higher")]
     }
 
-    # Audit replay verification on all 4 exploratory report folders
-    for folder in ("controls_stress", "controls_benign", "groupflood_stress", "groupflood_benign"):
+    # Audit replay verification on all 6 exploratory report folders
+    for folder in (
+        "controls_stress", "controls_benign",
+        "m2_localonly_stress", "m2_localonly_benign",
+        "groupflood_stress", "groupflood_benign",
+    ):
         summary["audit_replay"][folder] = verify_audit_replay(REPORTS_BASE / folder, SCENARIOS_DIR)
 
     # Save JSON
@@ -440,7 +459,8 @@ def main() -> None:
     lines.append("# Post-Freeze Exploratory Controls Summary (`v1.0-exp-controls`)")
     lines.append("")
     lines.append(f"- **Seed partition:** `{EXP_SEEDS_11}` (`n = 11` fresh primes `> 7207`, completely disjoint from `v1.0-tnsm-freeze` `7103..7207`)")
-    lines.append(f"- **Total runs verified:** `{summary['runs_verified']}/154` (`55 + 55 + 22 + 22`)")
+    lines.append(f"- **Total runs verified:** `{summary['runs_verified']}/176` (`55 + 55 + 11 + 11 + 22 + 22`)")
+    lines.append("- **Inference note:** All `p_unadj` values below are unadjusted paired `t`-test exploratory checks (`n = 11`, `df = 10`, no multiplicity correction).")
     lines.append("")
 
     def add_global_table(title: str, tbl: Dict[str, Any], modes: List[str]) -> None:
@@ -458,8 +478,8 @@ def main() -> None:
             )
         lines.append("")
 
-    add_global_table("1A. Energy-Only Static Controls — Stress (`n=11`)", summary["tables"]["controls_stress"], CONTROLS_MODES)
-    add_global_table("1B. Energy-Only Static Controls — Benign (`n=11`)", summary["tables"]["controls_benign"], CONTROLS_MODES)
+    add_global_table("1A. Energy-Only & Hybrid-Isolation Controls — Stress (`n=11`)", summary["tables"]["controls_stress"], CONTROLS_MODES)
+    add_global_table("1B. Energy-Only & Hybrid-Isolation Controls — Benign (`n=11`)", summary["tables"]["controls_benign"], CONTROLS_MODES)
 
     lines.append("## 1C. Event Windows A, B, C — Controls Stress (`n=11`)")
     lines.append("")
@@ -488,7 +508,7 @@ def main() -> None:
             )
     lines.append("")
 
-    lines.append("## 3. Key Paired Contrasts (Matched `7211..7307`, `df = 10`)")
+    lines.append("## 3. Key Exploratory Paired Contrasts (Matched `7211..7307`, `df = 10`, Unadjusted)")
     lines.append("")
     lines.append("| Contrast | Scenario | Survival Δ (pp) | Stress/Benign Bulk Δ (pp) | Event A Stale Δ (node·s) | Event C Bulk Δ (pp) | Ctrl Tx Energy Δ (J) |")
     lines.append("|---|---|---|---|---|---|---|")
@@ -497,6 +517,12 @@ def main() -> None:
         ("controls_benign_M2_vs_M0e-20", "M2 vs M0e-20", "Benign"),
         ("controls_stress_M2_vs_M0e-25", "M2 vs M0e-25", "Stress"),
         ("controls_benign_M2_vs_M0e-25", "M2 vs M0e-25", "Benign"),
+        ("controls_stress_M2-LocalOnly_vs_M0e-20", "M2-LocalOnly vs M0e-20", "Stress"),
+        ("controls_benign_M2-LocalOnly_vs_M0e-20", "M2-LocalOnly vs M0e-20", "Benign"),
+        ("controls_stress_M2-LocalOnly_vs_M0e-25", "M2-LocalOnly vs M0e-25", "Stress"),
+        ("controls_stress_M2_vs_M2-LocalOnly", "M2 vs M2-LocalOnly", "Stress"),
+        ("controls_benign_M2_vs_M2-LocalOnly", "M2 vs M2-LocalOnly", "Benign"),
+        ("controls_stress_M2-LocalOnly_vs_M1-U", "M2-LocalOnly vs M1-U", "Stress"),
         ("controls_stress_M0e-25_vs_M1-U", "M0e-25 vs M1-U", "Stress"),
         ("controls_benign_M0e-25_vs_M1-U", "M0e-25 vs M1-U", "Benign"),
         ("controls_stress_M0e-25_vs_M0b", "M0e-25 vs M0b", "Stress"),
@@ -531,8 +557,8 @@ def main() -> None:
         f.write("\n".join(lines))
 
     print(f"Wrote {json_path} and {md_path}")
-    print(f"Replay audit controls_stress: {summary['audit_replay']['controls_stress']}")
-    print(f"Replay audit controls_benign: {summary['audit_replay']['controls_benign']}")
+    for folder in ("controls_stress", "controls_benign", "m2_localonly_stress", "m2_localonly_benign", "groupflood_stress", "groupflood_benign"):
+        print(f"Replay audit {folder}: {summary['audit_replay'][folder]}")
 
 
 if __name__ == "__main__":

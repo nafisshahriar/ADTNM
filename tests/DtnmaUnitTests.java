@@ -45,6 +45,7 @@ import routing.DtnmaM1FloodGroupRouter;
 import routing.DtnmaM1FloodRouter;
 import routing.DtnmaM1RemoteRouter;
 import routing.util.EnergyModel;
+import routing.DtnmaM2LocalOnlyRouter;
 import routing.DtnmaM2SrlRouter;
 import routing.DtnmaM3RlRouter;
 import routing.DtnmaManagedRouter;
@@ -1443,6 +1444,118 @@ public class DtnmaUnitTests {
         }
     }
 
+    private static void test22M2LocalOnlyIgnoresRemoteUpdates() {
+        Path tmpDir = null;
+        try {
+            tmpDir = Files.createTempDirectory("dtnma_test22_");
+            String repDir = tmpDir.toAbsolutePath().toString().replace('\\', '/');
+            String rulePath = "n:/R&D/cog/ADTNM/scenarios/rules_vdtn.txt";
+
+            SimScenario.reset();
+            ConnectivityGrid.reset();
+            DTNHost.reset();
+            Message.reset();
+            NetworkInterface.reset();
+            MovementModel.reset();
+
+            String cfg =
+                    "Scenario.name = Test22Scenario\n" +
+                    "Scenario.simulateConnections = false\n" +
+                    "Scenario.updateInterval = 1.0\n" +
+                    "Scenario.endTime = 200\n" +
+                    "Scenario.nrofHostGroups = 2\n" +
+                    "MovementModel.worldSize = 1000, 1000\n" +
+                    "MovementModel.warmup = 0\n" +
+                    "MovementModel.rngSeed = 1\n" +
+                    "Events.nrof = 0\n" +
+                    "bt.type = SimpleBroadcastInterface\n" +
+                    "bt.transmitSpeed = 250000\n" +
+                    "bt.transmitRange = 35\n" +
+                    "Group.movementModel = StationaryMovement\n" +
+                    "Group.bufferSize = 100000\n" +
+                    "Group.msgTtl = 300\n" +
+                    "Group.speed = 1.0, 1.0\n" +
+                    "Group.waitTime = 0, 0\n" +
+                    "Group.nrofInterfaces = 1\n" +
+                    "Group.interface1 = bt\n" +
+                    "Group.initialEnergy = 100.0\n" +
+                    "Group.scanEnergy = 0.0\n" +
+                    "Group.scanResponseEnergy = 0.0\n" +
+                    "Group.transmitEnergy = 0.0\n" +
+                    "Group.energyWarmup = 0\n" +
+                    "Group.rulesFile = " + rulePath + "\n" +
+                    "DtnmaRouter.rulesFile = " + rulePath + "\n" +
+                    "SprayAndWaitRouter.nrofCopies = 6\n" +
+                    "SprayAndWaitRouter.binaryMode = true\n" +
+                    "Group1.groupID = p\n" +
+                    "Group1.nrofHosts = 1\n" +
+                    "Group1.router = DtnmaM2LocalOnlyRouter\n" +
+                    "Group1.nodeLocation = 500, 500\n" +
+                    "Group2.groupID = mgr\n" +
+                    "Group2.nrofHosts = 1\n" +
+                    "Group2.router = DtnmaM1RemoteRouter\n" +
+                    "Group2.nodeLocation = 0, 0\n" +
+                    "Report.warmup = 0\n" +
+                    "Report.reportDir = " + repDir + "\n";
+            Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+            SimClock.reset();
+
+            List<DTNHost> hosts = SimScenario.getInstance().getHosts();
+            DTNHost hLoc = hosts.get(0);
+            DTNHost hMgr = hosts.get(1);
+            DtnmaM2LocalOnlyRouter rLoc = (DtnmaM2LocalOnlyRouter) hLoc.getRouter();
+            rLoc.getDtnmaAgent().loadRulesFromFile(rulePath);
+
+            boolean noReconfig = !rLoc.supportsDynamicControlReconfig();
+
+            SimClock.getInstance().advance(2.0);
+            hLoc.update(false);
+            rLoc.getDtnmaAgent().applyDownlinkControlBundle(new Message(hMgr, hLoc, "CTRL_UPDATE_V1_1", 1024));
+            rLoc.getDtnmaAgent().applyDownlinkControlBundle(new Message(hMgr, hLoc, "CTRL_UPDATE_THROTTLE_W1_0", 1024));
+
+            boolean energyFloorPreserved = Math.abs(rLoc.getDtnmaAgent().getConfig().shieldEnergyMin - 0.20) < 1e-9;
+            boolean noDownlinkOverlay = true;
+            for (StateBasedRule r : rLoc.getDtnmaAgent().getRuleDatabase()) {
+                if (r.getAri() != null && r.getAri().startsWith("ARI://DTNMA/SRL/DOWNLINK_")) {
+                    noDownlinkOverlay = false;
+                }
+            }
+            boolean stillNominalAt100 = rLoc.getCurrentSprayQuota() == 6
+                    && rLoc.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL;
+
+            hLoc.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 18.0);
+            SimClock.getInstance().advance(2.0);
+            hLoc.update(false);
+            boolean triggersAt018 = rLoc.getCurrentSprayQuota() == 1
+                    && rLoc.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY;
+
+            hLoc.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 100.0);
+            SimClock.getInstance().advance(2.0);
+            hLoc.update(false);
+            boolean releasesToNominal = rLoc.getCurrentSprayQuota() == 6
+                    && rLoc.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL;
+
+            check(noReconfig && energyFloorPreserved && noDownlinkOverlay && stillNominalAt100 && triggersAt018 && releasesToNominal,
+                    "Test22: M2-LocalOnly ignores remote CTRL_UPDATE overlays while preserving local rules",
+                    String.format("noRec=%s floor=%s noOv=%s nom100=%s trig018=%s rel=%s",
+                            noReconfig, energyFloorPreserved, noDownlinkOverlay, stillNominalAt100, triggersAt018, releasesToNominal));
+        } catch (Exception e) {
+            e.printStackTrace();
+            check(false, "Test22: M2-LocalOnly ignores remote CTRL_UPDATE overlays",
+                    "Exception: " + e.toString());
+        } finally {
+            SimScenario.reset();
+            ConnectivityGrid.reset();
+            DTNHost.reset();
+            Message.reset();
+            NetworkInterface.reset();
+            MovementModel.reset();
+            if (tmpDir != null) {
+                deleteRecursive(tmpDir.toFile());
+            }
+        }
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -1467,6 +1580,7 @@ public class DtnmaUnitTests {
         test19M0cM0dM1FloodEquivalenceAndEnergyAware();
         test20NominalBackpressureAndAckEvictionSplit();
         test21EnergyOnlyGuardsAndGroupControlBroadcast();
+        test22M2LocalOnlyIgnoresRemoteUpdates();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");

@@ -387,6 +387,9 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
         elif "DtnmaM0eEnergy25Router" in af.name:
             file_rules = rules_by_tag["M0e25"]
             allow_v1 = False
+        elif "DtnmaM2LocalOnlyRouter" in af.name:
+            file_rules = rules_by_tag["base"]
+            allow_v1 = False
         else:
             file_rules = rules_by_tag["base"]
             allow_v1 = True
