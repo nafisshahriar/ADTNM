@@ -1,3 +1,6 @@
+> [!WARNING] SUPERSEDED HISTORICAL DOCUMENT
+> Archived on `2026-11-25` (`d4a159f`). Replaced by [`docs/study-guide/index.md`](../study-guide/index.md) and [`appendices/appendix_d_provenance.md`](../study-guide/appendices/appendix_d_provenance.md).
+
 # Autonomic DTNMA Framework: Mathematical Derivations, Technical Taxonomy, and Publication LaTeX
 
 **Topic:** Mathematical Formulations, Technical Taxonomy, and Paper-Ready Formulations for the RFC 9675 / RFC 7575 Autonomic DTNMA Routing Framework in The ONE Simulator  

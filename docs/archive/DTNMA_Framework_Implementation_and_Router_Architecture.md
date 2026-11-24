@@ -1,3 +1,6 @@
+> [!WARNING] SUPERSEDED HISTORICAL DOCUMENT
+> Archived on `2026-11-25` (`d4a159f`). Replaced by [`docs/study-guide/chapters/03_architecture_overview.md`](../study-guide/chapters/03_architecture_overview.md) and [`chapters/05_codebase_tour.md`](../study-guide/chapters/05_codebase_tour.md).
+
 # Cognitive DTNMA Framework Implementation & Router Architecture Guide
 
 ## 1. High-Level Architecture Overview
