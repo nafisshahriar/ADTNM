@@ -1,0 +1,34 @@
+# Appendix A: Alignment with IETF RFC 9675 & IRTF RFC 7575
+
+> **Scope Statement:** ADTNM is **RFC 9675-inspired** and **RFC 7575-inspired** for architectural separation inside The ONE simulator. It does **not** implement wire-format CBOR encodings, formally authored YANG/ADM schemas, or ION runtime interoperability, and makes zero claim of certification or affiliation with external organizations.
+
+---
+
+## 1. Concept Mapping vs. IETF RFC 9675 (*DTN Management Architecture*, Nov 2024)
+
+| RFC 9675 Section / Concept | RFC Requirement / Architectural Goal | ADTNM Implementation (`d4a159f`) | Explicit Difference / Boundary |
+|---|---|---|---|
+| **Sec 3.1–3.2: Agent & Manager Roles** | Managers issue declarative guidance asynchronously; Agents monitor locally & act without polling | `DtnmaAgent` runs closed-loop autonomously per node; remote scenario hosts emit delayed `CTRL_` overlays (`M1-U`, `M1-F-Group`, `M2`) | Remote Manager schedules in `v1.0` scenarios are pre-scripted waves (`SDR-3`), not an interactive Manager daemon |
+| **Sec 4.1: Application Resource Identifiers (`ARIs`)** | Unambiguous compact naming for managed objects, rules, telemetry, and controls | String URIs (`ARI://DTNMA/SRL/<ID>`, `ARI://DTNMA/SHIELD/<GUARD>`, `ARI://DTNMA/RL/DIRECT`) logged on `100%` of decisions | Text URIs serialized in Java/TSV audit files rather than CBOR-encoded binary DTNMA ARIs |
+| **Sec 4.2: Externally Defined Data (`EDDs`)** | Standardized node-sampled operational metrics decoupled from internal protocol structures | `11` immutable `EDD_*` metrics in `EddTelemetrySampler.java:26-36` sampled uniformly across all routers | Java `double[11]` array indexed by enum; custom ADMs are not loaded dynamically |
+| **Sec 4.3: Controls (Actuators)** | Parameterized node actions altering behavior without code reloads | `4` `ControlAction` primitives + `8` discrete profiles (`P0..P7`) driving `L, bp, ing` hooks via `DtnmaManagedRouter` | Discrete finite gear box (`P0..P7`) chosen for `O(8)` shield decidability |
+| **Sec 4.4: State-Based Autonomy (`SRL`)** | Onboard event-condition-action rules evaluated continuously while disconnected | `DtnmaRuleParser` loads `RULE / IF / THEN` files (`rules_vdtn.txt`, `rules_ntn.txt`) evaluated every `1.0 s` (`M2`) | Flat conjunction (`&&`) or disjunction (`||`) clauses; rules do not call custom external scripts |
+
+---
+
+## 2. Concept Mapping vs. IRTF RFC 7575 (*Autonomic Networking*, June 2015)
+
+| RFC 7575 Principle | Autonomic Goal | ADTNM Mechanism (`04a`–`04d`) | Boundary / Empirical Status |
+|---|---|---|---|
+| **Sec 3.1: Self-Configuring** | Automatically adopt configuration changes upon context shift or intent update | `upsertDownlinkOverlayRule()` integrates remote `CTRL_` waves seamlessly (`PRIO 100`) without restart | Remote waves limited to profile/guard clamps in `v1.0` |
+| **Sec 3.1: Self-Healing** | Recover normal capacity automatically once transient disturbance passes | Catch-all recovery rules (`PRIO 10`, e.g., `VDTN_URBAN_NOMINAL`) + `126/126` recovery across overload (`CompA`) | Missing catch-all rule in experimental `rules_uav.txt` (`DISC-06`) |
+| **Sec 3.1: Self-Optimizing** | Improve throughput/latency continuously within safe resource budgets | Optional `M3` (`ShieldedCmdpRlAgent`) explores Q-values (`P0..P7`); local backpressure (`bp`) spares hot peers | `M3` is `Implemented, experimental` and trailed `M2` in `v1.0` |
+| **Sec 3.1: Self-Protecting** | Defend critical availability & energy survival against storms or battery depletion | `DtnmaSafetyShield` (`S1–S4`) + `5`-tier buffer reserve + Tier 1 ACK pruning (`0` critical loss across `176` runs) | Relies on honest bundle prefixes (`CRIT_`, `CTRL_`); no cryptographic auth |
+| **Sec 4: Explicit Non-Goals** | Autonomy operates strictly inside designer bounds; deterministic auditability preserved | Hard `S1–S4` bitmask blocks unsafe actions + atomic `100.00%` `DtnmaAuditReport` offline replay | Hard shield overrides (`OVERRIDE` column) remain traceable to specific EDD readings |
+
+---
+
+## 3. Related IETF/IRTF Protocols Referenced Accurately
+
+- **RFC 9171** (*Bundle Protocol Version 7*, S. Burleigh, K. Fall, E. Birrane, III, IETF Proposed Standard, January 2022) — Store-carry-forward bundle model emulated in The ONE.
+- **RFC 6693** (*Probabilistic Routing Protocol for Intermittently Connected Networks [PRoPHET]*, A. Lindgren, A. Doria, E. Davies, S. Grasic, IRTF Experimental, August 2012) — Managed substrate implemented by `ProphetV2Router` / `ManagedProphetV2Router`.

@@ -16,7 +16,7 @@
 
 ---
 
-## Mechanism 07: Declarative State-Based Rule (`SRL`) Parser & Predicate AST
+## Mechanism 07: Declarative State-Based Rule (`SRL`) Parser & Predicate Expression Tree
 
 ### 1. Purpose & Problem Solved
 Allows operators to express autonomic policies in human-readable `.txt` files (`12` non-comment lines in `rules_vdtn.txt`) without writing, compiling, or redeploying router Java code.
@@ -24,41 +24,43 @@ Allows operators to express autonomic policies in human-readable `.txt` files (`
 ### 2. Design Alternatives Considered
 - **Hard-coded `if/else` in Java (`EnergyAwareEpidemicRouter`, `394` LOC):** Zero portability across substrates or scenarios; cannot accept dynamic remote updates.
 - **External scripting runtime (Lua/JS):** Adds JVM serialization complexity and non-deterministic garbage collection overhead.
-- **Selected recursive-descent predicate AST (`PredicateExpression` + `DtnmaRuleParser`):** Lightweight pure Java, deterministic `double` comparisons, instant string explanations for `ARI` logs.
+- **Selected declarative clause evaluator (`PredicateExpression` + `DtnmaRuleParser`):** Lightweight pure Java, deterministic `double` comparisons, instant `[EDD(val) op thresh -> TRUE/FALSE]` strings for `ARI` logs.
 
 ### 3. Architecture & Data Flow
-`Scenario rule file` -> `DtnmaRuleParser.parseRulesFile(...)` -> Compiles each `IF (<expr>) THEN <ACTION/PROFILE> [LATCH <sec>] [PRIO <int>] [ID <name>]` into a sorted list of immutable `StateBasedRule` AST objects.
+`Scenario rule file` (`Group.rulesFile` / `DtnmaRouter.rulesFile`) -> `DtnmaRuleParser.parseRulesFile(...)` -> Compiles each `RULE: <ARI> | PRIORITY: <int> | DESC: <text>` + `IF: <clauses>` + `THEN: CTRL_SET_*` block into a priority-sorted list of `StateBasedRule` objects.
 
 ### 4. Inputs & Configuration
-`dtnmaRuleFile` (e.g. `scenarios/rules_vdtn.txt`, `scenarios/rules_ntn.txt`, experimental `scenarios/rules_uav.txt`); grammar supports comparisons (`>=`, `<=`, `>`, `<`, `==`), boolean operators (`AND`, `OR`, `NOT`), and parenthesized grouping `( ... )`.
+`Group.rulesFile` / `DtnmaRouter.rulesFile` (`scenarios/rules_vdtn.txt`, `scenarios/rules_ntn.txt`, experimental `scenarios/rules_uav.txt`); comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`), `&&` conjunction or `||` disjunction, and `4` `ControlAction` setters (`CTRL_SET_SPRAY_QUOTA`, `CTRL_SET_INGRESS_MODE`, `CTRL_SET_TELEMETRY_INTERVAL`, `CTRL_SET_BACKPRESSURE`).
 
 ### 5. Algorithm & Exact Math / Equations
-Recursive-descent grammar:
-$$\text{Expr} \to \text{Term} \ (\text{OR}\ \text{Term})^*,\quad \text{Term} \to \text{Factor}\ (\text{AND}\ \text{Factor})^*$$
-$$\text{Factor} \to \text{NOT}\ \text{Factor}\ |\ (\text{Expr})\ |\ \text{EDD\_KEY}\ \text{op}\ \mathbb{R}$$
-During `evaluateAndExplain(double[] edds)`: evaluates left-to-right **without short-circuiting string trace output**, returning boolean result plus human-readable `[EDD(val) op thresh -> TRUE/FALSE]` provenance trace.
+Flat clause expression structure (`DtnmaRuleParser.java:117-137`):
+- Conjunction (`&&`): evaluates all `(EDD op threshold)` clauses (`all match -> true`).
+- Disjunction (`||`): evaluates clauses when `ifClause.contains("||")` (`any match -> true`).
+During `evaluate(...)` (`PredicateExpression.java:31-49`): evaluates **every** clause without short-circuiting so audit logs show full `[EDD(val) op thresh -> TRUE/FALSE]` provenance (`Math.abs(a - b) < 1e-6` for `==`).
 
 ### 6. Code Anchors
-- `src/routing/PredicateExpression.java:1-145` (`evaluateAndExplain`)
+- `src/routing/PredicateExpression.java:1-145`
 - `src/routing/StateBasedRule.java:1-81`
-- `src/routing/DtnmaRuleParser.java:1-160`
+- `src/routing/DtnmaRuleParser.java:59-165`
 
 ### 7. Outputs, Telemetry & Logs
-Every matched `SRL` rule emits `ARI://DTNMA/SRL/<RULE_ID>` and its exact evaluated predicate trace into `DtnmaAuditReport` column `16`.
+Every matched `SRL` rule emits its `ARI://DTNMA/SRL/<RULE_ID>` header and full clause trace into `DtnmaAuditReport` column `21`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
-Syntax errors fail loudly on load via unit-tested parser checks (`Test9`–`Test13` in `DtnmaUnitTests.java`); missing rule file gracefully defaults to `P4` nominal fallback when non-SRL modes run.
+Rules cannot mix nested `&&` and `||` inside a single `IF:` clause (`||` switches the whole rule to disjunction mode, `DtnmaRuleParser.java:120`). Missing file paths throw `IOException` explicitly (`:41`); rules are sorted descending by priority on load (`:113`).
 
 ### 9. Worked Mini-Example
 `scenarios/rules_vdtn.txt`:
-`IF (EDD_QUEUE_RATIO >= 0.88 AND EDD_QUEUE_DRIFT >= 0.008) THEN P1 LATCH 120.0 PRIO 85 ID VDTN_SURGE_THROTTLE`
+`RULE: ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE | PRIORITY: 80 | DESC: ...`
+`IF: (EDD_QUEUE_RATIO >= 0.88) && (EDD_QUEUE_DRIFT >= 0.008)`
+`THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)`
 Evaluated on seed `7103` at `t = 3360.5 s`: `[EDD_QUEUE_RATIO(0.92) >= 0.88 -> TRUE] AND [EDD_QUEUE_DRIFT(0.01) >= 0.01 -> TRUE]`.
 
 ### 10. Status Label & Evolution
 `Implemented+tested` (`v1.0-tnsm-freeze`). (`rules_uav.txt` is `Implemented, experimental / Not evaluated in v1.0`; see `DISC-06`).
 
 ### 11. Supervisor Rationale
-**A3 LOC proof:** `12` lines of declarative rules match `~97%` of a `394`-line bespoke Java router while running portably across all four substrates.
+**A3 LOC verification:** `12` non-comment lines of declarative rules match `~97%` of a `394`-line bespoke Java router while running portably across all four substrates.
 
 ---
 
