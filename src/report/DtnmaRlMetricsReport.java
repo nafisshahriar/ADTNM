@@ -72,6 +72,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         long bulkRejectedSrc = 0L;
 
         Set<String> critEvictedIds = new HashSet<String>();
+        Set<String> critEvictedAckedIds = new HashSet<String>();
         Set<String> bulkEvictedIds = new HashSet<String>();
         Set<String> critTtlIds = new HashSet<String>();
         Set<String> bulkTtlIds = new HashSet<String>();
@@ -100,6 +101,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
     private int criticalCreated = 0;
     private int criticalDelivered = 0;
     private int criticalBufferDropped = 0;
+    private int criticalBufferDroppedAcked = 0;
     private int criticalTtlExpired = 0;
 
     private int bulkCreated = 0;
@@ -168,6 +170,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         this.criticalCreated = 0;
         this.criticalDelivered = 0;
         this.criticalBufferDropped = 0;
+        this.criticalBufferDroppedAcked = 0;
         this.criticalTtlExpired = 0;
         this.bulkCreated = 0;
         this.bulkDelivered = 0;
@@ -312,6 +315,18 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         }
         if (h.getRouter() instanceof EnergyAwareEpidemicRouter) {
             return ((EnergyAwareEpidemicRouter) h.getRouter()).isThrottleActive();
+        }
+        return false;
+    }
+
+    public static boolean isHostKnownAcked(DTNHost where, Message m) {
+        if (where == null || m == null) return false;
+        if (where.getRouter() instanceof DtnmaManagedRouter) {
+            DtnmaAgent dr = ((DtnmaManagedRouter) where.getRouter()).getDtnmaAgent();
+            return dr != null && dr.isAcked(m);
+        }
+        if (where.getRouter() instanceof EnergyAwareEpidemicRouter) {
+            return ((EnergyAwareEpidemicRouter) where.getRouter()).isAcked(m);
         }
         return false;
     }
@@ -655,12 +670,14 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
             double now = getSimTime();
             boolean isCrit = DtnmaRouter.isCriticalMessage(m);
             boolean isTtlExpired = (m.getTtl() <= 0);
+            boolean ackedAtHost = isCrit && !isTtlExpired && isHostKnownAcked(where, m);
             MsgLifecycleRecord rec = this.msgRecords.get(m.getId());
             if (rec != null && !rec.isCtrl && rec.eventMask != 0) {
                 for (EventWindowState w : this.eventWindows) {
                     if ((rec.eventMask & w.bit) != 0 && now >= w.tStart && now <= w.tEnd + w.horizon) {
                         if (isCrit) {
                             if (isTtlExpired) w.critTtlIds.add(m.getId());
+                            else if (ackedAtHost) w.critEvictedAckedIds.add(m.getId());
                             else w.critEvictedIds.add(m.getId());
                         } else {
                             if (isTtlExpired) w.bulkTtlIds.add(m.getId());
@@ -672,6 +689,8 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
             if (isCrit) {
                 if (isTtlExpired) {
                     criticalTtlExpired++;
+                } else if (ackedAtHost) {
+                    criticalBufferDroppedAcked++;
                 } else {
                     criticalBufferDropped++;
                     criticalBufferDroppedIds.add(m.getId());
@@ -1009,6 +1028,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         sb.append("critical_created: ").append(criticalCreated).append("\n");
         sb.append("critical_delivered: ").append(criticalDelivered).append("\n");
         sb.append("critical_buffer_dropped: ").append(criticalBufferDropped).append("\n");
+        sb.append("critical_buffer_dropped_acked: ").append(criticalBufferDroppedAcked).append("\n");
         sb.append("unique_critical_lost: ").append(uniqueCriticalLost).append("\n");
         sb.append("critical_ttl_expired: ").append(criticalTtlExpired).append("\n");
         sb.append(String.format(Locale.US, "critical_delivery_prob: %.4f\n", critDeliveryProb));
@@ -1144,6 +1164,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
             sb.append("\n").append(p).append(String.format(Locale.US, "crit_lat_med_s: %.4f", critLatMed));
             sb.append("\n").append(p).append(String.format(Locale.US, "crit_lat_p95_s: %.4f", critLatP95W));
             sb.append("\n").append(p).append("crit_evicted: ").append(w.critEvictedIds.size());
+            sb.append("\n").append(p).append("crit_evicted_acked: ").append(w.critEvictedAckedIds.size());
             sb.append("\n").append(p).append("crit_unique_lost: ").append(critUniqueLostW);
             sb.append("\n").append(p).append("crit_ttl_expired: ").append(w.critTtlIds.size());
             sb.append("\n").append(p).append("crit_rejected_src: ").append(w.critRejectedSrc);

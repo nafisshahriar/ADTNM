@@ -52,7 +52,7 @@ public class EnergyAwareEpidemicRouter extends EpidemicRouter {
 
     private double initialEnergy = 1.0;
     private int ingressMode = DtnmaRouter.INGRESS_ACCEPT_ALL;
-    private boolean backpressureEnabled = false;
+    private boolean backpressureEnabled = true;
 
     private double lastEvalTime = -1.0;
     private double lastSampleTime = 0.0;
@@ -108,6 +108,10 @@ public class EnergyAwareEpidemicRouter extends EpidemicRouter {
         long bSize = getBufferSize();
         if (bSize <= 0) return 0.0;
         return (double) (bSize - getFreeBufferSize()) / bSize;
+    }
+
+    public boolean isAcked(Message m) {
+        return this.deliveredAckSet != null && m != null && this.deliveredAckSet.containsKey(m.getId());
     }
 
     private double getCachedCriticalOccupancyRatio() {
@@ -232,7 +236,7 @@ public class EnergyAwareEpidemicRouter extends EpidemicRouter {
             this.backpressureEnabled = true;
         } else {
             this.ingressMode = DtnmaRouter.INGRESS_ACCEPT_ALL;
-            this.backpressureEnabled = false;
+            this.backpressureEnabled = true;
         }
     }
 

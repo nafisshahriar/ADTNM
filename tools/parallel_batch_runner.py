@@ -308,6 +308,8 @@ def main():
         print("=" * 72)
         sys.exit(0)
 
+    os.makedirs(report_dir_abs, exist_ok=True)
+
     cpu_count = multiprocessing.cpu_count()
     workers = args.workers if args.workers else max(1, cpu_count // 2)
 

@@ -8,10 +8,14 @@
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import core.DTNHost;
 import core.Message;
@@ -21,6 +25,9 @@ import core.MovementListener;
 import core.NetworkInterface;
 import core.Settings;
 import core.SimClock;
+import core.SimScenario;
+import report.DtnmaRlMetricsReport;
+import interfaces.ConnectivityGrid;
 import interfaces.SimpleBroadcastInterface;
 import movement.MovementModel;
 import movement.StationaryMovement;
@@ -1098,6 +1105,177 @@ public class DtnmaUnitTests {
                         m0dM1fOk, eaeProtected));
     }
 
+    private static void deleteRecursive(File f) {
+        if (f == null || !f.exists()) return;
+        File[] children = f.listFiles();
+        if (children != null) {
+            for (File c : children) {
+                deleteRecursive(c);
+            }
+        }
+        f.delete();
+    }
+
+    private static void test20NominalBackpressureAndAckEvictionSplit() {
+        String rulePath = new File("scenarios/rules_vdtn.txt").isFile()
+                ? "scenarios/rules_vdtn.txt" : "../ADTNM/scenarios/rules_vdtn.txt";
+        String ntnPath = new File("scenarios/rules_ntn.txt").isFile()
+                ? "scenarios/rules_ntn.txt" : "../ADTNM/scenarios/rules_ntn.txt";
+
+        Path tmpDir = null;
+        try {
+            tmpDir = Files.createTempDirectory("dtnma_test20_");
+            String repDir = tmpDir.toAbsolutePath().toString().replace('\\', '/');
+
+            SimScenario.reset();
+            ConnectivityGrid.reset();
+            DTNHost.reset();
+            Message.reset();
+            NetworkInterface.reset();
+            MovementModel.reset();
+            String cfg =
+                    "Scenario.name = Test20Scenario\n" +
+                    "Scenario.simulateConnections = true\n" +
+                    "Scenario.updateInterval = 1.0\n" +
+                    "Scenario.endTime = 200\n" +
+                    "Scenario.nrofHostGroups = 3\n" +
+                    "MovementModel.worldSize = 100, 100\n" +
+                    "MovementModel.warmup = 0\n" +
+                    "MovementModel.rngSeed = 1\n" +
+                    "Events.nrof = 0\n" +
+                    "bt.type = SimpleBroadcastInterface\n" +
+                    "bt.transmitSpeed = 250000\n" +
+                    "bt.transmitRange = 100\n" +
+                    "Group.movementModel = StationaryMovement\n" +
+                    "Group.bufferSize = 500000\n" +
+                    "Group.msgTtl = 300\n" +
+                    "Group.speed = 1.0, 1.0\n" +
+                    "Group.waitTime = 0, 0\n" +
+                    "Group.nodeLocation = 0, 0\n" +
+                    "Group.nrofInterfaces = 1\n" +
+                    "Group.interface1 = bt\n" +
+                    "SprayAndWaitRouter.nrofCopies = 6\n" +
+                    "SprayAndWaitRouter.binaryMode = true\n" +
+                    "DtnmaRouter.rulesFile = " + rulePath.replace('\\', '/') + "\n" +
+                    "Group1.groupID = m\n" +
+                    "Group1.nrofHosts = 1\n" +
+                    "Group1.router = DtnmaM2SrlRouter\n" +
+                    "Group1.nodeLocation = 500, 500\n" +
+                    "Group2.groupID = e\n" +
+                    "Group2.nrofHosts = 2\n" +
+                    "Group2.router = EnergyAwareEpidemicRouter\n" +
+                    "Group2.nodeLocation = 0, 0\n" +
+                    "Group3.groupID = d\n" +
+                    "Group3.nrofHosts = 1\n" +
+                    "Group3.router = ManagedEpidemicRouter\n" +
+                    "Group3.nodeLocation = 500, 500\n" +
+                    "Report.warmup = 0\n" +
+                    "Report.reportDir = " + repDir + "\n" +
+                    "DtnmaRlMetricsReport.eventA = 0, 100\n" +
+                    "DtnmaRlMetricsReport.eventHorizon = 100\n";
+            Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+            SimClock.reset();
+
+            List<DTNHost> hosts = SimScenario.getInstance().getHosts();
+            DTNHost hM2 = hosts.get(0);
+            DTNHost hEaeA = hosts.get(1);
+            DTNHost hEaeB = hosts.get(2);
+            DTNHost hDst = hosts.get(3);
+
+            // 1. Check M2 with rules_vdtn.txt & rules_ntn.txt nominal backpressure == true (P3)
+            DtnmaM2SrlRouter rM2 = (DtnmaM2SrlRouter) hM2.getRouter();
+            rM2.getDtnmaAgent().loadRulesFromFile(rulePath);
+            SimClock.getInstance().advance(2.0);
+            hM2.update(false);
+            boolean vdtnBpOk = rM2.getDtnmaAgent().isBackpressureEnabled() && rM2.getLastExecutedProfile() == 3;
+
+            rM2.getDtnmaAgent().loadRulesFromFile(ntnPath);
+            SimClock.getInstance().advance(2.0);
+            hM2.update(false);
+            boolean ntnBpOk = rM2.getDtnmaAgent().isBackpressureEnabled() && rM2.getLastExecutedProfile() == 3;
+
+            // 2. Check EnergyAwareEpidemicRouter nominal backpressure holds bulk at peerQ=0.80 while sending critical
+            EnergyAwareEpidemicRouter rEaeA = (EnergyAwareEpidemicRouter) hEaeA.getRouter();
+            EnergyAwareEpidemicRouter rEaeB = (EnergyAwareEpidemicRouter) hEaeB.getRouter();
+            rEaeB.createNewMessage(new Message(hEaeB, hDst, "BULK_FILL_400K", 400000));
+            rEaeA.createNewMessage(new Message(hEaeA, hDst, "BULK_BP_HOLD", 1000));
+            hEaeA.forceConnection(hEaeB, null, true);
+            SimClock.getInstance().advance(2.0);
+            hEaeA.update(true);
+            boolean eaeHoldBulk = !rEaeA.isTransferring();
+            rEaeA.createNewMessage(new Message(hEaeA, hDst, "CRITICAL_BP_BYPASS", 1000));
+            SimClock.getInstance().advance(2.0);
+            hEaeA.update(true);
+            boolean eaeAllowCrit = rEaeA.isSending("CRITICAL_BP_BYPASS") && !rEaeA.isSending("BULK_BP_HOLD");
+            hEaeA.forceConnection(hEaeB, null, false);
+
+            // 3. Verify isHostKnownAcked + DtnmaRlMetricsReport ACKed vs un-ACKed eviction split
+            SimClock.getInstance().setTime(10.0);
+            DtnmaRlMetricsReport rep = new DtnmaRlMetricsReport();
+            Message mAcked = new Message(hDst, hEaeB, "CRITICAL_ACKED_20", 1000);
+            Message mUnacked = new Message(hEaeB, hDst, "CRITICAL_UNACKED_20", 1000);
+            ManagedEpidemicRouter rDtnma = (ManagedEpidemicRouter) hDst.getRouter();
+            rDtnma.getDtnmaAgent().ensureSubsystemsInitialized();
+
+            boolean beforeAckFalse = !DtnmaRlMetricsReport.isHostKnownAcked(hDst, mAcked)
+                    && !DtnmaRlMetricsReport.isHostKnownAcked(hEaeB, mAcked);
+            rep.newMessage(mAcked);
+            rep.newMessage(mUnacked);
+
+            SimClock.getInstance().setTime(20.0);
+            rDtnma.getDtnmaAgent().getDeliveredAckSet().put(mAcked.getId(), Boolean.TRUE);
+            rEaeB.receiveMessage(mAcked, hDst);
+            rEaeB.messageTransferred(mAcked.getId(), hDst);
+            boolean afterAckTrue = DtnmaRlMetricsReport.isHostKnownAcked(hDst, mAcked)
+                    && DtnmaRlMetricsReport.isHostKnownAcked(hEaeB, mAcked)
+                    && !DtnmaRlMetricsReport.isHostKnownAcked(hEaeB, mUnacked);
+
+            rep.messageTransferred(mAcked, hDst, hEaeB, true);
+            SimClock.getInstance().setTime(30.0);
+            rep.messageDeleted(mAcked, hDst, true);
+            rep.messageDeleted(mUnacked, hEaeB, true);
+
+            SimClock.getInstance().setTime(50.0);
+            rep.done();
+
+            Path outFile = tmpDir.resolve("Test20Scenario_DtnmaRlMetricsReport.txt");
+            Map<String, String> kv = new HashMap<String, String>();
+            for (String line : Files.readAllLines(outFile, StandardCharsets.UTF_8)) {
+                int idx = line.indexOf(": ");
+                if (idx > 0) {
+                    kv.put(line.substring(0, idx).trim(), line.substring(idx + 2).trim());
+                }
+            }
+            boolean reportSplitOk = "1".equals(kv.get("critical_buffer_dropped"))
+                    && "1".equals(kv.get("critical_buffer_dropped_acked"))
+                    && "1".equals(kv.get("unique_critical_lost"))
+                    && "1".equals(kv.get("eventA_crit_evicted"))
+                    && "1".equals(kv.get("eventA_crit_evicted_acked"))
+                    && "1".equals(kv.get("eventA_crit_unique_lost"));
+
+            check(vdtnBpOk && ntnBpOk && eaeHoldBulk && eaeAllowCrit && beforeAckFalse && afterAckTrue && reportSplitOk,
+                    "Test20: Nominal backpressure (P3), isHostKnownAcked, & ACKed critical eviction split work cleanly",
+                    String.format("vdtnBp=%s ntnBp=%s eaeHold=%s eaeCrit=%s ackPre=%s ackPost=%s split=%s(cbd=%s,cbda=%s,ev=%s,eva=%s,ul=%s)",
+                            vdtnBpOk, ntnBpOk, eaeHoldBulk, eaeAllowCrit, beforeAckFalse, afterAckTrue, reportSplitOk,
+                            kv.get("critical_buffer_dropped"), kv.get("critical_buffer_dropped_acked"),
+                            kv.get("eventA_crit_evicted"), kv.get("eventA_crit_evicted_acked"),
+                            kv.get("eventA_crit_unique_lost")));
+        } catch (Exception e) {
+            check(false, "Test20: Nominal backpressure (P3), isHostKnownAcked, & ACKed critical eviction split",
+                    "Exception: " + e.toString());
+        } finally {
+            SimScenario.reset();
+            ConnectivityGrid.reset();
+            DTNHost.reset();
+            Message.reset();
+            NetworkInterface.reset();
+            MovementModel.reset();
+            if (tmpDir != null) {
+                deleteRecursive(tmpDir.toFile());
+            }
+        }
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -1120,6 +1298,7 @@ public class DtnmaUnitTests {
         test17StaticOracleFamilyL8L12();
         test18InterventionTiersPresetsAndCatchAllRule();
         test19M0cM0dM1FloodEquivalenceAndEnergyAware();
+        test20NominalBackpressureAndAckEvictionSplit();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");
