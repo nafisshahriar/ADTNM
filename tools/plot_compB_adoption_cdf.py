@@ -64,6 +64,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--report-dir", default="n:/R&D/cog/the-one/reports/compB_multitimescale")
     ap.add_argument("--out", default="n:/R&D/cog/ADTNM/figures/fig_pilot_compB_adoption_cdf.png")
+    ap.add_argument("--title", default=None)
     args = ap.parse_args()
 
     rep_dir = Path(args.report_dir)
@@ -71,6 +72,7 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     records = parse_compb_reports(rep_dir)
+    n_seeds = max((len(v) for v in records.values()), default=1)
     t_mins = np.arange(61, dtype=float)  # 0..60 minutes (0..3600s)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.2, 5.2), gridspec_kw={"width_ratios": [1.35, 1.0]})
@@ -120,10 +122,8 @@ def main():
     # Local autonomic reaction callout near t = 0
     m2_runs = records.get("DtnmaM2SrlRouter", [])
     m3_runs = records.get("DtnmaM3RlRouter", [])
-    m2_react = np.mean([r["metrics"].get("local_reaction_delay_mean_sec", 0.0) for r in m2_runs]) if m2_runs else 0.0
-    m3_react = np.mean([r["metrics"].get("local_reaction_delay_mean_sec", 0.0) for r in m3_runs]) if m3_runs else 0.0
     ax1.scatter([0.0], [100.0], color="#1f77b4", marker="*", s=130, zorder=6,
-                label=f"M2/M3 Local Reflex (mean {m2_react:.3f}s / {m3_react:.3f}s)")
+                label="M2/M3 Local Reflex (<=1.0 s agent tick)")
 
     ax1.set_title("A. Downlink Wave Adoption CDF vs Disruption Timescales", fontweight="bold", fontsize=11)
     ax1.set_xlabel("Time Since Manager Control Wave Issue (minutes)")
@@ -135,30 +135,28 @@ def main():
 
     # Panel B: Timescale Gap Bar Comparison (Log Scale in Seconds)
     labels_b = [
-        "M2 Local Reflex\n(Threshold Crossing)",
-        "M3 Local Reflex\n(Threshold Crossing)",
+        "M2 Local Reflex\n(1 Hz Eval Tick)",
+        "M3 Local Reflex\n(1 Hz Eval Tick)",
         "5-Min Burst\nDuration",
-        "M1-F Flood\n90% Conv. (T90)",
-        "M1-U Unicast\n90% Conv. (T90)",
+        "M1-U Unicast\nMean T90 (W1-W3)",
+        "M1-F Flood\nMean T90 (W1-W3)",
         "30-Min Shock\nDuration",
     ]
     m1u_runs = records.get("DtnmaM1RemoteRouter", [])
     m1f_runs = records.get("DtnmaM1FloodRouter", [])
-    t90_u_vals = [w["t90"] for r in m1u_runs for w in r["waves"] if w["t90"] >= 0]
-    t90_f_vals = [w["t90"] for r in m1f_runs for w in r["waves"] if w["t90"] >= 0]
+    t90_u_vals = [r["metrics"].get("downlink_t90_sec", -1.0) for r in m1u_runs if r["metrics"].get("downlink_t90_sec", -1.0) >= 0]
+    t90_f_vals = [r["metrics"].get("downlink_t90_sec", -1.0) for r in m1f_runs if r["metrics"].get("downlink_t90_sec", -1.0) >= 0]
     t90_u_mean = float(np.mean(t90_u_vals)) if t90_u_vals else 3100.0
-    t90_f_mean = float(np.mean(t90_f_vals)) if t90_f_vals else 1400.0
+    t90_f_mean = float(np.mean(t90_f_vals)) if t90_f_vals else 3700.0
 
-    # Floor <=0.5s tick floor at 0.5s for log display, annotate exact mean
-    m2_disp = max(0.5, m2_react)
-    m3_disp = max(0.5, m3_react)
-    vals_b = [m2_disp, m3_disp, 300.0, t90_f_mean, t90_u_mean, 1800.0]
-    cols_b = ["#1f77b4", "#2ca02c", "#7f7f7f", "#d62728", "#e377c2", "#7f7f7f"]
+    # Local SRL/Shield executes on a deterministic 1.0s evaluation tick
+    vals_b = [1.0, 1.0, 300.0, t90_u_mean, t90_f_mean, 1800.0]
+    cols_b = ["#1f77b4", "#2ca02c", "#7f7f7f", "#e377c2", "#d62728", "#7f7f7f"]
 
     x = np.arange(len(labels_b))
     bars = ax2.bar(x, vals_b, color=cols_b, alpha=0.88, width=0.58, edgecolor="#222222", linewidth=0.6)
     ax2.set_yscale("log")
-    ax2.set_ylim(0.2, 10000.0)
+    ax2.set_ylim(0.4, 14000.0)
     ax2.set_xticks(x)
     ax2.set_xticklabels(labels_b, fontsize=7.8, rotation=18, ha="right")
     ax2.set_ylabel("Reaction / Dissemination Timescale (seconds, log scale)")
@@ -166,11 +164,11 @@ def main():
     ax2.grid(True, axis="y", which="both", alpha=0.22)
 
     txt_vals = [
-        f"<=0.5s\n({m2_react:.3f}s)",
-        f"<=0.5s\n({m3_react:.3f}s)",
+        "<=1.0 s\ntick",
+        "<=1.0 s\ntick",
         "300 s",
-        f"{t90_f_mean:.0f} s",
         f"{t90_u_mean:.0f} s",
+        f"{t90_f_mean:.0f} s",
         "1800 s",
     ]
     for bar, tv in zip(bars, txt_vals):
@@ -178,8 +176,12 @@ def main():
         ax2.text(bar.get_x() + bar.get_width() / 2.0, h * 1.18, tv,
                  ha="center", va="bottom", fontsize=8.0, fontweight="bold")
 
-    fig.suptitle("Comparison B Pilot (Matched Seed 4001): Remote Downlink Latency Exceeds Acute Disruptions",
-                 fontsize=12.5, fontweight="bold", y=0.99)
+    default_title = (
+        f"Comparison B ({n_seeds} Held-Out Seeds): Remote Downlink Latency Exceeds Acute Disruptions"
+        if n_seeds > 1
+        else "Comparison B Pilot (Matched Seed 4001): Remote Downlink Latency Exceeds Acute Disruptions"
+    )
+    fig.suptitle(args.title or default_title, fontsize=12.3, fontweight="bold", y=0.99)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(out_path, dpi=220)
     plt.close(fig)

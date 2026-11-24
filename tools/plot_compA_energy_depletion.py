@@ -45,13 +45,20 @@ def load_series(report_dir: Path, router_name: str):
             runs_soc.append(np.array(sc))
     if not runs_t:
         return None
-    return runs_t[0], np.mean(np.vstack(runs_alive), axis=0), np.mean(np.vstack(runs_soc), axis=0)
+    n = len(runs_t)
+    al_m = np.vstack(runs_alive)
+    sc_m = np.vstack(runs_soc)
+    tcrit = 2.228 if n == 11 else (2.776 if n == 5 else 1.96)
+    al_ci = tcrit * np.std(al_m, axis=0, ddof=1) / np.sqrt(n) if n > 1 else np.zeros_like(runs_t[0])
+    sc_ci = tcrit * np.std(sc_m, axis=0, ddof=1) / np.sqrt(n) if n > 1 else np.zeros_like(runs_t[0])
+    return runs_t[0], np.mean(al_m, axis=0), al_ci, np.mean(sc_m, axis=0), sc_ci, n
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--report-dir", default="n:/R&D/cog/the-one/reports/compA_energy_blackout")
     ap.add_argument("--out", default="n:/R&D/cog/ADTNM/figures/fig_pilot_compA_energy_depletion.png")
+    ap.add_argument("--title", default=None)
     args = ap.parse_args()
 
     rep_dir = Path(args.report_dir)
@@ -62,17 +69,26 @@ def main():
     for ax in (ax1, ax2):
         ax.axvspan(2.0, 4.0, color="#fde2e2", alpha=0.55, label="Burst Overload (2-4 h)" if ax is ax1 else None)
 
+    n_seeds = 1
     for unm, man, label, col in PAIRS:
         s_u = load_series(rep_dir, unm)
         s_m = load_series(rep_dir, man)
         if s_u is not None:
-            t, al, sc = s_u
+            t, al, al_ci, sc, sc_ci, n = s_u
+            n_seeds = max(n_seeds, n)
             ax1.plot(t, al, color=col, linestyle="--", linewidth=1.9, alpha=0.85, label=f"{label} (Stock)")
             ax2.plot(t, sc, color=col, linestyle="--", linewidth=1.9, alpha=0.85, label=f"{label} (Stock)")
+            if n > 1:
+                ax1.fill_between(t, al - al_ci, al + al_ci, color=col, alpha=0.10)
+                ax2.fill_between(t, sc - sc_ci, sc + sc_ci, color=col, alpha=0.10)
         if s_m is not None:
-            t, al, sc = s_m
+            t, al, al_ci, sc, sc_ci, n = s_m
+            n_seeds = max(n_seeds, n)
             ax1.plot(t, al, color=col, linestyle="-", linewidth=2.3, label=f"{label} + DTNMA")
             ax2.plot(t, sc, color=col, linestyle="-", linewidth=2.3, label=f"{label} + DTNMA")
+            if n > 1:
+                ax1.fill_between(t, al - al_ci, al + al_ci, color=col, alpha=0.14)
+                ax2.fill_between(t, sc - sc_ci, sc + sc_ci, color=col, alpha=0.14)
 
     ax1.set_title("A. Node Survival Trajectory (126 Total: 120 Field + 6 Mgr)", fontweight="bold", fontsize=11)
     ax1.set_xlabel("Simulation Time (hours)")
@@ -91,8 +107,12 @@ def main():
     ax2.text(0.25, 0.215, "Shield SoC=0.20 guard", fontsize=7.8, color="#555555", ha="left")
     ax2.grid(True, alpha=0.25)
 
-    fig.suptitle("Comparison A Pilot (Matched Seed 4001): Router-Agnostic Survival & Energy Preservation",
-                 fontsize=12.5, fontweight="bold", y=0.99)
+    default_title = (
+        f"Comparison A ({n_seeds} Held-Out Seeds, Mean +/- 95% CI): Router-Agnostic Survival & Energy Preservation"
+        if n_seeds > 1
+        else "Comparison A Pilot (Matched Seed 4001): Router-Agnostic Survival & Energy Preservation"
+    )
+    fig.suptitle(args.title or default_title, fontsize=12.2, fontweight="bold", y=0.99)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
