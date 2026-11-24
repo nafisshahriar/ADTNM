@@ -39,8 +39,12 @@ import routing.DtnmaFixedAckRouter;
 import routing.DtnmaM0bStaticRouter;
 import routing.DtnmaM0cV1GuardRouter;
 import routing.DtnmaM0dConservativeRouter;
+import routing.DtnmaM0eEnergy20Router;
+import routing.DtnmaM0eEnergy25Router;
+import routing.DtnmaM1FloodGroupRouter;
 import routing.DtnmaM1FloodRouter;
 import routing.DtnmaM1RemoteRouter;
+import routing.util.EnergyModel;
 import routing.DtnmaM2SrlRouter;
 import routing.DtnmaM3RlRouter;
 import routing.DtnmaManagedRouter;
@@ -1276,6 +1280,169 @@ public class DtnmaUnitTests {
         }
     }
 
+    private static void test21EnergyOnlyGuardsAndGroupControlBroadcast() {
+        Path tmpDir = null;
+        try {
+            tmpDir = Files.createTempDirectory("dtnma_test21_");
+            String repDir = tmpDir.toAbsolutePath().toString().replace('\\', '/');
+
+            SimScenario.reset();
+            ConnectivityGrid.reset();
+            DTNHost.reset();
+            Message.reset();
+            NetworkInterface.reset();
+            MovementModel.reset();
+
+            String cfg =
+                    "Scenario.name = Test21Scenario\n" +
+                    "Scenario.simulateConnections = false\n" +
+                    "Scenario.updateInterval = 1.0\n" +
+                    "Scenario.endTime = 200\n" +
+                    "Scenario.nrofHostGroups = 4\n" +
+                    "MovementModel.worldSize = 1000, 1000\n" +
+                    "MovementModel.warmup = 0\n" +
+                    "MovementModel.rngSeed = 1\n" +
+                    "Events.nrof = 0\n" +
+                    "bt.type = SimpleBroadcastInterface\n" +
+                    "bt.transmitSpeed = 250000\n" +
+                    "bt.transmitRange = 35\n" +
+                    "Group.movementModel = StationaryMovement\n" +
+                    "Group.bufferSize = 100000\n" +
+                    "Group.msgTtl = 300\n" +
+                    "Group.speed = 1.0, 1.0\n" +
+                    "Group.waitTime = 0, 0\n" +
+                    "Group.nrofInterfaces = 1\n" +
+                    "Group.interface1 = bt\n" +
+                    "Group.initialEnergy = 100.0\n" +
+                    "Group.scanEnergy = 0.0\n" +
+                    "Group.scanResponseEnergy = 0.0\n" +
+                    "Group.transmitEnergy = 0.0\n" +
+                    "Group.energyWarmup = 0\n" +
+                    "SprayAndWaitRouter.nrofCopies = 6\n" +
+                    "SprayAndWaitRouter.binaryMode = true\n" +
+                    "Group1.groupID = p\n" +
+                    "Group1.nrofHosts = 1\n" +
+                    "Group1.router = DtnmaM0eEnergy20Router\n" +
+                    "Group1.nodeLocation = 500, 500\n" +
+                    "Group2.groupID = q\n" +
+                    "Group2.nrofHosts = 1\n" +
+                    "Group2.router = DtnmaM0eEnergy25Router\n" +
+                    "Group2.nodeLocation = 500, 500\n" +
+                    "Group3.groupID = f\n" +
+                    "Group3.nrofHosts = 1\n" +
+                    "Group3.router = DtnmaM1FloodGroupRouter\n" +
+                    "Group3.nodeLocation = 0, 0\n" +
+                    "Group4.groupID = mgr\n" +
+                    "Group4.nrofHosts = 2\n" +
+                    "Group4.router = DtnmaM1FloodGroupRouter\n" +
+                    "Group4.nodeLocation = 0, 0\n" +
+                    "Report.warmup = 0\n" +
+                    "Report.reportDir = " + repDir + "\n";
+            Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+            SimClock.reset();
+
+            List<DTNHost> hosts = SimScenario.getInstance().getHosts();
+            DTNHost h20 = hosts.get(0);
+            DTNHost h25 = hosts.get(1);
+            DTNHost hFld = hosts.get(2);
+            DTNHost hMgr0 = hosts.get(3);
+            DTNHost hMgr1 = hosts.get(4);
+
+            DtnmaM0eEnergy20Router r20 = (DtnmaM0eEnergy20Router) h20.getRouter();
+            DtnmaM0eEnergy25Router r25 = (DtnmaM0eEnergy25Router) h25.getRouter();
+            DtnmaM1FloodGroupRouter rFld = (DtnmaM1FloodGroupRouter) hFld.getRouter();
+
+            // 1. Both M0e-20 and M0e-25 stay nominal at Q=0.95, SoC=1.0 and ignore remote CTRL_UPDATE
+            r20.createNewMessage(new Message(h20, hMgr0, "BULK_FULL_20", 95000));
+            r25.createNewMessage(new Message(h25, hMgr0, "BULK_FULL_25", 95000));
+            SimClock.getInstance().advance(2.0);
+            h20.update(false);
+            h25.update(false);
+            r20.getDtnmaAgent().applyDownlinkControlBundle(new Message(hMgr0, h20, "CTRL_UPDATE_THROTTLE_1", 1024));
+            r25.getDtnmaAgent().applyDownlinkControlBundle(new Message(hMgr0, h25, "CTRL_UPDATE_THROTTLE_2", 1024));
+            boolean nomHighQOk = !r20.supportsDynamicControlReconfig()
+                    && !r25.supportsDynamicControlReconfig()
+                    && r20.getCurrentSprayQuota() == 6
+                    && r20.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL
+                    && r25.getCurrentSprayQuota() == 6
+                    && r25.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL;
+
+            // 2. At SoC=0.22, M0e-25 triggers P0 while M0e-20 stays nominal; at SoC=0.18, M0e-20 triggers P0
+            h20.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 22.0);
+            h25.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 22.0);
+            SimClock.getInstance().advance(2.0);
+            h20.update(false);
+            h25.update(false);
+            boolean split022Ok = r20.getCurrentSprayQuota() == 6
+                    && r20.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL
+                    && r25.getCurrentSprayQuota() == 1
+                    && r25.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY;
+
+            h20.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 18.0);
+            SimClock.getInstance().advance(2.0);
+            h20.update(false);
+            boolean trig018Ok = r20.getCurrentSprayQuota() == 1
+                    && r20.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_CRITICAL_ONLY;
+
+            // 3. M1-F-Group adopts CTRL_GROUP_* on relay receipt without ACK pruning + report counts targets
+            SimClock.getInstance().setTime(10.0);
+            DtnmaRlMetricsReport rep = new DtnmaRlMetricsReport();
+            Message gThrot = new Message(hMgr0, hMgr1, "CTRL_GROUP_THROTTLE_W1_1", 4096);
+            boolean clsOk = DtnmaRouter.isGroupControlMessage(gThrot)
+                    && DtnmaRouter.isDownlinkControlMessage(gThrot)
+                    && !DtnmaRouter.isTelemetryOrAlarmMessage(gThrot);
+            rep.newMessage(gThrot);
+
+            hFld.update(false);
+            SimClock.getInstance().setTime(15.0);
+            rFld.receiveMessage(gThrot, hMgr0);
+            rFld.messageTransferred(gThrot.getId(), hMgr0);
+            rep.messageTransferred(gThrot, hMgr0, hFld, false);
+            boolean grpThrotOk = rFld.getCurrentSprayQuota() == 2
+                    && rFld.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK
+                    && !rFld.getDtnmaAgent().isAcked(gThrot);
+
+            SimClock.getInstance().setTime(20.0);
+            Message gNom = new Message(hMgr0, hMgr1, "CTRL_GROUP_NOMINAL_W1_1", 4096);
+            rFld.receiveMessage(gNom, hMgr0);
+            rFld.messageTransferred(gNom.getId(), hMgr0);
+            boolean grpNomOk = rFld.getCurrentSprayQuota() == 6
+                    && rFld.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL
+                    && !rFld.getDtnmaAgent().isAcked(gNom);
+
+            rep.done();
+            Path outFile = tmpDir.resolve("Test21Scenario_DtnmaRlMetricsReport.txt");
+            Map<String, String> kv = new HashMap<String, String>();
+            for (String line : Files.readAllLines(outFile, StandardCharsets.UTF_8)) {
+                int idx = line.indexOf(": ");
+                if (idx > 0) {
+                    kv.put(line.substring(0, idx).trim(), line.substring(idx + 2).trim());
+                }
+            }
+            boolean repOk = "3".equals(kv.get("downlink_created")) && "1".equals(kv.get("downlink_delivered"));
+
+            check(nomHighQOk && split022Ok && trig018Ok && clsOk && grpThrotOk && grpNomOk && repOk,
+                    "Test21: M0e-20/M0e-25 energy-only guards & M1-F-Group broadcast adoption work cleanly",
+                    String.format("nom=%s split022=%s trig018=%s cls=%s throt=%s nomGrp=%s rep=%s(dc=%s,dd=%s)",
+                            nomHighQOk, split022Ok, trig018Ok, clsOk, grpThrotOk, grpNomOk, repOk,
+                            kv.get("downlink_created"), kv.get("downlink_delivered")));
+        } catch (Exception e) {
+            e.printStackTrace();
+            check(false, "Test21: M0e-20/M0e-25 energy-only guards & M1-F-Group broadcast adoption",
+                    "Exception: " + e.toString());
+        } finally {
+            SimScenario.reset();
+            ConnectivityGrid.reset();
+            DTNHost.reset();
+            Message.reset();
+            NetworkInterface.reset();
+            MovementModel.reset();
+            if (tmpDir != null) {
+                deleteRecursive(tmpDir.toFile());
+            }
+        }
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -1299,6 +1466,7 @@ public class DtnmaUnitTests {
         test18InterventionTiersPresetsAndCatchAllRule();
         test19M0cM0dM1FloodEquivalenceAndEnergyAware();
         test20NominalBackpressureAndAckEvictionSplit();
+        test21EnergyOnlyGuardsAndGroupControlBroadcast();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");

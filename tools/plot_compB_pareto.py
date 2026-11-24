@@ -16,14 +16,14 @@ import matplotlib.pyplot as plt
 
 
 MODES = [
-    ("SprayAndWaitRouter",        "M0a Stock SnW",     "#7f7f7f", "o", (6, -6)),
-    ("DtnmaM0bStaticRouter",      "M0b Static",        "#8c564b", "s", (6, -6)),
-    ("DtnmaM0cV1GuardRouter",     "M0c Pre-V1 Guard",  "#9467bd", "D", (-8, -14)),
+    ("SprayAndWaitRouter",        "M0a Stock SnW",     "#7f7f7f", "o", (-18, -16)),
+    ("DtnmaM0bStaticRouter",      "M0b Static",        "#8c564b", "s", (8, 4)),
+    ("DtnmaM0cV1GuardRouter",     "M0c Pre-V1 Guard",  "#9467bd", "D", (-52, -14)),
     ("DtnmaM0dConservativeRouter","M0d Always-Cons.",  "#bcbd22", "v", (6, -4)),
-    ("DtnmaM1RemoteRouter",       "M1-U Remote (L=8)", "#e377c2", "^", (-12, 8)),
+    ("DtnmaM1RemoteRouter",       "M1-U Remote (L=8)", "#e377c2", "^", (8, -10)),
     ("DtnmaM1FloodRouter",        "M1-F Remote Flood", "#d62728", "P", (6, 4)),
-    ("DtnmaM2SrlRouter",          "M2 Autonomic SRL",  "#1f77b4", "*", (6, 4)),
-    ("DtnmaM3RlRouter",           "M3 Autonomic RL",   "#2ca02c", "X", (6, -8)),
+    ("DtnmaM2SrlRouter",          "M2 Autonomic SRL",  "#1f77b4", "*", (8, 6)),
+    ("DtnmaM3RlRouter",           "M3 Autonomic RL",   "#2ca02c", "X", (8, -5)),
 ]
 
 

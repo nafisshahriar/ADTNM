@@ -293,6 +293,38 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
                 "min_ingress": 0,
             },
         ],
+        "M0e20": [
+            {
+                "ari": "ARI://DTNMA/SRL/M0E_ENERGY20_GUARD",
+                "priority": 110,
+                "if": (True, [("EDD_ENERGY_SOC", "<", 0.20)]),
+                "max_quota": 1,
+                "min_ingress": 2,
+            },
+            {
+                "ari": "ARI://DTNMA/SRL/M0E_NOMINAL",
+                "priority": 10,
+                "if": (True, [("EDD_QUEUE_RATIO", ">=", 0.0)]),
+                "max_quota": 6,
+                "min_ingress": 0,
+            },
+        ],
+        "M0e25": [
+            {
+                "ari": "ARI://DTNMA/SRL/M0E_ENERGY25_GUARD",
+                "priority": 110,
+                "if": (True, [("EDD_ENERGY_SOC", "<", 0.25)]),
+                "max_quota": 1,
+                "min_ingress": 2,
+            },
+            {
+                "ari": "ARI://DTNMA/SRL/M0E_NOMINAL",
+                "priority": 10,
+                "if": (True, [("EDD_QUEUE_RATIO", ">=", 0.0)]),
+                "max_quota": 6,
+                "min_ingress": 0,
+            },
+        ],
     }
     v1_overlay = {
         "ari": "ARI://DTNMA/SRL/DOWNLINK_V1_ENERGY_GUARD",
@@ -348,6 +380,12 @@ def verify_audit_replay(report_dir: Path, scenarios_dir: Path):
             allow_v1 = True
         elif "DtnmaM0cV1GuardRouter" in af.name:
             file_rules = rules_by_tag["M0c"]
+            allow_v1 = False
+        elif "DtnmaM0eEnergy20Router" in af.name:
+            file_rules = rules_by_tag["M0e20"]
+            allow_v1 = False
+        elif "DtnmaM0eEnergy25Router" in af.name:
+            file_rules = rules_by_tag["M0e25"]
             allow_v1 = False
         else:
             file_rules = rules_by_tag["base"]

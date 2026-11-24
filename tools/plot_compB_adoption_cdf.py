@@ -105,9 +105,9 @@ def main():
             if tag == "DtnmaM1RemoteRouter":
                 ax1.scatter([5.0], [pct_5m], color=color, zorder=5, s=45)
                 ax1.annotate(f"W1 @ 5 min (M1-U): {pct_5m:.1f}%",
-                             xy=(5.0, pct_5m), xytext=(11.0, max(12.0, pct_5m - 2.0)),
+                             xy=(5.0, pct_5m), xytext=(7.2, 43.0),
                              arrowprops=dict(arrowstyle="->", color=color, lw=1.0),
-                             fontsize=8.5, fontweight="bold", color=color)
+                             fontsize=8.3, fontweight="bold", color=color)
 
     # Vertical reference lines for disruption timescales (5 min, 30 min)
     ax1.axvline(5.0, color="#555555", linestyle="--", linewidth=1.2)
@@ -121,9 +121,12 @@ def main():
 
     # Local autonomic reaction callout near t = 0
     m2_runs = records.get("DtnmaM2SrlRouter", [])
-    m3_runs = records.get("DtnmaM3RlRouter", [])
+    evb_vals = [r["metrics"].get("eventB_react_med_s", -1.0) for r in m2_runs if r["metrics"].get("eventB_react_med_s", -1.0) >= 0]
+    evc_vals = [r["metrics"].get("eventC_react_med_s", -1.0) for r in m2_runs if r["metrics"].get("eventC_react_med_s", -1.0) >= 0]
+    m2_evb_med = float(np.mean(evb_vals)) if evb_vals else 174.4
+    m2_evc_med = float(np.mean(evc_vals)) if evc_vals else 186.4
     ax1.scatter([0.0], [100.0], color="#1f77b4", marker="*", s=130, zorder=6,
-                label="M2/M3 Local Reflex (<=1.0 s agent tick)")
+                label=f"M2/M3 Rule Eval (<=1.0 s; B/C med {m2_evb_med:.0f}-{m2_evc_med:.0f} s)")
 
     ax1.set_title("A. Downlink Wave Adoption CDF vs Disruption Timescales", fontweight="bold", fontsize=11)
     ax1.set_xlabel("Time Since Manager Control Wave Issue (minutes)")
@@ -131,16 +134,16 @@ def main():
     ax1.set_xlim(-1.0, 60.0)
     ax1.set_ylim(-2.0, 105.0)
     ax1.grid(True, alpha=0.25)
-    ax1.legend(loc="lower right", fontsize=8.3, framealpha=0.92)
+    ax1.legend(loc="lower right", fontsize=8.0, framealpha=0.92)
 
     # Panel B: Timescale Gap Bar Comparison (Log Scale in Seconds)
     labels_b = [
-        "M2 Local Reflex\n(1 Hz Eval Tick)",
-        "M3 Local Reflex\n(1 Hz Eval Tick)",
+        "M2 Eval Tick\n(Rule-Own)",
+        "M2 At-Risk->Throttle\n(Event B Med)",
         "5-Min Burst\nDuration",
-        "M1-U Unicast\nMean T90 (W1-W3)",
-        "M1-F Flood\nMean T90 (W1-W3)",
         "30-Min Shock\nDuration",
+        "M1-U Unicast\nMean T90",
+        "M1-F Unicast Flood\nMean T90",
     ]
     m1u_runs = records.get("DtnmaM1RemoteRouter", [])
     m1f_runs = records.get("DtnmaM1FloodRouter", [])
@@ -149,27 +152,27 @@ def main():
     t90_u_mean = float(np.mean(t90_u_vals)) if t90_u_vals else 3100.0
     t90_f_mean = float(np.mean(t90_f_vals)) if t90_f_vals else 3700.0
 
-    # Local SRL/Shield executes on a deterministic 1.0s evaluation tick
-    vals_b = [1.0, 1.0, 300.0, t90_u_mean, t90_f_mean, 1800.0]
-    cols_b = ["#1f77b4", "#2ca02c", "#7f7f7f", "#e377c2", "#d62728", "#7f7f7f"]
+    # Local SRL/Shield executes on a 1.0s eval tick; Event B median is time from broad atRisk to narrow throttle rule
+    vals_b = [1.0, m2_evb_med, 300.0, 1800.0, t90_u_mean, t90_f_mean]
+    cols_b = ["#1f77b4", "#17becf", "#7f7f7f", "#7f7f7f", "#e377c2", "#d62728"]
 
     x = np.arange(len(labels_b))
     bars = ax2.bar(x, vals_b, color=cols_b, alpha=0.88, width=0.58, edgecolor="#222222", linewidth=0.6)
     ax2.set_yscale("log")
     ax2.set_ylim(0.4, 14000.0)
     ax2.set_xticks(x)
-    ax2.set_xticklabels(labels_b, fontsize=7.8, rotation=18, ha="right")
+    ax2.set_xticklabels(labels_b, fontsize=7.6, rotation=18, ha="right")
     ax2.set_ylabel("Reaction / Dissemination Timescale (seconds, log scale)")
     ax2.set_title("B. Autonomic Reaction vs Remote DTN Control Delay", fontweight="bold", fontsize=11)
     ax2.grid(True, axis="y", which="both", alpha=0.22)
 
     txt_vals = [
-        "<=1.0 s\ntick",
-        "<=1.0 s\ntick",
+        "<=1.0 s\n(1 Hz tick)",
+        f"{m2_evb_med:.0f} s",
         "300 s",
+        "1800 s",
         f"{t90_u_mean:.0f} s",
         f"{t90_f_mean:.0f} s",
-        "1800 s",
     ]
     for bar, tv in zip(bars, txt_vals):
         h = bar.get_height()

@@ -601,7 +601,32 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
             bulkCreated++;
         }
 
-        if (DtnmaRouter.isDownlinkControlMessage(m) && m.getTo() != null) {
+        if (DtnmaRouter.isGroupControlMessage(m)) {
+            String w = extractWaveKey(m.getId());
+            this.latestWaveKey = w;
+            if (!this.waveStartTime.containsKey(w)) {
+                this.waveStartTime.put(w, now);
+            }
+            Set<Integer> tSet = this.waveTargets.computeIfAbsent(w, k -> new HashSet<Integer>());
+            List<DTNHost> allHosts = null;
+            try {
+                allHosts = SimScenario.getInstance().getHosts();
+            } catch (Exception ignored) {
+            }
+            if (allHosts != null && !allHosts.isEmpty()) {
+                for (DTNHost h : allHosts) {
+                    if (h != null && !h.toString().startsWith("mgr")) {
+                        tSet.add(h.getAddress());
+                    }
+                }
+            }
+            if (tSet.isEmpty()) {
+                for (int addr = 0; addr < 120; addr++) {
+                    tSet.add(addr);
+                }
+            }
+            downlinkCreated += tSet.size();
+        } else if (DtnmaRouter.isDownlinkControlMessage(m) && m.getTo() != null) {
             downlinkCreated++;
             String w = extractWaveKey(m.getId());
             this.latestWaveKey = w;
@@ -644,7 +669,7 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                 this.bulkLatencies.add(lat);
             }
 
-            if (DtnmaRouter.isDownlinkControlMessage(m) && to != null) {
+            if (DtnmaRouter.isDownlinkControlMessage(m) && !DtnmaRouter.isGroupControlMessage(m) && to != null) {
                 downlinkDelivered++;
                 String w = extractWaveKey(m.getId());
                 double wStart = this.waveStartTime.getOrDefault(w, now);
@@ -656,6 +681,18 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                 Double prev = this.latestDeliveredGenTimeBySource.get(src);
                 if (prev == null || genT > prev) {
                     this.latestDeliveredGenTimeBySource.put(src, genT);
+                }
+            }
+        } else if (DtnmaRouter.isGroupControlMessage(m) && to != null) {
+            double now = getSimTime();
+            String w = extractWaveKey(m.getId());
+            Set<Integer> tSet = this.waveTargets.get(w);
+            if (tSet != null && tSet.contains(to.getAddress())) {
+                Set<Integer> dSet = this.waveDeliveredTargets.computeIfAbsent(w, k -> new HashSet<Integer>());
+                if (dSet.add(to.getAddress())) {
+                    downlinkDelivered++;
+                    double wStart = this.waveStartTime.getOrDefault(w, now);
+                    this.waveDelivOffsets.computeIfAbsent(w, k -> new ArrayList<Double>()).add(Math.max(0.0, now - wStart));
                 }
             }
         }

@@ -1035,7 +1035,9 @@ public class DtnmaAgent {
         Map<String, Boolean> ackMap = this.ackFeedbackEnabled ? this.deliveredAckSet : null;
         DtnmaRouter.clampPostTransferDeficit(owner.getManagedActiveRouter(), m, copiesPropKey, ackMap);
         this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, owner.getBufferOccupancyRatio());
-        if (m.getTo() == owner.getManagedHost()) {
+        if (DtnmaRouter.isGroupControlMessage(m)) {
+            applyDownlinkControlBundle(m);
+        } else if (m.getTo() == owner.getManagedHost()) {
             if (this.deliveredAckSet != null) {
                 this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
             }
@@ -1051,7 +1053,7 @@ public class DtnmaAgent {
         DTNHost host = owner.getManagedHost();
         DTNHost recipient = (con != null && host != null) ? con.getOtherNode(host) : null;
 
-        if (m.getTo() == recipient) {
+        if (m.getTo() == recipient && !DtnmaRouter.isGroupControlMessage(m)) {
             this.epochDirectDeliveries++;
             if (this.deliveredAckSet != null) {
                 this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
@@ -1244,7 +1246,7 @@ public class DtnmaAgent {
                     this.lastExplanation = "DOWNLINK_CTRL_ADOPTED(V2:NOMINAL_RECOVERY)";
                 }
             }
-        } else if (id.contains("CTRL_UPDATE_THROTTLE")) {
+        } else if (id.contains("CTRL_UPDATE_THROTTLE") || id.contains("CTRL_GROUP_THROTTLE")) {
             if (m.getCreationTime() > this.lastControlCreatedTime || this.appliedControlVersion < 1) {
                 this.appliedControlVersion++;
                 this.lastControlAdoptTime = now;
@@ -1269,7 +1271,7 @@ public class DtnmaAgent {
                     this.lastExplanation = "DOWNLINK_CTRL_ADOPTED(THROTTLE)";
                 }
             }
-        } else if (id.contains("CTRL_UPDATE_NOMINAL")) {
+        } else if (id.contains("CTRL_UPDATE_NOMINAL") || id.contains("CTRL_GROUP_NOMINAL")) {
             if (m.getCreationTime() > this.lastControlCreatedTime) {
                 this.appliedControlVersion++;
                 this.lastControlAdoptTime = now;

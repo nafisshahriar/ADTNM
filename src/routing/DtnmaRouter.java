@@ -166,6 +166,31 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
     }
 
     @Override
+    protected List<Tuple<Message, Connection>> getMessagesForConnected() {
+        List<Tuple<Message, Connection>> tuples = super.getMessagesForConnected();
+        if (tuples == null || tuples.isEmpty()) {
+            return tuples;
+        }
+        boolean hasGrp = false;
+        for (Tuple<Message, Connection> t : tuples) {
+            if (isGroupControlMessage(t.getKey())) {
+                hasGrp = true;
+                break;
+            }
+        }
+        if (!hasGrp) {
+            return tuples;
+        }
+        List<Tuple<Message, Connection>> filtered = new ArrayList<Tuple<Message, Connection>>(tuples.size());
+        for (Tuple<Message, Connection> t : tuples) {
+            if (!isGroupControlMessage(t.getKey())) {
+                filtered.add(t);
+            }
+        }
+        return filtered;
+    }
+
+    @Override
     public void update() {
         super.update();
         syncPrototypeToAgent();
@@ -295,8 +320,8 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
                     DTNHost other = peerHosts[i];
                     if (other == null) continue;
 
-                    // 1. Direct delivery to final recipient always executes immediately
-                    if (dest == other) {
+                    // 1. Direct delivery to final recipient always executes immediately (except shared group control broadcasts)
+                    if (dest == other && !isGroupControlMessage(m)) {
                         m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                         if (startTransfer(m, con) == RCV_OK) {
                             return;
@@ -306,6 +331,9 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
 
                     // 1b. Optional Epidemic Control Flooding for M1/M2/M3 convergence upper bound
                     if (epidemicCtrl) {
+                        if (isGroupControlMessage(m) && dest == other) {
+                            continue;
+                        }
                         if (other.getRouter() != null && other.getRouter().hasMessage(m.getId())) {
                             continue;
                         }
@@ -585,6 +613,10 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         return m != null && isCriticalMessage(m.getId());
     }
 
+    public static boolean isGroupControlMessage(Message m) {
+        return m != null && m.getId() != null && m.getId().startsWith("CTRL_GROUP_");
+    }
+
     public static boolean isCriticalMessage(String id) {
         if (id == null || id.isEmpty()) return false;
         char c = id.charAt(0);
@@ -595,18 +627,22 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
             || id.startsWith("FAULT")
             || id.startsWith("CRIT")
             || id.startsWith("CTRL_UPDATE")
+            || id.startsWith("CTRL_GROUP_")
             || id.startsWith("ALARM")
             || id.startsWith("TELEM_CRIT");
     }
 
     public static boolean isDownlinkControlMessage(Message m) {
-        return m != null && m.getId() != null && m.getId().startsWith("CTRL_UPDATE");
+        if (m == null || m.getId() == null) return false;
+        String id = m.getId();
+        return id.startsWith("CTRL_UPDATE") || id.startsWith("CTRL_GROUP_");
     }
 
     public static boolean isTelemetryOrAlarmMessage(Message m) {
         if (m == null || m.getId() == null) return false;
         String id = m.getId();
         return !id.startsWith("CTRL_UPDATE")
+            && !id.startsWith("CTRL_GROUP_")
             && (id.startsWith("TELEM_") || id.startsWith("ALARM") || isCriticalMessage(id));
     }
 
