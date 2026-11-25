@@ -99,8 +99,8 @@ public class DtnmaConfig {
 
     // Mobility-Aware Resource Controller Parameters (M2_MOBILITY_AWARE)
     public double mobHorizonSec = 0.0;
-    public double mobTtdWarnRatio = 1.05;
-    public double mobTtdCritRatio = 0.65;
+    public double mobTtdWarnRatio = 1.10;
+    public double mobTtdCritRatio = 0.60;
     public double mobShortContactSec = 12.0;
     public double mobLongIctSec = 180.0;
     public String mobAblationMode = "JOINT";

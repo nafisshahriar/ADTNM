@@ -809,25 +809,29 @@ public class DtnmaAgent {
 
         double energyMin = (config != null) ? config.shieldEnergyMin : 0.20;
         double critCritQ = (config != null) ? config.shieldCriticalCritQueue : 0.50;
-        double ttdCrit = (config != null) ? config.mobTtdCritRatio : 0.65;
-        double ttdWarn = (config != null) ? config.mobTtdWarnRatio : 1.05;
+        double ttdCrit = (config != null) ? config.mobTtdCritRatio : 0.60;
+        double ttdWarn = (config != null) ? config.mobTtdWarnRatio : 1.10;
+        double ttdThrottle = Math.max(ttdCrit + 0.10, ttdWarn - 0.20);
         double shortDur = (config != null) ? config.mobShortContactSec : 12.0;
         double longIct = (config != null) ? config.mobLongIctSec : 180.0;
 
         double ictFrac = Math.min(1.0, Math.max(0.0, ictEff / Math.max(30.0, longIct)));
-        double qThresh = useBuf ? Math.max(0.76, Math.min(0.88, 0.88 - 0.12 * ictFrac)) : 0.88;
+        double qThresh = useBuf ? Math.max(0.78, Math.min(0.88, 0.88 - 0.10 * ictFrac)) : 0.88;
 
         int proposed;
         String propAri;
-        if (critQ >= critCritQ || soc < energyMin || (useEnergy && soc < 0.55 && ttdRatio < ttdCrit)) {
+        if (critQ >= critCritQ || soc < energyMin || (useEnergy && soc < 0.45 && ttdRatio < ttdCrit)) {
             proposed = 0;
             propAri = "ARI://DTNMA/MOB/ENERGY_CRIT_HOLD";
-        } else if (useEnergy && soc < 0.70 && ttdRatio < ttdWarn) {
+        } else if (useEnergy && soc < 0.55 && ttdRatio < ttdThrottle) {
             proposed = 1;
             propAri = "ARI://DTNMA/MOB/ENERGY_HORIZON_THROTTLE";
-        } else if ((useBuf && q >= qThresh && dq >= 0.006) || (q >= 0.88 && dq >= 0.008)) {
+        } else if ((useBuf && q >= qThresh && dq >= 0.008) || (q >= 0.88 && dq >= 0.008)) {
             proposed = 1;
             propAri = "ARI://DTNMA/MOB/ICT_SURGE_THROTTLE";
+        } else if (useEnergy && soc < 0.70 && ttdRatio < ttdWarn) {
+            proposed = 2;
+            propAri = "ARI://DTNMA/MOB/ENERGY_HORIZON_CAP";
         } else if ((useRep && durMean < shortDur && q >= 0.55) || (q >= 0.75 && dens >= 5.0)) {
             proposed = 2;
             propAri = "ARI://DTNMA/MOB/SHORT_CONTACT_CAP";

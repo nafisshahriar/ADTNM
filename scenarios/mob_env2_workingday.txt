@@ -1,0 +1,264 @@
+# ====================================================================
+# ENVIRONMENT 2 (WORKING-DAY HUMAN MOBILITY — ZERO-SHOT TRANSFER):
+# 126 nodes across 3 HelsinkiMedium districts using WorkingDayMovement +
+# BusMovement + ShortestPathMapBasedMovement (10000 x 8000 m), reusing
+# identical M2-Mob controller defaults with zero per-environment retuning.
+# ====================================================================
+
+Scenario.name = Env2_WDM_%%Group.router%%_%%MovementModel.rngSeed%%
+Scenario.simulateConnections = true
+Scenario.updateInterval = 0.5
+Scenario.endTime = 43200
+Scenario.nrofHostGroups = 7
+
+btInterface.type = SimpleBroadcastInterface
+btInterface.transmitSpeed = 250k
+btInterface.transmitRange = 50
+
+busInterface.type = SimpleBroadcastInterface
+busInterface.transmitSpeed = 2M
+busInterface.transmitRange = 250
+
+Group.movementModel = ShortestPathMapBasedMovement
+Group.router = [SprayAndWaitRouter; CongestionAwareSnWRouter; DtnmaM0bStaticRouter; DtnmaM0eEnergy25Router; DtnmaM1RemoteRouter; DtnmaM2SrlRouter; DtnmaM2MobEnergyOnlyRouter; DtnmaM2MobBufferOnlyRouter; DtnmaM2MobReplicaOnlyRouter; DtnmaM2MobRouter]
+Group.bufferSize = 10M
+Group.waitTime = 0, 0
+Group.nrofInterfaces = 1
+Group.interface1 = btInterface
+Group.speed = 0.8, 1.4
+Group.msgTtl = 480
+Group.rulesFile = scenarios/rules_vdtn.txt
+
+# Shared WorkingDayMovement parameters
+Group.nrOfOffices = 20
+Group.workDayLength = 21600
+Group.probGoShoppingAfterWork = 0.5
+Group.nrOfMeetingSpots = 4
+Group.officeWaitTimeParetoCoeff = 0.5
+Group.officeMinWaitTime = 10
+Group.officeMaxWaitTime = 100000
+Group.officeSize = 100
+Group.timeDiffSTD = 3600
+Group.minGroupSize = 1
+Group.maxGroupSize = 3
+Group.minAfterShoppingStopTime = 1800
+Group.maxAfterShoppingStopTime = 3600
+
+Group.initialEnergy = 2650, 3650
+Group.scanEnergy = 0.05
+Group.scanResponseEnergy = 0.02
+Group.transmitEnergy = 0.90
+Group.energyWarmup = 0
+
+DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
+DtnmaRouter.staticQuota = 6
+DtnmaRouter.staticIngressMode = 0
+DtnmaRouter.staticBackpressure = true
+DtnmaRouter.epidemicControlFlooding = false
+DtnmaRouter.densityAdaptiveGossip = true
+DtnmaRouter.ackFeedbackEnabled = true
+DtnmaRouter.gossipEnabled = true
+DtnmaRouter.rulesFile = scenarios/rules_vdtn.txt
+
+SprayAndWaitRouter.nrofCopies = 6
+SprayAndWaitRouter.binaryMode = true
+ProphetRouter.secondsInTimeUnit = 30
+
+# District A Buses (0..1) and Commuters (2..39)
+Group1.groupID = busA
+Group1.bufferSize = 30M
+Group1.speed = 7, 10
+Group1.waitTime = 10, 30
+Group1.nrofHosts = 2
+Group1.movementModel = BusMovement
+Group1.routeFile = data/HelsinkiMedium/A_bus.wkt
+Group1.routeType = 2
+Group1.busControlSystemNr = 1
+Group1.nrofInterfaces = 2
+Group1.interface1 = btInterface
+Group1.interface2 = busInterface
+
+Group2.groupID = wA
+Group2.nrofHosts = 38
+Group2.movementModel = WorkingDayMovement
+Group2.busControlSystemNr = 1
+Group2.shoppingControlSystemNr = 1
+Group2.ownCarProb = 0.35
+Group2.meetingSpotsFile = data/HelsinkiMedium/A_meetingspots.wkt
+Group2.officeLocationsFile = data/HelsinkiMedium/A_offices.wkt
+Group2.homeLocationsFile = data/HelsinkiMedium/A_homes.wkt
+
+# District B Buses (40..41) and Commuters (42..79)
+Group3.groupID = busB
+Group3.bufferSize = 30M
+Group3.speed = 7, 10
+Group3.waitTime = 10, 30
+Group3.nrofHosts = 2
+Group3.movementModel = BusMovement
+Group3.routeFile = data/HelsinkiMedium/B_bus.wkt
+Group3.routeType = 2
+Group3.busControlSystemNr = 2
+Group3.nrofInterfaces = 2
+Group3.interface1 = btInterface
+Group3.interface2 = busInterface
+
+Group4.groupID = wB
+Group4.nrofHosts = 38
+Group4.bufferSize = 10M
+Group4.speed = 0.8, 1.4
+Group4.waitTime = 0, 0
+Group4.nrofInterfaces = 1
+Group4.interface1 = btInterface
+Group4.movementModel = WorkingDayMovement
+Group4.busControlSystemNr = 2
+Group4.shoppingControlSystemNr = 2
+Group4.ownCarProb = 0.35
+Group4.meetingSpotsFile = data/HelsinkiMedium/B_meetingspots.wkt
+Group4.officeLocationsFile = data/HelsinkiMedium/B_offices.wkt
+Group4.homeLocationsFile = data/HelsinkiMedium/B_homes.wkt
+
+# District C Buses (80..81) and Commuters (82..119)
+Group5.groupID = busC
+Group5.bufferSize = 30M
+Group5.speed = 7, 10
+Group5.waitTime = 10, 30
+Group5.nrofHosts = 2
+Group5.movementModel = BusMovement
+Group5.routeFile = data/HelsinkiMedium/C_bus.wkt
+Group5.routeType = 2
+Group5.busControlSystemNr = 3
+Group5.nrofInterfaces = 2
+Group5.interface1 = btInterface
+Group5.interface2 = busInterface
+
+Group6.groupID = wC
+Group6.nrofHosts = 38
+Group6.bufferSize = 10M
+Group6.speed = 0.8, 1.4
+Group6.waitTime = 0, 0
+Group6.nrofInterfaces = 1
+Group6.interface1 = btInterface
+Group6.movementModel = WorkingDayMovement
+Group6.busControlSystemNr = 3
+Group6.shoppingControlSystemNr = 3
+Group6.ownCarProb = 0.35
+Group6.meetingSpotsFile = data/HelsinkiMedium/C_meetingspots.wkt
+Group6.officeLocationsFile = data/HelsinkiMedium/C_offices.wkt
+Group6.homeLocationsFile = data/HelsinkiMedium/C_homes.wkt
+
+# Managers (120..125)
+Group7.groupID = mgr
+Group7.nrofHosts = 6
+Group7.bufferSize = 100M
+Group7.waitTime = 300, 600
+Group7.speed = 0.5, 1.0
+Group7.initialEnergy = 500000
+Group7.scanEnergy = 0.0
+Group7.scanResponseEnergy = 0.0
+Group7.transmitEnergy = 0.0
+
+Events.nrof = 10
+
+Events1.class = MessageEventGenerator
+Events1.interval = 14, 20
+Events1.size = 400k, 700k
+Events1.hosts = 0, 120
+Events1.tohosts = 0, 120
+Events1.prefix = BULK_
+
+Events2.class = MessageEventGenerator
+Events2.interval = 30, 45
+Events2.size = 32k, 64k
+Events2.hosts = 0, 120
+Events2.tohosts = 120, 126
+Events2.prefix = TELEM_NORM_
+
+Events3.class = MessageEventGenerator
+Events3.interval = 90, 140
+Events3.size = 16k, 32k
+Events3.hosts = 0, 120
+Events3.tohosts = 120, 126
+Events3.prefix = CRITICAL_FAULT_
+
+# Event A: Morning commute burst (t = 3600..5400)
+Events4.class = MessageEventGenerator
+Events4.interval = 2, 3
+Events4.size = 500k, 900k
+Events4.hosts = 0, 120
+Events4.tohosts = 0, 120
+Events4.time = 3600, 5400
+Events4.prefix = BULK_COMMUTE_AM_
+
+# Event B: Office peak shock (t = 14400..16200)
+Events5.class = MessageEventGenerator
+Events5.interval = 2, 4
+Events5.size = 500k, 900k
+Events5.hosts = 0, 120
+Events5.tohosts = 0, 120
+Events5.time = 14400, 16200
+Events5.prefix = BULK_OFFICE_PEAK_
+
+# Event C: Evening commute & gathering shift (t = 25200..28800)
+Events6.class = MessageEventGenerator
+Events6.interval = 4, 6
+Events6.size = 500k, 800k
+Events6.hosts = 0, 120
+Events6.tohosts = 0, 120
+Events6.time = 25200, 28800
+Events6.prefix = BULK_COMMUTE_PM_
+
+# Manager Downlink Waves
+Events7.class = OneToEachMessageGenerator
+Events7.interval = 1, 1
+Events7.size = 4k, 4k
+Events7.hosts = 120, 121
+Events7.tohosts = 0, 120
+Events7.time = 3600, 3730
+Events7.prefix = CTRL_UPDATE_THROTTLE_W1_
+
+Events8.class = OneToEachMessageGenerator
+Events8.interval = 1, 1
+Events8.size = 4k, 4k
+Events8.hosts = 120, 121
+Events8.tohosts = 0, 120
+Events8.time = 5400, 5530
+Events8.prefix = CTRL_UPDATE_NOMINAL_W1_
+
+Events9.class = OneToEachMessageGenerator
+Events9.interval = 1, 1
+Events9.size = 4k, 4k
+Events9.hosts = 120, 121
+Events9.tohosts = 0, 120
+Events9.time = 25200, 25330
+Events9.prefix = CTRL_UPDATE_THROTTLE_W2_
+
+Events10.class = OneToEachMessageGenerator
+Events10.interval = 1, 1
+Events10.size = 4k, 4k
+Events10.hosts = 120, 121
+Events10.tohosts = 0, 120
+Events10.time = 28800, 28930
+Events10.prefix = CTRL_UPDATE_NOMINAL_W2_
+
+MovementModel.rngSeed = [7103; 7109; 7121; 7127; 7129; 7151; 7159; 7177; 7187; 7193; 7207]
+MovementModel.worldSize = 10000, 8000
+MovementModel.warmup = 3600
+
+MapBasedMovement.nrofMapFiles = 1
+MapBasedMovement.mapFile1 = data/HelsinkiMedium/roads.wkt
+
+Optimization.connectionAlg = 2
+Optimization.cellSizeMult = 5
+Optimization.randomizeUpdateOrder = true
+
+Report.nrofReports = 4
+Report.warmup = 0
+Report.reportDir = reports/mobility_suite/env2_workingday
+Report.report1 = DtnmaRlMetricsReport
+Report.report2 = DtnmaRecoveryTimelineReport
+Report.report3 = DtnmaAuditReport
+Report.report4 = MessageStatsReport
+DtnmaRlMetricsReport.eventA = 3600, 5400
+DtnmaRlMetricsReport.eventB = 14400, 16200
+DtnmaRlMetricsReport.eventC = 25200, 28800
+DtnmaRlMetricsReport.eventHorizon = 3600

@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import core.Connection;
 import core.DTNHost;
 import core.Message;
 import core.MessageListener;
@@ -26,11 +27,13 @@ import core.NetworkInterface;
 import core.Settings;
 import core.SimClock;
 import core.SimScenario;
+import core.VBRConnection;
 import report.DtnmaRlMetricsReport;
 import interfaces.ConnectivityGrid;
 import interfaces.SimpleBroadcastInterface;
 import movement.MovementModel;
 import movement.StationaryMovement;
+import routing.CongestionAwareSnWRouter;
 import routing.ControlAction;
 import routing.DtnmaAgent;
 import routing.DtnmaConfig;
@@ -45,9 +48,16 @@ import routing.DtnmaM1FloodRouter;
 import routing.DtnmaM1RemoteRouter;
 import routing.util.EnergyModel;
 import routing.DtnmaM2LocalOnlyRouter;
+import routing.DtnmaM2MobBufferOnlyRouter;
+import routing.DtnmaM2MobEnergyOnlyRouter;
+import routing.DtnmaM2MobReplicaOnlyRouter;
 import routing.DtnmaM2MobRouter;
 import routing.DtnmaM2SrlRouter;
 import routing.DtnmaM3RlRouter;
+import routing.ManagedEpidemicRouter;
+import routing.ManagedMaxPropRouter;
+import routing.ManagedProphetV2Router;
+import routing.ManagedSprayAndWaitRouter;
 import routing.DtnmaManagedRouter;
 import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
@@ -1654,37 +1664,45 @@ public class DtnmaUnitTests {
                 && r0.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL
                 && "ARI://DTNMA/MOB/NOMINAL_BALANCED".equals(r0.getDtnmaAgent().getActiveRuleAri());
 
-        // 2. Fast energy drain -> TTD warning throttles before 0.20 static floor (P1, ing=1)
+        // 2. Fast energy drain -> TTD warn zone triggers graduated quota cap P2 (L=4, ing=0),
+        // then deeper drain triggers P1 bulk throttle (L=2, ing=1) before 0.20 static floor
         h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 60.0);
         SimClock.getInstance().setTime(25.0);
         r0.update();
+        boolean energyCapOk = r0.getCurrentSprayQuota() == 4
+                && r0.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL
+                && "ARI://DTNMA/MOB/ENERGY_HORIZON_CAP".equals(r0.getDtnmaAgent().getActiveRuleAri());
+
+        h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 48.0);
+        SimClock.getInstance().setTime(35.0);
+        r0.update();
         boolean energyThrottleOk = r0.getCurrentSprayQuota() == 2
                 && r0.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK
-                && r0.getDtnmaAgent().getActiveRuleAri().startsWith("ARI://DTNMA/MOB/ENERGY");
+                && "ARI://DTNMA/MOB/ENERGY_HORIZON_THROTTLE".equals(r0.getDtnmaAgent().getActiveRuleAri());
 
         // 3. Ablation REPLICA_ONLY ignores energy-horizon drain trigger when SoC >= shieldEnergyMin
         r0.getDtnmaAgent().getConfig().mobAblationMode = "REPLICA_ONLY";
         h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 55.0);
-        SimClock.getInstance().setTime(35.0);
+        SimClock.getInstance().setTime(45.0);
         r0.update();
         boolean repAblationOk = r0.getCurrentSprayQuota() == 6;
 
         // 4. Short contact duration (<12s) + moderate queue triggers SHORT_CONTACT_CAP (L=4)
         EddTelemetrySampler s0 = r0.getDtnmaAgent().getEddSampler();
-        SimClock.getInstance().setTime(40.0);
+        SimClock.getInstance().setTime(50.0);
         s0.recordContact(h1);
-        SimClock.getInstance().setTime(44.0);
+        SimClock.getInstance().setTime(54.0);
         s0.recordContactEnd(h1);
         r0.createNewMessage(new Message(h0, h1, "BULK_DUR_TEST", 300000));
-        SimClock.getInstance().setTime(46.0);
+        SimClock.getInstance().setTime(56.0);
         r0.update();
         boolean shortCapOk = r0.getCurrentSprayQuota() == 4
                 && "ARI://DTNMA/MOB/SHORT_CONTACT_CAP".equals(r0.getDtnmaAgent().getActiveRuleAri());
 
-        check(nomOk && energyThrottleOk && repAblationOk && shortCapOk,
-                "Test24: M2-Mob coordinates energy TTD, contact duration cap, and ablation switches",
-                String.format("nom=%s eThrot=%s repAbl=%s shortCap=%s(ari=%s,q=%d)",
-                        nomOk, energyThrottleOk, repAblationOk, shortCapOk,
+        check(nomOk && energyCapOk && energyThrottleOk && repAblationOk && shortCapOk,
+                "Test24: M2-Mob coordinates graduated energy TTD, contact duration cap, and ablation switches",
+                String.format("nom=%s eCap=%s eThrot=%s repAbl=%s shortCap=%s(ari=%s,q=%d)",
+                        nomOk, energyCapOk, energyThrottleOk, repAblationOk, shortCapOk,
                         r0.getDtnmaAgent().getActiveRuleAri(), r0.getCurrentSprayQuota()));
     }
 
@@ -1758,6 +1776,126 @@ public class DtnmaUnitTests {
         }
     }
 
+    private static void test26CrossSubstrateMobAndAblationPresets() {
+        String cfg =
+                "Scenario.endTime = 1000\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "bt.transmitSpeed = 250000\n" +
+                "bt.transmitRange = 100\n" +
+                "Group.bufferSize = 500000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 4\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "SprayAndWaitRouter.nrofCopies = 6\n" +
+                "SprayAndWaitRouter.binaryMode = true\n" +
+                "ProphetV2Router.secondsInTimeUnit = 30\n" +
+                "DtnmaRouter.managementMode = M2_MOBILITY_AWARE\n" +
+                "DtnmaRouter.mobHorizonSec = 600\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp = new Settings("Group");
+        SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
+        ifc.setGroupSettings(grp);
+        MovementModel mm = new StationaryMovement(grp);
+        List<NetworkInterface> ifaces = Collections.<NetworkInterface>singletonList(ifc);
+
+        routing.DtnmaManagedRouter[] protos = new routing.DtnmaManagedRouter[] {
+                new ManagedSprayAndWaitRouter(grp),
+                new ManagedProphetV2Router(grp),
+                new ManagedMaxPropRouter(grp),
+                new ManagedEpidemicRouter(grp)
+        };
+        boolean crossOk = true;
+        StringBuilder detail = new StringBuilder();
+        for (int i = 0; i < protos.length; i++) {
+            DTNHost h = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                    "cm" + i, ifaces, new ModuleCommunicationBus(), mm, protos[i].getManagedActiveRouter());
+            routing.DtnmaManagedRouter mr = (routing.DtnmaManagedRouter) h.getRouter();
+            DtnmaAgent ag = mr.getDtnmaAgent();
+            SimClock.getInstance().setTime(5.0 + i);
+            ag.onBeforeUpdate(SimClock.getTime());
+            boolean modeOk = ag.getConfig().managementMode == DtnmaConfig.ManagementMode.M2_MOBILITY_AWARE;
+            boolean ariOk = ag.getActiveRuleAri() != null && ag.getActiveRuleAri().startsWith("ARI://DTNMA/MOB/");
+            boolean bytesOk = ag.estimateAgentStateBytes() >= 512L;
+            if (!modeOk || !ariOk || !bytesOk) {
+                crossOk = false;
+                detail.append(mr.getClass().getSimpleName())
+                      .append("{mode=").append(modeOk)
+                      .append(",ari=").append(ag.getActiveRuleAri())
+                      .append(",bytes=").append(ag.estimateAgentStateBytes()).append("} ");
+            }
+        }
+
+        DtnmaM2MobEnergyOnlyRouter eProto = (DtnmaM2MobEnergyOnlyRouter) (new DtnmaM2MobEnergyOnlyRouter(grp)).replicate();
+        DtnmaM2MobBufferOnlyRouter bProto = (DtnmaM2MobBufferOnlyRouter) (new DtnmaM2MobBufferOnlyRouter(grp)).replicate();
+        DtnmaM2MobReplicaOnlyRouter rProto = (DtnmaM2MobReplicaOnlyRouter) (new DtnmaM2MobReplicaOnlyRouter(grp)).replicate();
+        boolean presetsOk = "ENERGY_ONLY".equals(eProto.getDtnmaAgent().getConfig().mobAblationMode)
+                && "BUFFER_ONLY".equals(bProto.getDtnmaAgent().getConfig().mobAblationMode)
+                && "REPLICA_ONLY".equals(rProto.getDtnmaAgent().getConfig().mobAblationMode);
+
+        check(crossOk && presetsOk,
+                "Test26: M2_MOBILITY_AWARE runs across Managed{SnW,PRoPHETv2,MaxProp,Epidemic} and ablation presets preserve mode",
+                detail.toString() + " presetsOk=" + presetsOk);
+    }
+
+    private static void test27CongestionAwareSnWBaseline() {
+        String cfg =
+                "Scenario.endTime = 500\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "bt.transmitSpeed = 250000\n" +
+                "bt.transmitRange = 100\n" +
+                "Group.bufferSize = 100000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 3\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "Group.initialEnergy = 100\n" +
+                "Group.scanEnergy = 0\n" +
+                "Group.scanResponseEnergy = 0\n" +
+                "Group.transmitEnergy = 0\n" +
+                "SprayAndWaitRouter.nrofCopies = 6\n" +
+                "SprayAndWaitRouter.binaryMode = true\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp = new Settings("Group");
+        SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
+        ifc.setGroupSettings(grp);
+        MovementModel mm = new StationaryMovement(grp);
+        List<NetworkInterface> ifaces = Collections.<NetworkInterface>singletonList(ifc);
+
+        CongestionAwareSnWRouter proto = new CongestionAwareSnWRouter(grp);
+        DTNHost h0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "ca0", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "ca1", ifaces, new ModuleCommunicationBus(), mm, proto);
+        CongestionAwareSnWRouter r0 = (CongestionAwareSnWRouter) h0.getRouter();
+        CongestionAwareSnWRouter r1 = (CongestionAwareSnWRouter) h1.getRouter();
+        SimClock.getInstance().setTime(1.0);
+        r0.update();
+        r1.update();
+
+        double uInit = r0.getForwardingUtility();
+        Connection upCon = new VBRConnection(h0, ifaces.get(0), h1, ifaces.get(0));
+        r0.changedConnection(upCon);
+        SimClock.getInstance().setTime(10.0);
+        double encRate = r0.getEncounterRatePerMin();
+        double uAfter = r0.getForwardingUtility();
+        boolean canRelayHealthy = r0.canRelayToPeer(upCon);
+
+        h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 20.0);
+        boolean relaySuppressedLowEnergy = !r0.canRelayToPeer(upCon);
+
+        boolean ok = encRate > 0.0 && uInit >= 0.0 && uAfter >= uInit && uAfter <= 1.0
+                && canRelayHealthy && relaySuppressedLowEnergy;
+        check(ok,
+                "Test27: CongestionAwareSnWRouter tracks encounter utility and enforces static energy cutoff",
+                String.format("enc=%.2f u0=%.3f u1=%.3f healthy=%s cut=%s",
+                        encRate, uInit, uAfter, canRelayHealthy, relaySuppressedLowEnergy));
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -1786,6 +1924,8 @@ public class DtnmaUnitTests {
         test23FirstClassMobilityEdds();
         test24MobilityAwareControllerAndAblations();
         test25DeployabilityOverheadMetricsInReport();
+        test26CrossSubstrateMobAndAblationPresets();
+        test27CongestionAwareSnWBaseline();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");
