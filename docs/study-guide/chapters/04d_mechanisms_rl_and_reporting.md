@@ -53,7 +53,7 @@ Weight explosion prevented via hard `[-10.0, 10.0]` clipping; shield `mask[0] = 
 At `t = 3300.5 s` (seed `7103`, node `53`), `M3` chooses greedy/exploratory `P6` (`HIGH_SPRAY_BACKPRESSURE`). `S3` overrides (`11111100`) down to **`BALANCED_AGILE_FOCUS`**, logging `ARI://DTNMA/SHIELD/DENSE_STORM_GUARD` — keeping zero critical loss (`0` unique lost across 11 seeds) even though cumulative bulk & survival lag behind `M2`.
 
 ### 10. Status Label & Evolution
-`Implemented, experimental` (`v1.0-tnsm-freeze`). **Honest negative:** Underperformed hand-written `SRL` (`M2`) on every stress and benign endpoint (`H3`/`CompB`).
+`Implemented, experimental` (`v1.0-freeze`). **Honest negative:** Underperformed hand-written `SRL` (`M2`) on every stress and benign endpoint (`H3`/`CompB`).
 
 ### 11. Supervisor Rationale
 **Open research question:** Demonstrates safety shielding protects critical traffic even under weak learned policies, while honestly showing hand-crafted domain rules outperform shallow online Q-learning in `v1.0`.
@@ -138,7 +138,7 @@ Mode matrix invariance guarantees identical forwarding & control byte baselines 
 Comparing **`M0e-20` (`73.7` alive)** -> **`M2-LocalOnly` (`80.0` alive)** -> **`M0e-25` (`83.8` alive)** -> **`M2` (`83.8` alive)** reveals cleanly in seconds how much `M2`'s end-of-mission node survival relies on `0.25` vs `0.20` SoC threshold!
 
 ### 10. Status Label & Evolution
-`M0b..M0d`: `Implemented+tested` (`v1.0-tnsm-freeze`); `M0e-20/25`: `Implemented+tested` (`v1.0-exp-controls`).
+`M0b..M0d`: `Implemented+tested` (`v1.0-freeze`); `M0e-20/25`: `Implemented+tested` (`v1.0-exp-controls`).
 
 ### 11. Supervisor Rationale
 Makes thesis claims falsifiable against non-strawman competitors.
@@ -180,7 +180,7 @@ Emits `60+` machine-parseable `key: value` fields (`unique_critical_lost`, `crit
 Event C (`21600–28800 s`) bulk delivery shows why cohort tracking matters (`H2`): whole-mission bulk differs by `-7.0 pp` (`66%` vs `73%`), whereas *inside* the late 2-hour storm Event C cohort (`1h` horizon), **`M2` beats `M1-U` by `+19.21 +/- 3.97 pp`** (`p_holm = 1.58e-6`, `11/11` seeds) because `M1-U`'s delayed throttle wave stays stuck!
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Fixes outcome masking across heterogeneous timescales (`Event A = 5 min`, `B = 30 min`, `C = 2 h`).
@@ -193,7 +193,7 @@ Fixes outcome masking across heterogeneous timescales (`Event A = 5 min`, `B = 3
 Captures `300 s`-binned fleet survival trajectories (`aliveNodes`, `avgSoC`, cumulative delivery ratio, energy spent) cleanly across `12`-hour stress scenarios without bloating multi-gigabyte raw trace logs.
 
 ### 2. Design Alternatives Considered
-Logging per-tick per-node battery vectors (`126 x 432,000` ticks = tens of MB per run). Aggregated `300 s` fleet snapshots produce clean `< 15 KB` `.txt` files across `715` runs.
+Logging per-tick per-node battery vectors (`126 x 432,000` ticks = tens of MB per run). Aggregated `300 s` fleet snapshots produce clean `< 15 KB` `.txt` files across `627` urban VDTN runs.
 
 ### 3. Architecture & Data Flow
 `DtnmaRecoveryTimelineReport.updated(...)` samples all hosts every `300 s`, emits `8`-column tab-separated snapshot (`time, alive, avgSoc, critDeliv, bulkDeliv, ... , totalEnergyJ, critLost`), and appends final snapshot on `done()`.
@@ -220,7 +220,7 @@ Seed `7103` final rows at `t = 42900.5 s` (`CompA Blackout`):
 - `ManagedEpidemic` Tier 2: **`124` alive**, `0.2050` SoC, `0.6694` crit, `6,834.63 J`, `0` lost.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Provides direct time-series evidence of energy blackouts vs. autonomic survival.
@@ -258,7 +258,7 @@ $\text{traceable\_ari\_ratio} = \frac{|\{\text{rows starting with } \texttt{ARI:
 Smoke row: `30.5  30.5  0  M2_AUTONOMIC_SRL  0.000  ...  STANDARD_SPRAY_FOCUS  PASS  11111111  ARI://DTNMA/SRL/VDTN_NOMINAL_CATCHALL  [EDD_QUEUE_RATIO(0.00) >= 0.00 -> TRUE]`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Transforms ADTNM from simulation prototype into an auditable management architecture aligned with **RFC 9675 Sec 4.1** traceability goals.

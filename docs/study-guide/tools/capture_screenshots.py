@@ -60,7 +60,7 @@ def render_terminal_png(lines: List[str], out_path: Path, title: str) -> None:
         col = (226, 232, 240)
         if ln.startswith("$ ") or ln.startswith("PS> "):
             col = (56, 189, 248)
-        elif "PASS" in ln or "exact" in ln.lower() or "v1.0-tnsm-freeze" in ln:
+        elif "PASS" in ln or "exact" in ln.lower() or "ca5d9ac" in ln or "IN SYNC" in ln:
             col = (74, 222, 128)
         elif "OVERRIDE" in ln or "CRITICAL" in ln or "Dropped" in ln:
             col = (251, 191, 36)
@@ -214,7 +214,7 @@ def run_capture() -> str:
         term2_raw = RAW_DIR / "03_audit_rl_excerpts.png"
         render_terminal_png(term2_lines, term2_raw, "Raw Simulator Evidence: ARI Audit Logs, Shield Masking & Blackout Recovery")
 
-        # 4. Batch runner --dry-run + immutable git tag verification
+        # 4. Batch runner --dry-run + immutable baseline commit verification
         dry_res = subprocess.run(
             [
                 sys.executable,
@@ -225,8 +225,8 @@ def run_capture() -> str:
             ],
             capture_output=True, text=True, env=env, check=True,
         )
-        tag_res = subprocess.run(
-            ["git", "-C", str(ADTNM_ROOT), "show-ref", "--tags", "-d"],
+        freeze_res = subprocess.run(
+            ["git", "-C", str(ADTNM_ROOT), "show", "-s", "--format=%H %s", "ca5d9ac"],
             capture_output=True, text=True, check=True,
         )
         git_head = subprocess.run(
@@ -236,13 +236,13 @@ def run_capture() -> str:
         term3_lines = (
             ["PS> python ADTNM/tools/parallel_batch_runner.py --scenario ADTNM/scenarios/compB_exp_controls_stress.txt --dry-run"]
             + dry_res.stdout.splitlines()[:10]
-            + ["", "PS> git show-ref --tags -d"]
-            + tag_res.stdout.splitlines()
+            + ["", "PS> git show -s --format='%H %s' ca5d9ac"]
+            + freeze_res.stdout.splitlines()
             + ["", "PS> git log --oneline -n 5 d4a159f"]
             + git_head.stdout.splitlines()
         )
         term3_raw = RAW_DIR / "04_batch_dryrun_and_tags.png"
-        render_terminal_png(term3_lines, term3_raw, "Experiment Orchestration Dry-Run & Immutable Tag Verification")
+        render_terminal_png(term3_lines, term3_raw, "Experiment Orchestration Dry-Run & Frozen Baseline Verification")
 
     # Annotate all 4 screenshots
     im_g = Image.open(gui_raw)
@@ -276,9 +276,9 @@ def run_capture() -> str:
         term3_raw, ANN_DIR / "04_batch_dryrun_and_tags_annotated.png",
         [
             ((14, 52, 920, 210), "Parallel Batch Runner Campaign Matrix (Dry Run)", (0, 114, 178)),
-            ((14, 245, 880, 325), "Frozen Tag v1.0-tnsm-freeze -> ca5d9ac Preserved Intact", (0, 158, 115)),
+            ((14, 245, 880, 325), "Frozen v1.0 Baseline Commit ca5d9ac Preserved Intact", (0, 158, 115)),
         ],
-        "Reproducibility Evidence: Batch Scheduler + Tag Immutability",
+        "Reproducibility Evidence: Batch Scheduler + Frozen Baseline Check",
     )
 
     # Write screenshots/README.md
@@ -291,7 +291,7 @@ def run_capture() -> str:
             f"| `01_the_one_gui.png` | `{gui_mode}` via temporary `CaptureOneGuiScreenshot.java` compiled to temp dir | Helsinki `compB` stress map @ `t=360s`, seed `7103`, `DtnmaM2SrlRouter` |",
             "| `02_compile_tests_smoke.png` | Subprocess stdout/stderr capture rendered on dark terminal canvas | `DtnmaUnitTests` (`27/27 pass`) + 1h `scenario_dtnma.txt` smoke outputs |",
             "| `03_audit_rl_excerpts.png` | Verbatim line slices from frozen `final_11seed/` seed `7103` raw logs | `M2` SRL match, `M3` shield override `11111100`, `Epidemic` Tier 1 vs Tier 2 |",
-            "| `04_batch_dryrun_and_tags.png` | Live execution of `parallel_batch_runner.py --dry-run` + `git show-ref --tags -d` | Safe batch dry-run & `v1.0-tnsm-freeze` tag lock |",
+            "| `04_batch_dryrun_and_tags.png` | Live execution of `parallel_batch_runner.py --dry-run` + `git show ca5d9ac` | Safe batch dry-run & `v1.0-freeze` baseline integrity |",
             "",
         ]),
         encoding="utf-8",

@@ -9,7 +9,7 @@ Analyzes all 176 fresh-seed runs (seeds 7211..7307, n=11 paired primes) across:
   - exploratory_v1_0_controls/groupflood_stress   (M1-F-Group, M2                 -> 22 runs)
   - exploratory_v1_0_controls/groupflood_benign   (M1-F-Group, M2                 -> 22 runs)
 
-Does NOT modify or mix with the frozen v1.0-tnsm-freeze campaign (seeds 7103..7207).
+Does NOT modify or mix with the frozen v1.0 baseline campaign (seeds 7103..7207).
 """
 
 from __future__ import annotations
@@ -458,7 +458,7 @@ def main() -> None:
     lines: List[str] = []
     lines.append("# Post-Freeze Exploratory Controls Summary (`v1.0-exp-controls`)")
     lines.append("")
-    lines.append(f"- **Seed partition:** `{EXP_SEEDS_11}` (`n = 11` fresh primes `> 7207`, completely disjoint from `v1.0-tnsm-freeze` `7103..7207`)")
+    lines.append(f"- **Seed partition:** `{EXP_SEEDS_11}` (`n = 11` fresh primes `> 7207`, completely disjoint from the frozen `v1.0` baseline `7103..7207`)")
     lines.append(f"- **Total runs verified:** `{summary['runs_verified']}/176` (`55 + 55 + 11 + 11 + 22 + 22`)")
     lines.append("- **Inference note:** All `p_unadj` values below are unadjusted paired `t`-test exploratory checks (`n = 11`, `df = 10`, no multiplicity correction).")
     lines.append("")

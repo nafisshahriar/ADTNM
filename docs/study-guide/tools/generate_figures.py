@@ -212,8 +212,8 @@ MMD_SPECS: Dict[str, str] = {
   AG --> REP["src/report/*"]
 """,
     "fig14_seed_governance": """flowchart LR
-  CAL["Calibration (M0 Only): 4001..4003"] --> FREEZE["Tag v1.0-tnsm-freeze (ca5d9ac)"]
-  FREEZE --> CONF["Confirmatory (715 runs): 7103..7207 (Holm m=4)"]
+  CAL["Calibration (M0 Only): 4001..4003"] --> FREEZE["Tag v1.0-freeze (ca5d9ac)"]
+  FREEZE --> CONF["Confirmatory (627 VDTN runs): 7103..7207 (Holm m=4)"]
   CONF -. Disjoint Fresh Seeds .-> EXP["Exploratory (176 runs): 7211..7307 (p_unadj)"]
 """,
     "fig22_evaluation_methodology_timeline": """flowchart LR
@@ -415,7 +415,7 @@ def build_all_diagrams() -> None:
     # Fig 14: Seed Governance
     fig, ax = make_diagram_canvas("Figure 14: Seed Isolation & Anti-Leakage Governance (SEED_ROLES.md)")
     draw_box(ax, 0.04, 0.46, 0.26, 0.30, "Stressor Calibration\nSeeds: 4001..4003\nUsed solely on M0a/M0b\nto calibrate Events A/B/C\n(Never in inference)", fc="#F1F5F9", ec=OI["slate"])
-    draw_box(ax, 0.35, 0.46, 0.30, 0.30, "Confirmatory Held-Out [FROZEN]\nTag: v1.0-tnsm-freeze (ca5d9ac)\nSeeds: 7103..7207 (n=11 primes)\n715 Runs, Holm m=4 Corrected", fc="#DCFCE7", ec=OI["green"], bold=True)
+    draw_box(ax, 0.35, 0.46, 0.30, 0.30, "Confirmatory Held-Out [FROZEN]\nTag: v1.0-freeze (ca5d9ac)\nSeeds: 7103..7207 (n=11 primes)\n627 VDTN Runs, Holm m=4", fc="#DCFCE7", ec=OI["green"], bold=True)
     draw_box(ax, 0.70, 0.46, 0.26, 0.30, "Post-Freeze Exploratory\nv1.0-exp-controls\nSeeds: 7211..7307 (n=11 primes)\n176 Runs, Unadjusted p_unadj\n(M0e-20/25, M2-Local, M1-F-Grp)", fc="#FEF3C7", ec=OI["orange"])
     draw_arrow(ax, 0.30, 0.61, 0.35, 0.61, "Freeze")
     draw_arrow(ax, 0.65, 0.61, 0.70, 0.61, "Disjoint")
@@ -432,10 +432,10 @@ def build_all_plots() -> None:
     exp = ledger["exploratory_v1_0_controls"]
     inv = json.loads((GUIDE_DIR / "data" / "code_inventory.json").read_text(encoding="utf-8"))
 
-    # Fig 15: CompA 4 Regimes x 4 Substrates Critical & Bulk Delivery
+    # Fig 15: CompA 3 Urban VDTN Regimes x 4 Substrates Critical & Bulk Delivery
     fig, axes = plt.subplots(1, 2, figsize=(12.2, 4.8), sharey=True)
-    regimes = ["energy_blackout", "vdtn_overload", "ntn_space", "benign"]
-    rlabels = ["Blackout", "Overload", "NTN Space", "Benign"]
+    regimes = ["energy_blackout", "vdtn_overload", "benign"]
+    rlabels = ["Energy Blackout", "vDTN Overload", "Benign"]
     routers = [
         ("SprayAndWaitRouter", "ManagedSprayAndWaitRouter", "SnW"),
         ("ProphetV2Router", "ManagedProphetV2Router", "PRoPHETv2"),
@@ -464,7 +464,7 @@ def build_all_plots() -> None:
         a.grid(axis="y", ls=":", alpha=0.5)
     axes[0].set_ylabel("Delivery Ratio (%)")
     axes[0].legend(fontsize=8, loc="lower left", ncol=2)
-    fig.suptitle("Figure 15 [CONFIRMATORY v1.0-tnsm-freeze, 7103..7207]: Managed vs. Stock Across 4 Regimes", fontsize=12, fontweight="bold")
+    fig.suptitle("Figure 15 [CONFIRMATORY v1.0-freeze, 7103..7207]: Managed vs. Stock Across 3 Urban VDTN Regimes", fontsize=12, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     save_fig(fig, "fig15_compA_regimes")
 
@@ -511,7 +511,7 @@ def build_all_plots() -> None:
     axes[1].set_title("Epidemic Blackout Survival Curve (Seed 7103)", fontweight="bold")
     axes[1].legend(fontsize=8)
     axes[1].grid(True, ls=":", alpha=0.5)
-    fig.suptitle("Figure 16 [CONFIRMATORY v1.0-tnsm-freeze]: Where Survival Gains Come From (Tier 2 > Tier 1)", fontsize=12, fontweight="bold")
+    fig.suptitle("Figure 16 [CONFIRMATORY v1.0-freeze]: Where Survival Gains Come From (Tier 2 > Tier 1)", fontsize=12, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     save_fig(fig, "fig16_compA_tiers_blackout")
 
@@ -559,7 +559,7 @@ def build_all_plots() -> None:
     axes[1].set_ylabel("Stale Throttle (node-seconds / N)")
     axes[1].set_title(f"H1 Confirmed: M2=0.0 vs M1-U={h1['mean_b']:.1f}\n(p_holm={h1['p_holm']:.2e}, 11/11)", fontweight="bold")
     axes[1].grid(axis="y", ls=":", alpha=0.5)
-    fig.suptitle("Figure 18 [CONFIRMATORY v1.0-tnsm-freeze, n=11]: Holm Family H1-H4 & Honest Failed NI Check", fontsize=12, fontweight="bold")
+    fig.suptitle("Figure 18 [CONFIRMATORY v1.0-freeze, n=11]: Holm Family H1-H4 & Honest Failed NI Check", fontsize=12, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     save_fig(fig, "fig18_compB_hypotheses")
 
@@ -582,7 +582,7 @@ def build_all_plots() -> None:
     axes[1].set_xticks(xb); axes[1].set_xticklabels(modes_b, rotation=25)
     axes[1].set_title("Event C Cohort vs Benign Throughput (M3 Trails M2)", fontweight="bold")
     axes[1].legend(fontsize=8); axes[1].grid(axis="y", ls=":", alpha=0.5)
-    fig.suptitle("Figure 19 [CONFIRMATORY v1.0-tnsm-freeze, 7103..7207]: CompB Mode Tradeoffs & M3 Negative Result", fontsize=12, fontweight="bold")
+    fig.suptitle("Figure 19 [CONFIRMATORY v1.0-freeze, 7103..7207]: CompB Mode Tradeoffs & M3 Negative Result", fontsize=12, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     save_fig(fig, "fig19_compB_global_vs_event")
 

@@ -3,7 +3,7 @@
 
 Computes EVERY statistical number, LOC count, SHA-256 check, and worked-example
 log excerpt directly from raw source/report files:
-  - Confirmatory v1.0 (frozen tag v1.0-tnsm-freeze, 715 runs, seeds 7103..7207):
+  - Confirmatory v1.0 (frozen tag v1.0-freeze, 627 urban VDTN runs, seeds 7103..7207):
       n:/R&D/cog/the-one/reports/final_11seed/*
   - Post-freeze exploratory (v1.0-exp-controls, 176 runs, seeds 7211..7307):
       n:/R&D/cog/the-one/reports/exploratory_v1_0_controls/*
@@ -114,7 +114,6 @@ def compute_confirmatory_extras(f11_json: Dict[str, Any]) -> Dict[str, Any]:
     adapter_loc = {p: by_path[p]["noncomment_loc"] for p in adapter_paths}
     handcoded_loc = by_path["src/routing/EnergyAwareEpidemicRouter.java"]["noncomment_loc"]
     rules_vdtn_loc = by_path["scenarios/rules_vdtn.txt"]["noncomment_loc"]
-    rules_ntn_loc = by_path["scenarios/rules_ntn.txt"]["noncomment_loc"]
 
     # Raw E1 SHA-256 parity over MessageStatsReport body
     msg_sha_exact = 0
@@ -215,7 +214,6 @@ def compute_confirmatory_extras(f11_json: Dict[str, Any]) -> Dict[str, Any]:
                 "adapter_mean": sum(adapter_loc.values()) / len(adapter_loc),
                 "handcoded_energy_aware_epidemic": handcoded_loc,
                 "rules_vdtn_noncomment": rules_vdtn_loc,
-                "rules_ntn_noncomment": rules_ntn_loc,
             },
         },
         "equivalence": {
@@ -315,7 +313,7 @@ def main() -> None:
             "analyze_final_11seed.py",
         ),
         (
-            "CompA 176 managed runs unique_critical_lost",
+            "CompA 132 managed runs unique_critical_lost",
             f"{conf['compA_managed_crit_lost_sum']}",
             "final_11seed/compA_*/*_DtnmaRlMetricsReport.txt",
             "generate_provenance.py",
@@ -361,7 +359,7 @@ def main() -> None:
     md_lines = [
         "# Appendix D: Number Provenance Ledger (`appendix_d_provenance.md`)",
         "",
-        "> **Documented Commit:** `d4a159f` | **Frozen Tag:** `v1.0-tnsm-freeze` (`c820752c` -> `ca5d9ac`) | "
+        "> **Documented Commit:** `d4a159f` | **Frozen Tag:** `v1.0-freeze` (`c820752c` -> `ca5d9ac`) | "
         "**Exploratory Campaign:** `v1.0-exp-controls` | **Generated:** `2026-11-25` by `docs/study-guide/tools/generate_provenance.py`",
         "",
         "Every quantitative claim in the Study Guide and root `README.md` traces programmatically to "

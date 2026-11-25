@@ -21,7 +21,7 @@ ADTNM_ROOT = GUIDE_DIR.parent.parent
 THE_ONE_DIR = ADTNM_ROOT.parent / "the-one"
 LEDGER_PATH = GUIDE_DIR / "data" / "provenance_ledger.json"
 
-BANNED_RE = re.compile(r"\b(certified|compliant|airtight|proven|rfc-compliant)\b", re.I)
+BANNED_RE = re.compile(r"\b(certified|compliant|airtight|proven|rfc-compliant|tnsm|tmc|tccn)\b", re.I)
 
 
 def collect_authored_md() -> List[Path]:
@@ -97,7 +97,7 @@ def gate4_mechanisms_and_scenarios() -> Tuple[bool, str]:
         total_mechs += len(re.findall(r"^## Mechanism \d+:", t, re.M))
         total_subs += len(re.findall(r"^### (?:1[01]|[1-9])\.", t, re.M))
     eval_txt = (GUIDE_DIR / "chapters/06_evaluation_and_results.md").read_text(encoding="utf-8")
-    scen_checks = ["4,500 × 3,400", "9,000 × 7,000", "Event A", "Event B", "Event C", "fig22_evaluation_methodology_timeline.svg"]
+    scen_checks = ["4,500 × 3,400", "Event A", "Event B", "Event C", "fig22_evaluation_methodology_timeline.svg"]
     missing_scen = [s for s in scen_checks if s not in eval_txt]
     ok = total_mechs == 23 and total_subs == 253 and not missing_scen
     return ok, f"mechs={total_mechs}/23, subs={total_subs}/253, missing_scen={missing_scen}"
@@ -172,12 +172,14 @@ def gate7_banned_words() -> Tuple[bool, str]:
 
 def gate8_tidiness_and_safety() -> Tuple[bool, str]:
     pycaches = list(ADTNM_ROOT.rglob("__pycache__"))
-    tags_out = subprocess.check_output(["git", "-C", str(ADTNM_ROOT), "show-ref", "--tags", "-d"], text=True)
-    tag_ok = ("c820752c27683f070ec72664c68bb0112a91d1b8 refs/tags/v1.0-tnsm-freeze" in tags_out and
-              "ca5d9acccf6b4f606df5a586ecb80d4842179e4d refs/tags/v1.0-tnsm-freeze^{}" in tags_out)
+    anc = subprocess.run(
+        ["git", "-C", str(ADTNM_ROOT), "merge-base", "--is-ancestor", "ca5d9acccf6b4f606df5a586ecb80d4842179e4d", "HEAD"],
+        check=False,
+    )
+    freeze_ok = anc.returncode == 0
     rep_ok = (THE_ONE_DIR / "reports/final_11seed").is_dir() and (THE_ONE_DIR / "reports/exploratory_v1_0_controls").is_dir()
-    ok = not pycaches and tag_ok and rep_ok
-    return ok, f"pycaches={len(pycaches)}, freeze_tag_intact={tag_ok}, preserved_reports={rep_ok}"
+    ok = not pycaches and freeze_ok and rep_ok
+    return ok, f"pycaches={len(pycaches)}, freeze_baseline_intact={freeze_ok}, preserved_reports={rep_ok}"
 
 
 def main() -> None:

@@ -11,8 +11,8 @@ On the everyday Internet (`TCP/IP`), you assume two things are true almost all t
 1. An **end-to-end path** exists between your phone and a server right now.
 2. **Round-trip delays** are tens of milliseconds, so asking *"Did you get that packet?"* happens nearly instantaneously.
 
-In a **Delay/Disruption-Tolerant Network (DTN)** — disaster-response vehicular fleets, unmanned aerial relays, or deep-space satellites (`vDTN`, `UAV`, `NTN`) — both assumptions break:
-- Nodes move, go behind buildings or planets, run on batteries, or lose radios for **minutes to hours**.
+In a **Delay/Disruption-Tolerant Network (DTN)** — disaster-response vehicular fleets, challenged urban transit, or unmanned aerial relays (`vDTN`, `UAV`) — both assumptions break:
+- Nodes move out of radio range or behind urban obstacles, run on batteries, or lose radios for **minutes to hours**.
 - There may *never* be a simultaneous path from sender `A` to receiver `D`: `A` hands data to `B` at `t = 5 min`, `B` drives across town, meets `C` at `t = 22 min`, and `C` delivers to `D` at `t = 40 min`.
 
 Because packets cannot simply wait on a wire, DTNs use **Store-Carry-Forward** (**RFC 9171**, *Bundle Protocol Version 7*, Burleigh et al., Jan 2022). Data units called **bundles** sit inside node flash/RAM buffers while carriers physically move through space.

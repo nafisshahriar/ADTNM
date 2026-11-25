@@ -12,7 +12,7 @@
 | **Sec 4.1: Application Resource Identifiers (`ARIs`)** | Unambiguous compact naming for managed objects, rules, telemetry, and controls | String URIs (`ARI://DTNMA/SRL/<ID>`, `ARI://DTNMA/SHIELD/<GUARD>`, `ARI://DTNMA/RL/DIRECT`) logged on `100%` of decisions | Text URIs serialized in Java/TSV audit files rather than CBOR-encoded binary DTNMA ARIs |
 | **Sec 4.2: Externally Defined Data (`EDDs`)** | Standardized node-sampled operational metrics decoupled from internal protocol structures | `11` immutable `EDD_*` metrics in `EddTelemetrySampler.java:26-36` sampled uniformly across all routers | Java `double[11]` array indexed by enum; custom ADMs are not loaded dynamically |
 | **Sec 4.3: Controls (Actuators)** | Parameterized node actions altering behavior without code reloads | `4` `ControlAction` primitives + `8` discrete profiles (`P0..P7`) driving `L, bp, ing` hooks via `DtnmaManagedRouter` | Discrete finite gear box (`P0..P7`) chosen for `O(8)` shield decidability |
-| **Sec 4.4: State-Based Autonomy (`SRL`)** | Onboard event-condition-action rules evaluated continuously while disconnected | `DtnmaRuleParser` loads `RULE / IF / THEN` files (`rules_vdtn.txt`, `rules_ntn.txt`) evaluated every `1.0 s` (`M2`) | Flat conjunction (`&&`) or disjunction (`||`) clauses; rules do not call custom external scripts |
+| **Sec 4.4: State-Based Autonomy (`SRL`)** | Onboard event-condition-action rules evaluated continuously while disconnected | `DtnmaRuleParser` loads `RULE / IF / THEN` files (`rules_vdtn.txt`) evaluated every `1.0 s` (`M2`) | Flat conjunction (`&&`) or disjunction (`||`) clauses; rules do not call custom external scripts |
 
 ---
 
@@ -23,7 +23,7 @@
 | **Sec 3.1: Self-Configuring** | Automatically adopt configuration changes upon context shift or intent update | `upsertDownlinkOverlayRule()` integrates remote `CTRL_` waves seamlessly (`PRIO 100`) without restart | Remote waves limited to profile/guard clamps in `v1.0` |
 | **Sec 3.1: Self-Healing** | Recover normal capacity automatically once transient disturbance passes | Catch-all recovery rules (`PRIORITY: 10`, e.g., `VDTN_URBAN_NOMINAL`) + `126/126` recovery across overload (`CompA`) | Missing catch-all recovery rule in unvalidated experimental `rules_uav.txt` |
 | **Sec 3.1: Self-Optimizing** | Improve throughput/latency continuously within safe resource budgets | Optional `M3` (`ShieldedCmdpRlAgent`) explores Q-values (`P0..P7`); local backpressure (`bp`) spares hot peers | `M3` is `Implemented, experimental` and trailed `M2` in `v1.0` |
-| **Sec 3.1: Self-Protecting** | Defend critical availability & energy survival against storms or battery depletion | `DtnmaSafetyShield` (`S1–S4`) + `5`-tier buffer reserve + Tier 1 ACK pruning (`0` critical loss across `176` runs) | Relies on honest bundle prefixes (`CRIT_`, `CTRL_`); no cryptographic auth |
+| **Sec 3.1: Self-Protecting** | Defend critical availability & energy survival against storms or battery depletion | `DtnmaSafetyShield` (`S1–S4`) + `5`-tier buffer reserve + Tier 1 ACK pruning (`0` critical loss across `132` CompA runs) | Relies on honest bundle prefixes (`CRIT_`, `CTRL_`); no cryptographic auth |
 | **Sec 4: Explicit Non-Goals** | Autonomy operates strictly inside designer bounds; deterministic auditability preserved | Hard `S1–S4` bitmask blocks unsafe actions + atomic `100.00%` `DtnmaAuditReport` offline replay | Hard shield overrides (`OVERRIDE` column) remain traceable to specific EDD readings |
 
 ---

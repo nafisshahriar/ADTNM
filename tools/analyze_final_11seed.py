@@ -56,7 +56,6 @@ EXPECTED_COUNTS = [
     ("compA_equivalence_default", 22),
     ("compA_vdtn_overload", 88),
     ("compA_energy_blackout", 99),
-    ("compA_ntn_space", 88),
     ("compA_benign", 88),
     ("compA_tiers", 132),
 ]
@@ -316,7 +315,7 @@ def main():
     final_dir = Path(args.final_dir)
     adtnm_dir = Path(args.adtnm_dir)
 
-    # 1. Verify 715/715 valid files
+    # 1. Verify 627/627 valid files
     integrity = {}
     total_valid = 0
     for slug, exp in EXPECTED_COUNTS:
@@ -419,7 +418,6 @@ def main():
         ("energy_blackout", "compA_energy_blackout", "CompA_EnergyBlackout_"),
         ("benign", "compA_benign", "CompA_Benign_"),
         ("vdtn_overload", "compA_vdtn_overload", "CompA_Overload_"),
-        ("ntn_space", "compA_ntn_space", "CompA_NTN_"),
     ]
     compa_summary = {"regimes": {}, "tiers": {}, "parity_a3": {}}
     ca_metrics = [
@@ -464,7 +462,6 @@ def main():
             compa_summary["parity_a3"]["loc"] = {
                 "EnergyAwareEpidemicRouter.java": count_noncomment_lines(adtnm_dir / "src/routing/EnergyAwareEpidemicRouter.java"),
                 "rules_vdtn.txt": count_noncomment_lines(adtnm_dir / "scenarios/rules_vdtn.txt"),
-                "rules_ntn.txt": count_noncomment_lines(adtnm_dir / "scenarios/rules_ntn.txt"),
             }
 
     # A2 Tiers
@@ -511,7 +508,7 @@ def main():
     # Generate concise human-readable Markdown summary
     md = []
     md.append("# ADTNM 11-Seed Held-Out Evaluation Summary (`7103..7207`)\n")
-    md.append(f"- Verified held-out runs: **{total_valid}/715**\n")
+    md.append(f"- Verified held-out runs: **{total_valid}/627**\n")
     md.append("\n## 1. Primary Confirmatory Hypotheses (Holm-Bonferroni m = 4, df = 10)\n")
     md.append("| ID | Comparison | Window | Endpoint | Mean A | Mean B | Paired Diff [95% CI] | t | p_raw | p_holm | Hedges g_av | Wins/11 |\n")
     md.append("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
@@ -560,7 +557,7 @@ def main():
     for pname, ps in compb_summary["paired_exploratory"].items():
         md.append(f"| {pname} | {ps['mean_a']:.3f} | {ps['mean_b']:.3f} | {ps['mean_diff']:+.3f} +/- {ps['ci95']:.3f} [{ps['lo95']:+.3f}, {ps['hi95']:+.3f}] | {ps['p_val']:.3e} | {ps['wins']}/11 |\n")
 
-    md.append("\n## 5. Comparison A Across 4 Regimes (n = 11)\n")
+    md.append("\n## 5. Comparison A Across 3 Urban VDTN Regimes (n = 11)\n")
     for rtag, _, _ in compa_regimes:
         md.append(f"\n### Regime: {rtag}\n")
         md.append("| Router | CrDel | CrLst Sum (EffMax) | CBD Sum (CBDA Mean) | BkDel | Alive Mean | SoC Mean |\n")

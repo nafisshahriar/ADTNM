@@ -17,7 +17,7 @@ ADTNM decomposes DTN operations into **four decoupled planes** inside `src/routi
                                       ^  Records every EDD, rule, shield, ARI
 +-----------------------------------------------------------------------------+
 | 3. AUTONOMIC DECISION & POLICY PLANE (DtnmaAgent)                           |
-|    SRL Rule Parser (12 vDTN / 10 NTN rules) · Optional M3 RL (experimental) |
+|    SRL Rule Parser (12-line vDTN ruleset) · Optional M3 RL (experimental)    |
 |    DtnmaSafetyShield (S1..S4 + Liveness) -> Active Control Profile (P0..P7) |
 |    Remote Overlay Slot (upserts Manager DOWNLINK/GROUP rule, TTL/priority)   |
 +-----------------------------------------------------------------------------+

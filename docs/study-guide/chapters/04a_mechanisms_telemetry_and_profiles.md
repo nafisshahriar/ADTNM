@@ -51,7 +51,7 @@ Downlink bundles expire automatically if `t > t_rx + ttlSec`; corrupt payloads m
 In confirmatory `compB_multitimescale` (seed `7103`), Manager wave `W1` starts at `t = 3601 s`. In `M1-U`, `90%` adoption takes `3336.2 s` mean across seeds (`T90`), so Event A's `300 s` burst already ended before throttling engages — whereas `M2` reacts locally at `3360.5 s` via `VDTN_SURGE_THROTTLE`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). Earlier prototypes lacked per-wave CDF adoption logging (`# WAVE_ADOPTION_CDF` added prior to freeze).
+`Implemented+tested` (`v1.0-freeze`). Earlier prototypes lacked per-wave CDF adoption logging (`# WAVE_ADOPTION_CDF` added prior to freeze).
 
 ### 11. Supervisor Rationale
 Directly operationalizes **RFC 9675 Sec 3** (asynchronous autonomy). Limitation: Manager campaigns in `v1.0` are schedule-driven rather than dynamically synthesized from uplink telemetry.
@@ -141,10 +141,10 @@ Messages currently mid-transfer (`isSending`) are skipped unless zero other cand
 In the 1h `scenario_dtnma.txt` smoke run, `53` `CRIT_` copies are dropped from saturated buffers — every single one came from **Tier 1 (`deliveredAckSet`)**, resulting in `unique_critical_lost = 0` (`184` delivered out of `262` created across classes).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). Replaces earlier `Comparator.sort` loops (`O(N log N)` per eviction) with single-pass `O(N)` bucket scan.
+`Implemented+tested` (`v1.0-freeze`). Replaces earlier `Comparator.sort` loops (`O(N log N)` per eviction) with single-pass `O(N)` bucket scan.
 
 ### 11. Supervisor Rationale
-Core contributor to **`0` unique critical lost across all `176` managed CompA runs**, regardless of forwarding substrate.
+Core contributor to **`0` unique critical lost across all `132` managed CompA runs**, regardless of forwarding substrate.
 
 ---
 
@@ -183,7 +183,7 @@ Logs rejections into `DtnmaRlMetricsReport` (`crit_rejected_src`, `bulk_rejected
 Node has `5 MB` RAM: `4.8 MB` is `BULK_` and `0.2 MB` is `CRIT_`. A new `300 KB` `CRIT_` bundle triggers immediate `BULK_` eviction; conversely, a new `300 KB` `BULK_` bundle arriving into `4.9 MB CRIT_` is rejected immediately (`DENIED_NO_SPACE`).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Prevents priority inversion at ingress without requiring separate physical queues.
@@ -231,7 +231,7 @@ if (!isCritOrCtrl(m)) {
 Under `M0c` (static pre-installed throttle guard) in Benign traffic, keeping `ingressMode > 0` unnecessarily cuts `bulk_delivery_prob` to `53.9%`; `M2` only enters `ingressMode = 1` (`P1`) during surges (`VDTN_SURGE_THROTTLE`) and restores `0` (`P4`/`P2`) when queues clear, achieving **`82.0%`** benign bulk (`+28.13 pp`, `H4`).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). Tier 2 gains on Epidemic (`14.5 -> 125.9` alive) come chiefly from Mechanisms `05 + 09` rather than replica caps (`Tier 3`).
+`Implemented+tested` (`v1.0-freeze`). Tier 2 gains on Epidemic (`14.5 -> 125.9` alive) come chiefly from Mechanisms `05 + 09` rather than replica caps (`Tier 3`).
 
 ### 11. Supervisor Rationale
 Proves traffic shaping at ingress yields `~100%` of the survival benefit without rewriting substrate routing tables.
@@ -285,7 +285,7 @@ Profile parameters gate three actuators:
 During dense congestion in `M3` (seed `7103`, node `53`, `t = 3300.5 s`), RL proposes **`P6`** (`HIGH_SPRAY_BACKPRESSURE`, `L=10`), Shield rule `S3` sets bitmask **`11111100`** (blocking `P6, P7`), and safely clamps execution to **`P3`** (`BALANCED_AGILE_FOCUS`, `L=6`).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Finite discrete action bundling keeps safety verification decidable in `O(8)` bit checks while covering an order-of-magnitude span of replication aggressiveness (`L = 1..12`).

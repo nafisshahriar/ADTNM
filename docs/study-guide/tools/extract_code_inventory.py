@@ -28,7 +28,7 @@ ADTNM_ROOT = GUIDE_DIR.parent.parent
 DATA_DIR = GUIDE_DIR / "data"
 
 DOC_DATE = "2026-11-25"
-FREEZE_TAG = "v1.0-tnsm-freeze"
+FREEZE_TAG = "v1.0-freeze"
 FREEZE_TAG_OBJ = "c820752c27683f070ec72664c68bb0112a91d1b8"
 FREEZE_COMMIT = "ca5d9acccf6b4f606df5a586ecb80d4842179e4d"
 EXP_CAMPAIGN = "v1.0-exp-controls"

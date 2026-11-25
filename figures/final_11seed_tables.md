@@ -1,5 +1,5 @@
 # ADTNM 11-Seed Held-Out Evaluation Summary (`7103..7207`)
-- Verified held-out runs: **715/715**
+- Verified held-out runs: **627/627**
 
 ## 1. Primary Confirmatory Hypotheses (Holm-Bonferroni m = 4, df = 10)
 | ID | Comparison | Window | Endpoint | Mean A | Mean B | Paired Diff [95% CI] | t | p_raw | p_holm | Hedges g_av | Wins/11 |
@@ -77,7 +77,7 @@
 | M1-F vs M1-U Stress total_ctrl_tx_J | 118727.636 | 2512.321 | +116215.315 +/- 3297.999 [+112917.316, +119513.314] | 2.744e-15 | 0/11 |
 | M1-F vs M1-U Stress alive_nodes | 13.545 | 90.727 | -77.182 +/- 2.767 [-79.949, -74.415] | 2.828e-14 | 0/11 |
 
-## 5. Comparison A Across 4 Regimes (n = 11)
+## 5. Comparison A Across 3 Urban VDTN Regimes (n = 11)
 
 ### Regime: energy_blackout
 | Router | CrDel | CrLst Sum (EffMax) | CBD Sum (CBDA Mean) | BkDel | Alive Mean | SoC Mean |
@@ -115,18 +115,6 @@
 | `ManagedMaxPropRouter` | 0.9663 +/- 0.0067 | 0 (0) | 0 (0.2) | 0.6488 +/- 0.0156 | 126.0 +/- 0.0 | 1.0000 |
 | `EpidemicRouter` | 0.3899 +/- 0.0193 | 1893 (193) | 584864 (0.0) | 0.2502 +/- 0.0070 | 126.0 +/- 0.0 | 1.0000 |
 | `ManagedEpidemicRouter` | 0.9759 +/- 0.0051 | 0 (7) | 0 (293.5) | 0.2787 +/- 0.0086 | 126.0 +/- 0.0 | 1.0000 |
-
-### Regime: ntn_space
-| Router | CrDel | CrLst Sum (EffMax) | CBD Sum (CBDA Mean) | BkDel | Alive Mean | SoC Mean |
-|---|---:|---:|---:|---:|---:|---:|
-| `SprayAndWaitRouter` | 0.9600 +/- 0.0077 | 105 (18) | 23628 (0.0) | 0.7497 +/- 0.0043 | 100.0 +/- 0.0 | 1.0000 |
-| `ManagedSprayAndWaitRouter` | 0.9857 +/- 0.0041 | 0 (0) | 0 (66.5) | 0.6740 +/- 0.0043 | 100.0 +/- 0.0 | 1.0000 |
-| `ProphetV2Router` | 0.8581 +/- 0.0097 | 565 (63) | 461289 (0.0) | 0.4713 +/- 0.0058 | 100.0 +/- 0.0 | 1.0000 |
-| `ManagedProphetV2Router` | 0.9879 +/- 0.0021 | 0 (0) | 0 (353.8) | 0.4961 +/- 0.0057 | 100.0 +/- 0.0 | 1.0000 |
-| `MaxPropRouter` | 0.9359 +/- 0.0097 | 201 (26) | 27927 (0.0) | 0.9097 +/- 0.0057 | 100.0 +/- 0.0 | 1.0000 |
-| `ManagedMaxPropRouter` | 0.9838 +/- 0.0027 | 0 (0) | 0 (0.5) | 0.8462 +/- 0.0093 | 100.0 +/- 0.0 | 1.0000 |
-| `EpidemicRouter` | 0.3496 +/- 0.0125 | 2867 (278) | 670094 (0.0) | 0.2523 +/- 0.0027 | 100.0 +/- 0.0 | 1.0000 |
-| `ManagedEpidemicRouter` | 0.9887 +/- 0.0036 | 0 (25) | 0 (477.5) | 0.3327 +/- 0.0054 | 100.0 +/- 0.0 | 1.0000 |
 
 ## 6. Comparison A Tiers (n = 11)
 | Router | Tier | CrDel | CrLst Sum (EffSum) | BkDel | Alive | SoC |

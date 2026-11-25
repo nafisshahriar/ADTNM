@@ -55,7 +55,7 @@ Override any key in `scenarios/dtnma_params_default.txt` or scenario settings vi
 
 ---
 
-## 3. Declarative Rule Files (`scenarios/rules_vdtn.txt` & `rules_ntn.txt`)
+## 3. Declarative Rule File (`scenarios/rules_vdtn.txt`)
 
 | Rule File | Rule ID | Priority | Condition | Actions (`L`, `Ing`, `Telem`, `BP`) |
 |---|---|---|---|---|
@@ -63,10 +63,6 @@ Override any key in `scenarios/dtnma_params_default.txt` or scenario settings vi
 | `rules_vdtn.txt` | `VDTN_SURGE_THROTTLE` | `80` | `Q >= 0.88 && dQ >= 0.008` | `L=2, ing=1, int=300, bp=true` |
 | `rules_vdtn.txt` | `VDTN_TRAFFIC_JAM` | `60` | `Q >= 0.75 && Dens >= 5.0 && Speed < 2.0` | `L=4, ing=0, int=180, bp=true` |
 | `rules_vdtn.txt` | `VDTN_URBAN_NOMINAL` | `10` | `Q >= 0.0` (Catch-all recovery) | `L=6, ing=0, int=60, bp=true` |
-| `rules_ntn.txt` | `NTN_CRITICAL_FAILSAFE` | `100` | `SoC < 0.20 \|\| CritQ >= 0.50` | `L=1, ing=2, int=600, bp=true` |
-| `rules_ntn.txt` | `NTN_SURGE_THROTTLE` | `80` | `Q >= 0.88 && dQ >= 0.008` | `L=2, ing=1, int=300, bp=true` |
-| `rules_ntn.txt` | `NTN_ORBITAL_CLUSTER` | `50` | `Q >= 0.75 && Dens >= 4.0` | `L=4, ing=0, int=180, bp=true` |
-| `rules_ntn.txt` | `NTN_DEEP_SPACE_SPARSE` | `10` | `Q >= 0.0` (Catch-all recovery) | `L=6, ing=0, int=60, bp=true` |
 
 ---
 

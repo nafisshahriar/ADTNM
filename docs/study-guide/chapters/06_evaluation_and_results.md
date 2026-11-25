@@ -1,6 +1,6 @@
 # Chapter 6: Scenario Settings, Evaluation Methodology & Empirical Results
 
-> **Strict Methodological Separation:** Quantitative values throughout this chapter trace programmatically to [`provenance_ledger.json`](../data/provenance_ledger.json). The frozen **Confirmatory Evaluation (`v1.0-tnsm-freeze`)** comprises `715` held-out runs across eleven prime random seeds (`7103–7207`) analyzed with Holm–Bonferroni family-wise error control. Subsequent **Post-Freeze Exploratory Controls (`v1.0-exp-controls`)** comprise `176` runs over eleven disjoint prime seeds (`7211–7307`) and are reported separately with unadjusted *p*-values (`p_unadj`).
+> **Strict Methodological Separation:** Quantitative values throughout this chapter trace programmatically to [`provenance_ledger.json`](../data/provenance_ledger.json). The frozen **Confirmatory Evaluation (`v1.0-freeze`)** comprises `627` held-out urban VDTN runs across eleven prime random seeds (`7103–7207`) analyzed with Holm–Bonferroni family-wise error control. Subsequent **Post-Freeze Exploratory Controls (`v1.0-exp-controls`)** comprise `176` runs over eleven disjoint prime seeds (`7211–7307`) and are reported separately with unadjusted *p*-values (`p_unadj`).
 
 ---
 
@@ -11,7 +11,7 @@ A recurring pitfall in Delay/Disruption-Tolerant Network (DTN) simulation studie
 1. **Declarative Parameterization & Seed Pairing:** Every campaign is specified as a deterministic The ONE `.txt` scenario file using coprime array sweeps (e.g., `Group.router = [ModeA; ModeB; ...]` crossed with `MovementModel.rngSeed = [7103; 7109; ...]`). Because `MovementModel.rngSeed` fixes identical node trajectories, radio contact schedules, initial battery draws, and bundle arrival events across every comparator within a matched seed pair, any measured difference is attributable purely to the management policy rather than stochastic mobility variance.
 2. **Headless Multi-Core Execution:** `tools/parallel_batch_runner.py` parses each scenario's sweep Cartesian product (`--dry-run` verifies run count before execution), validates coprime array geometry, and dispatches isolated `core.DTNSim -b 1` JVM processes (`1,536 MB` heap, discrete tick `Scenario.updateInterval = 0.5 s`). Runs begin with a `1,000 s` spatial mobility warm-up (`MovementModel.warmup = 1000`) before primary workload telemetry stabilizes.
 3. **Four-Stream Report Instrumentation:** Each simulated run emits four complementary logs: `MessageStatsReport` (network-wide delivery, overhead, and latency summaries), `DtnmaRlMetricsReport` (class-separated delivery, fixed-horizon event cohorts, wave adoption cumulative distribution functions, and control energy), `DtnmaRecoveryTimelineReport` (`300 s`-binned fleet health curves), and `DtnmaAuditReport` (`16`-column per-decision `ARI` provenance traces).
-4. **Deterministic Offline Audit Replay (`R1`):** Immediately after simulation, `verify_audit_replay` (`tools/evaluate_autonomic_framework.py`) re-parses the rule set (`rules_vdtn.txt` or `rules_ntn.txt`), feeds the atomically captured telemetry columns from every row of `DtnmaAuditReport` back through the rule and safety shield logic, and checks that every emitted `ARI://DTNMA/...` identifier and `8`-bit safety mask matches bit-for-bit (`100.00%` verified).
+4. **Deterministic Offline Audit Replay (`R1`):** Immediately after simulation, `verify_audit_replay` (`tools/evaluate_autonomic_framework.py`) re-parses the rule set (`rules_vdtn.txt`), feeds the atomically captured telemetry columns from every row of `DtnmaAuditReport` back through the rule and safety shield logic, and checks that every emitted `ARI://DTNMA/...` identifier and `8`-bit safety mask matches bit-for-bit (`100.00%` verified).
 5. **Seed-Clustered Statistical Inference:** Rather than treating correlated bundles or nodes within a single simulation as independent observations, metrics are aggregated per seed (`n = 11`, degrees of freedom `df = 10`) and evaluated using paired Student's *t*-tests with `95%` confidence intervals (`t_{0.975, 10} * SE`), Hedges' $g_{av}$ effect sizes, step-down Holm–Bonferroni adjustment across the primary confirmatory family (`m = 4`), and Two One-Sided Tests (`TOST`) within a `±1.0 percentage-point` margin for architectural equivalence.
 
 ![Experimental Evaluation Pipeline and 12-Hour Multi-Timescale Mission Timeline](../figures/svg/fig22_evaluation_methodology_timeline.svg)
@@ -25,7 +25,7 @@ To prevent hyperparameter tuning or stressor threshold shaping from leaking into
 | Seed Pool | Prime Seed List / Count | Permitted Scientific Role | Governance Rule |
 |---|---|---|---|
 | **Stressor Calibration (`M0` only)** | `4001–4003` (`1–3` pilots) | Calibrated CompB surge rates and battery budgets using baseline `M0a/M0b` prior to freeze | Excluded completely from confirmatory statistics |
-| **Confirmatory Held-Out (`v1.0`)** | `7103, 7109, 7121, 7127, 7129, 7151, 7159, 7177, 7187, 7193, 7207` (`n = 11`) | Frozen under tag `v1.0-tnsm-freeze` (`715` total runs across `9` sub-campaigns) | Zero code, scenario, or rule edits permitted |
+| **Confirmatory Held-Out (`v1.0`)** | `7103, 7109, 7121, 7127, 7129, 7151, 7159, 7177, 7187, 7193, 7207` (`n = 11`) | Frozen under tag `v1.0-freeze` (`627` urban VDTN runs across `8` sub-campaigns) | Zero code, scenario, or rule edits permitted |
 | **Post-Freeze Exploratory** | `7211, 7213, 7219, 7229, 7237, 7243, 7247, 7253, 7283, 7297, 7307` (`n = 11`) | Disjoint `v1.0-exp-controls` campaign (`176` runs across `6` directories) testing post-freeze controls | Analyzed separately with unadjusted `p_unadj` |
 
 ![Seed Governance and Anti-Leakage Partitioning](../figures/svg/fig14_seed_governance.svg)
@@ -34,17 +34,16 @@ To prevent hyperparameter tuning or stressor threshold shaping from leaking into
 
 ## 3. Complete Scenario Settings & Physical Environment Models
 
-Understanding the empirical findings requires examining the exact physical topologies, node roles, radio interfaces, battery budgets, and workload disturbances encoded across the `scenarios/*.txt` suite. Notice that **Simulation Time Step** (`0.5 s`), **Mobility Warm-up** (`1,000 s`), and **Message Time-to-Live (`TTL`)** (`300 min` urban / `480 min` NTN) are held constant across matched baselines.
+Understanding the empirical findings requires examining the exact physical topologies, node roles, radio interfaces, battery budgets, and workload disturbances encoded across the `scenarios/*.txt` suite. Notice that **Simulation Time Step** (`0.5 s`), **Mobility Warm-up** (`1,000 s`), and **Message Time-to-Live (`TTL`)** (`300 min`) are held constant across matched baselines.
 
-### 3.1 Cross-Campaign Scenario Matrix (`891` Confirmatory + Exploratory Runs + Smoke)
+### 3.1 Cross-Campaign Scenario Matrix (`803` Confirmatory + Exploratory Runs + Smoke)
 
 | Scenario File (`scenarios/`) | Purpose & Hypothesis Scope | Duration (`endTime`) | Fleet Size | Field Buffer | Battery Budget (`J`) | Total Runs | Ruleset |
 |---|---|---|---|---|---|---:|---|
-| `scenario_dtnma.txt` | Rapid smoke benchmark (`RandomWaypoint`) | `3,600 s` (`1 h`) | `20` | `5 MB` | Mains / infinite | `1` | Default `SRL` / RL |
+| `scenario_dtnma.txt` | Rapid smoke benchmark (`RandomWaypoint`) | `3,600 s` (`1 h`) | `20` | `5 MB` | Mains / infinite | `1` | `rules_vdtn.txt` |
 | `compA_energy_blackout.txt` | `4` stock vs `4` managed + `EnergyAwareEpidemic` | `43,200 s` (`12 h`) | `126` | `15 MB` | `4,500–6,000 J` | `99` | `rules_vdtn.txt` |
 | `compA_tiers.txt` | `A2` Tier `1 / 2 / 3` ablation (`4` substrates) | `43,200 s` (`12 h`) | `126` | `15 MB` | `4,500–6,000 J` | `132` | `rules_vdtn.txt` |
 | `compA_vdtn_overload.txt` | Tight buffer congestion + `7200–10800 s` shock | `21,600 s` (`6 h`) | `126` | `5 MB` | Mains / infinite | `88` | `rules_vdtn.txt` |
-| `compA_ntn_space.txt` | Sparse high-delay ground-to-LEO relay topology | `43,200 s` (`12 h`) | `100` | `6 MB` | Mains / infinite | `88` | `rules_ntn.txt` |
 | `compA_benign.txt` | No-harm verification across `4` substrates | `43,200 s` (`12 h`) | `126` | `15 MB` | `5,500–7,500 J` | `88` | `rules_vdtn.txt` |
 | `compA_equivalence[_default].txt` | `E1` bit-parity & `E2` TOST (`Priority` vs `Managed SnW`) | `43,200 s` (`12 h`) | `126` | `15 MB` | `4,500–6,000 J` | `22 + 22` | `M0_STATIC`, Tier 1 |
 | `compB_multitimescale.txt` | Confirmatory `M0a..M3` stress (`Events A, B, C`) | `43,200 s` (`12 h`) | `126` | `10 MB` | `2,650–3,650 J` | `88` | `rules_vdtn.txt` |
@@ -53,18 +52,13 @@ Understanding the empirical findings requires examining the exact physical topol
 
 ### 3.2 Node Groups, Mobility Models & Radio Interfaces
 
-ADTNM evaluates two sharply contrasting physical DTN environments so conclusions do not depend on a single mobility geometry:
+All confirmatory and exploratory scenarios evaluate **Helsinki Urban Vehicular DTN (`compA_*`, `compB_*`, `126` Nodes, `4,500 × 3,400 m`)**, where heterogeneous mobile nodes traverse real city street topologies (`roads.wkt`, `main_roads.wkt`, `pedestrian_paths.wkt`, `shops.wkt`):
 
-1. **Helsinki Urban Vehicular DTN (`compA_*` urban, `compB_*`, `126` Nodes, `4,500 × 3,400 m`):** Nodes traverse real street topologies (`roads.wkt`, `main_roads.wkt`, `pedestrian_paths.wkt`, `shops.wkt`):
-   - **Pedestrians (`Group1`, `40` hosts):** `0.5–1.5 m/s`, `waitTime = 0–60 s`, `ShortestPathMapBasedMovement`, single short-range `btInterface` (`250 kbps`, `35 m` range).
-   - **City Cars (`Group2`, `40` hosts):** `2.7–13.9 m/s`, map-constrained `okMaps = 1`, `btInterface`.
-   - **Delivery / Patrol Vehicles (`Group3`, `34` hosts):** `2.5–11.5 m/s`, map-constrained, `btInterface`.
-   - **Backbone Trams (`Groups 4–6`, `6` hosts = `2 + 2 + 2` across `tram3.wkt`, `tram4.wkt`, `tram10.wkt`):** Deterministic `MapRouteMovement` (`7–10 m/s`), enlarged transit buffers (`15 MB` in Overload, `30 MB` in CompB, `50 MB` in Blackout/Benign), and **dual radios** combining `btInterface` with `highspeedInterface` (`10 Mbps`, `1,000 m` range).
-   - **Autonomous DTNMA Managers (`Group7`, `6` hosts):** Slow mobile ground/road hubs (`0.5–1.0 m/s`, `300–600 s` pause, `100 MB` buffer, `500,000 J` mains-powered batteries with `0.0 W` scan/transmit energy). Host `120` injects remote control policy waves (`W1–W3`) toward field agents `0–119`.
-2. **Sparse Non-Terrestrial / Space-Relayed DTN (`compA_ntn_space.txt`, `100` Nodes, `9,000 × 7,000 m`):** Larger domain (`4×` area), `RandomWaypoint`, `480 min` TTL, and `rules_ntn.txt`:
-   - **Ground Sensors (`40` hosts, `0.5–2.0 m/s`)** and **Mobile Rovers (`40` hosts, `3.0–12.0 m/s`)** with `6 MB` buffers and `localRadio` (`250 kbps`, `120 m`).
-   - **High-Altitude UAV / LEO Ferry Relays (`16` hosts, `18.0–32.0 m/s`):** `20 MB` buffers and dual radios (`localRadio` + `leoLink` at `2 Mbps`, `1,200 m`).
-   - **Stationary Mission Control (`4` hosts at `(4500, 3500)`):** `100 MB` buffers with dual radios.
+- **Pedestrians (`Group1`, `40` hosts):** `0.5–1.5 m/s`, `waitTime = 0–60 s`, `ShortestPathMapBasedMovement`, single short-range `btInterface` (`250 kbps`, `35 m` range).
+- **City Cars (`Group2`, `40` hosts):** `2.7–13.9 m/s`, map-constrained `okMaps = 1`, `btInterface`.
+- **Delivery / Patrol Vehicles (`Group3`, `34` hosts):** `2.5–11.5 m/s`, map-constrained, `btInterface`.
+- **Backbone Trams (`Groups 4–6`, `6` hosts = `2 + 2 + 2` across `tram3.wkt`, `tram4.wkt`, `tram10.wkt`):** Deterministic `MapRouteMovement` (`7–10 m/s`), enlarged transit buffers (`15 MB` in Overload, `30 MB` in CompB, `50 MB` in Blackout/Benign), and **dual radios** combining `btInterface` with `highspeedInterface` (`10 Mbps`, `1,000 m` range).
+- **Autonomous DTNMA Managers (`Group7`, `6` hosts):** Slow mobile ground/road hubs (`0.5–1.0 m/s`, `300–600 s` pause, `100 MB` buffer, `500,000 J` mains-powered batteries with `0.0 W` scan/transmit energy). Host `120` injects remote control policy waves (`W1–W3`) toward field agents `0–119`.
 
 ### 3.3 Radio Energy Budget & Why Blackouts Emerge
 
@@ -82,11 +76,11 @@ Crucially, `DtnmaRlMetricsReport` evaluates each event purely over the **cohort 
 
 ---
 
-## Part I — Confirmatory Results (`v1.0-tnsm-freeze`, `715` Runs, `7103–7207`)
+## Part I — Confirmatory Results (`v1.0-freeze`, `627` Urban VDTN Runs, `7103–7207`)
 
-### 4. Comparison A: Cross-Substrate Generality & Intervention Tiers (`440` Runs)
+### 4. Comparison A: Cross-Substrate Generality & Intervention Tiers (`451` Runs)
 
-#### 4.1 Four Managed Substrates Across Four Operational Regimes (`n = 11` Seeds Each)
+#### 4.1 Four Managed Substrates Across Three Urban VDTN Regimes (`n = 11` Seeds Each)
 
 | Regime | Substrate Family | Stock Crit% | Managed Crit% | Stock Bulk% | Managed Bulk% | Stock Alive | Managed Alive | Managed Crit Lost (`11`-seed sum) |
 |---|---|---|---|---|---|---|---|---|
@@ -98,12 +92,11 @@ Crucially, `DtnmaRlMetricsReport` evaluates each event purely over the **cohort 
 | **vDTN Overload** | `PRoPHETv2` | `33.90%` | **`94.97%`** | `29.67%` | `34.41%` | `126.0` | `126.0` | **`0`** (vs `2,053` stock) |
 | **vDTN Overload** | `MaxProp` | `60.70%` | **`96.63%`** | `60.92%` | `64.88%` | `126.0` | `126.0` | **`0`** (vs `1,212` stock) |
 | **vDTN Overload** | `Epidemic` | `38.99%` | **`97.59%`** | `25.02%` | `27.87%` | `126.0` | `126.0` | **`0`** (vs `1,893` stock) |
-| **NTN Space** | `SnW / PRoPHET / MaxP / Epi` | `34.96–96.00%` | **`98.38–98.87%`** | `25.23–90.97%` | `33.27–84.62%` | `100.0` | `100.0` | **`0`** (vs `105–2,867`) |
 | **Benign Baseline** | `SnW / PRoPHET / MaxP / Epi` | `51.88–93.83%` | **`96.11–98.58%`** | `50.04–95.56%` | `80.84–93.65%` | `63.3–126.0` | **`126.0`** | **`0`** (vs `67–1,703`) |
 
-Across all **`176` managed Comparison A runs** (`4` substrates × `4` regimes × `11` seeds), `unique_critical_lost` sums to **`0`**. Unmanaged flooding and encounter routers either drop critical faults during buffer contention (`Overload`, `NTN`) or drain battery reserves blindly (`Blackout`).
+Across all **`132` managed Comparison A runs** (`4` substrates × `3` urban VDTN regimes × `11` seeds), `unique_critical_lost` sums to **`0`**. Unmanaged flooding and encounter routers either drop critical faults during buffer contention (`Overload`) or drain battery reserves blindly (`Blackout`).
 
-![Comparison A Across 4 Regimes and 4 Substrates](../figures/svg/fig15_compA_regimes.svg)
+![Comparison A Across 3 Urban VDTN Regimes and 4 Substrates](../figures/svg/fig15_compA_regimes.svg)
 
 #### 4.2 Intervention Tier Ablation (`A2`, Energy Blackout, `132` Runs)
 
@@ -198,4 +191,4 @@ Conducted on fresh prime seeds after freeze to answer two reviewer diagnostics: 
 
 - **Oracle Downlink Wave Timing:** Remote Manager scenarios (`M1-U`, `M1-F-Group`) inject policy waves at fixed scenario timestamps matching disturbance boundaries; a deployed central controller would experience additional uplink detection lag prior to dispatch.
 - **Unvalidated Auxiliary Policies:** `scenarios/rules_uav.txt` and continuous `EDD_ENERGY_DRAIN` telemetry exist in code as exploratory artifacts outside the `v1.0` experimental matrix.
-- **Post-Freeze Regression Parity:** Re-running `M0b`, `M1-U`, and `M2` on `{7103, 7109}` verified **`6/6` SHA-256 identity** on `MessageStatsReport` and `DtnmaRecoveryTimelineReport` plus exact non-CPU matching on `DtnmaRlMetricsReport` against the frozen `v1.0-tnsm-freeze` baseline.
+- **Post-Freeze Regression Parity:** Re-running `M0b`, `M1-U`, and `M2` on `{7103, 7109}` verified **`6/6` SHA-256 identity** on `MessageStatsReport` and `DtnmaRecoveryTimelineReport` plus exact non-CPU matching on `DtnmaRlMetricsReport` against the frozen `v1.0-freeze` baseline.

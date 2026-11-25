@@ -1,6 +1,6 @@
 # Appendix D: Number Provenance Ledger (`appendix_d_provenance.md`)
 
-> **Documented Commit:** `d4a159f` | **Frozen Tag:** `v1.0-tnsm-freeze` (`c820752c` -> `ca5d9ac`) | **Exploratory Campaign:** `v1.0-exp-controls` | **Generated:** `2026-11-25` by `docs/study-guide/tools/generate_provenance.py`
+> **Documented Commit:** `d4a159f` | **Frozen Tag:** `v1.0-freeze` (`c820752c` -> `ca5d9ac`) | **Exploratory Campaign:** `v1.0-exp-controls` | **Generated:** `2026-11-25` by `docs/study-guide/tools/generate_provenance.py`
 
 Every quantitative claim in the Study Guide and root `README.md` traces programmatically to [provenance_ledger.json](file:///n:/R&D/cog/ADTNM/docs/study-guide/data/provenance_ledger.json) and the raw simulator outputs listed below. Confirmatory `v1.0` (`7103..7207`, Holm-adjusted) and Post-Freeze Exploratory (`7211..7307`, unadjusted) remain strictly separated.
 
@@ -13,7 +13,7 @@ Every quantitative claim in the Study Guide and root `README.md` traces programm
 | Confirmatory H3 (M2 vs M0b Stress Survival) | `+23.59 +/- 2.35 pp (p_holm=2.145e-09, 11/11)` | `final_11seed/compB_multitimescale/*_DtnmaRlMetricsReport.txt` | `analyze_final_11seed.py` |
 | Confirmatory H4 (M2 vs M0c Benign Bulk) | `+28.13 +/- 0.75 pp (p_holm=6.116e-15, 11/11)` | `final_11seed/compB_benign/*_DtnmaRlMetricsReport.txt` | `analyze_final_11seed.py` |
 | Original H2 Failed Survival NI (M2 vs M1-U) | `-5.48 +/- 1.96 pp (p_unadj=9.646e-05, 0/11)` | `final_11seed/compB_multitimescale/*_DtnmaRlMetricsReport.txt` | `analyze_final_11seed.py` |
-| CompA 176 managed runs unique_critical_lost | `0` | `final_11seed/compA_*/*_DtnmaRlMetricsReport.txt` | `generate_provenance.py` |
+| CompA 132 managed runs unique_critical_lost | `0` | `final_11seed/compA_*/*_DtnmaRlMetricsReport.txt` | `generate_provenance.py` |
 | A3 EnergyAwareEpidemic vs ManagedEpidemic (TIER2 & TIER3) BkDel | `+3.39 pp (TIER2) / +3.14 pp (TIER3)` | `final_11seed/compA_{energy_blackout,tiers}/*` | `generate_provenance.py` |
 | LOC Accounting (Core 7 files / Mean Adapter / Hand-coded / Rules vDTN) | `2095 / 253.5 / 394 / 12` | `src/routing/*.java, scenarios/rules_vdtn.txt` | `extract_code_inventory.py` |
 | E1 Strict Parity & E2 TOST Default Ordering | `E1: 11/11 MsgStats (11/11 SHA), 10/11 RlCore; E2 diff=-0.3100 pp, p_TOST=2.288e-06` | `final_11seed/compA_equivalence*/*` | `analyze_final_11seed.py / generate_provenance.py` |

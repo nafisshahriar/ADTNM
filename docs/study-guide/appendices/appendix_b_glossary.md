@@ -19,7 +19,6 @@ Every acronym and domain term used across the ADTNM Study Guide and root `README
 - **`EWMA` (Exponentially Weighted Moving Average):** Smoothing filter used for `EDD_QUEUE_DRIFT` ($\alpha = 0.30$) and `EDD_NODE_SPEED` ($\alpha = 0.25$).
 - **`Holm-Bonferroni`:** Sequential multiple-comparison correction (`m = 4`) protecting the confirmatory CompB hypothesis family (`H1–H4`).
 - **`Managed Substrate`:** Stock forwarding algorithm (`Epidemic`, `PRoPHETv2`, `MaxProp`, `SprayAndWait`, `DtnmaRouter`) governed through `DtnmaManagedRouter`.
-- **`NTN` (Non-Terrestrial Network):** High-latency asymmetric space/orbital DTN regime (`rules_ntn.txt`, `compA_ntn_space`).
 - **`ONE` (The Opportunistic Network Environment):** Discrete-event Java DTN simulator (`0.1 s`–`0.5 s` tick step) hosting ADTNM.
 - **`P0..P7` (`DtnmaPolicyProfile`):** Eight immutable actuator configurations varying replica quota `L` (`1..12`), `bpRatio` (`0.05..0.30`), and `ingressMode` (`0..2`).
 - **`R1` Deterministic Replay:** Offline verification confirming `100.00%` of audited rows reproduce identical ARIs, actions, and `8`-bit safety masks.

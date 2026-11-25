@@ -1124,8 +1124,6 @@ public class DtnmaUnitTests {
     private static void test20NominalBackpressureAndAckEvictionSplit() {
         String rulePath = new File("scenarios/rules_vdtn.txt").isFile()
                 ? "scenarios/rules_vdtn.txt" : "../ADTNM/scenarios/rules_vdtn.txt";
-        String ntnPath = new File("scenarios/rules_ntn.txt").isFile()
-                ? "scenarios/rules_ntn.txt" : "../ADTNM/scenarios/rules_ntn.txt";
 
         Path tmpDir = null;
         try {
@@ -1187,17 +1185,12 @@ public class DtnmaUnitTests {
             DTNHost hEaeB = hosts.get(2);
             DTNHost hDst = hosts.get(3);
 
-            // 1. Check M2 with rules_vdtn.txt & rules_ntn.txt nominal backpressure == true (P3)
+            // 1. Check M2 with rules_vdtn.txt nominal backpressure == true (P3)
             DtnmaM2SrlRouter rM2 = (DtnmaM2SrlRouter) hM2.getRouter();
             rM2.getDtnmaAgent().loadRulesFromFile(rulePath);
             SimClock.getInstance().advance(2.0);
             hM2.update(false);
             boolean vdtnBpOk = rM2.getDtnmaAgent().isBackpressureEnabled() && rM2.getLastExecutedProfile() == 3;
-
-            rM2.getDtnmaAgent().loadRulesFromFile(ntnPath);
-            SimClock.getInstance().advance(2.0);
-            hM2.update(false);
-            boolean ntnBpOk = rM2.getDtnmaAgent().isBackpressureEnabled() && rM2.getLastExecutedProfile() == 3;
 
             // 2. Check EnergyAwareEpidemicRouter nominal backpressure holds bulk at peerQ=0.80 while sending critical
             EnergyAwareEpidemicRouter rEaeA = (EnergyAwareEpidemicRouter) hEaeA.getRouter();
@@ -1258,10 +1251,10 @@ public class DtnmaUnitTests {
                     && "1".equals(kv.get("eventA_crit_evicted_acked"))
                     && "1".equals(kv.get("eventA_crit_unique_lost"));
 
-            check(vdtnBpOk && ntnBpOk && eaeHoldBulk && eaeAllowCrit && beforeAckFalse && afterAckTrue && reportSplitOk,
+            check(vdtnBpOk && eaeHoldBulk && eaeAllowCrit && beforeAckFalse && afterAckTrue && reportSplitOk,
                     "Test20: Nominal backpressure (P3), isHostKnownAcked, & ACKed critical eviction split work cleanly",
-                    String.format("vdtnBp=%s ntnBp=%s eaeHold=%s eaeCrit=%s ackPre=%s ackPost=%s split=%s(cbd=%s,cbda=%s,ev=%s,eva=%s,ul=%s)",
-                            vdtnBpOk, ntnBpOk, eaeHoldBulk, eaeAllowCrit, beforeAckFalse, afterAckTrue, reportSplitOk,
+                    String.format("vdtnBp=%s eaeHold=%s eaeCrit=%s ackPre=%s ackPost=%s split=%s(cbd=%s,cbda=%s,ev=%s,eva=%s,ul=%s)",
+                            vdtnBpOk, eaeHoldBulk, eaeAllowCrit, beforeAckFalse, afterAckTrue, reportSplitOk,
                             kv.get("critical_buffer_dropped"), kv.get("critical_buffer_dropped_acked"),
                             kv.get("eventA_crit_evicted"), kv.get("eventA_crit_evicted_acked"),
                             kv.get("eventA_crit_unique_lost")));

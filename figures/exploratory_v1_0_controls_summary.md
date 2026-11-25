@@ -1,6 +1,6 @@
 # Post-Freeze Exploratory Controls Summary (`v1.0-exp-controls`)
 
-- **Seed partition:** `[7211, 7213, 7219, 7229, 7237, 7243, 7247, 7253, 7283, 7297, 7307]` (`n = 11` fresh primes `> 7207`, completely disjoint from `v1.0-tnsm-freeze` `7103..7207`)
+- **Seed partition:** `[7211, 7213, 7219, 7229, 7237, 7243, 7247, 7253, 7283, 7297, 7307]` (`n = 11` fresh primes `> 7207`, completely disjoint from the frozen `v1.0` baseline `7103..7207`)
 - **Total runs verified:** `176/176` (`55 + 55 + 11 + 11 + 22 + 22`)
 - **Inference note:** All `p_unadj` values below are unadjusted paired `t`-test exploratory checks (`n = 11`, `df = 10`, no multiplicity correction).
 

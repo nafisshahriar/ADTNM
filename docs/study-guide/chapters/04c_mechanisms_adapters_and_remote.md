@@ -52,7 +52,7 @@ Interface contract guarantees invariance:
 Adding management to a new stock router requires zero edits to `DtnmaAgent`: extend the stock class, implement `DtnmaManagedRouter`, forward the `5` ONE lifecycle hooks (`update`, `checkReceiving`, `createNewMessage`, `changedConnection`, `makeRoomForMessage`), and plug in `rules_vdtn.txt`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). Replaces earlier monolithic routing hierarchy cleanly.
+`Implemented+tested` (`v1.0-freeze`). Replaces earlier monolithic routing hierarchy cleanly.
 
 ### 11. Supervisor Rationale
 Core architectural contribution of ADTNM (`2,095` shared core LOC vs `253.5` mean adapter LOC).
@@ -91,7 +91,7 @@ Tier gating inside `DtnmaAgent`:
 - `src/routing/ManagedEpidemicRouter.java:1-236`
 
 ### 7. Outputs, Telemetry & Logs
-Tracked identically across all `4` routers in `compA_vdtn_overload`, `compA_energy_blackout`, `compA_ntn_space`, `compA_benign`, and `compA_tiers`.
+Tracked identically across all `4` routers in `compA_vdtn_overload`, `compA_energy_blackout`, `compA_benign`, and `compA_tiers`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
 Tier 1 leaves `Epidemic` unprotected against battery drain (`14.5/126` alive in Blackout), isolating why **Tier 2 (`125.9/126` alive)** drives survival while Tier 3 adds minimal marginal gain (`0` extra alive nodes on Epidemic/SnW).
@@ -100,7 +100,7 @@ Tier 1 leaves `Epidemic` unprotected against battery drain (`14.5/126` alive in 
 In `compA_tiers` (`ManagedEpidemicRouter`, seed `7103`), Tier 1 finishes with `16` alive nodes (`avg SoC = 0.0527`, bulk `0.0%`), whereas Tier 2 finishes with **`124` alive nodes** (`avg SoC = 0.2050`, critical `66.94%`, zero critical loss).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 **Cleanest router-agnostic finding:** Levels 1–2 (`Tier 2`) achieve survival & critical protection across diverse routing families without rewriting core routing heuristics.
@@ -141,7 +141,7 @@ Duplicate remote wave copies are deduplicated cleanly by message ID; remote over
 In `compB_exp_controls_stress` (seed `7211`), `M1-U`'s `CTRL_UPDATE_THROTTLE_W1_` wave issued at `3601 s` hits `50%` node adoption at **`1131 s`** (`~18.9 min`) and `90%` (`T90`) at **`2722 s`** (`~45.4 min`) — completely missing the `300 s` Event A surge!
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze` + `v1.0-exp-controls`). Note Manager waves in `v1.0` use oracle schedule times (`compB` scenario scripts).
+`Implemented+tested` (`v1.0-freeze` + `v1.0-exp-controls`). Note Manager waves in `v1.0` use oracle schedule times (`compB` scenario scripts).
 
 ### 11. Supervisor Rationale
 Quantifies the exact physical cost (`J`) and latency (`T50`, `T90`) of remote management in challenged DTNs.
@@ -182,7 +182,7 @@ Reviewer critique caught `M1-F` (`118.7 kJ`) as a strawman control channel prior
 With single-copy `CTRL_GROUP_THROTTLE_W1_` (seed `7211`), `M1-F-Group` hits `T50 = 441.5 s` (`T90 = 823.0 s` across Wave 1) at tiny energy cost, saving `99.5/126` nodes across 12h stress — *still* too slow (`441.5 s > 300 s`) to prevent Event A stale throttling (`252 s` for `10%`, median `~483 s` across 11 seeds).
 
 ### 10. Status Label & Evolution
-`M1-U` & `M1-F`: `Implemented+tested` (`v1.0-tnsm-freeze`); `M1-F-Group`: `Implemented+tested` (`v1.0-exp-controls`, exploratory).
+`M1-U` & `M1-F`: `Implemented+tested` (`v1.0-freeze`); `M1-F-Group`: `Implemented+tested` (`v1.0-exp-controls`, exploratory).
 
 ### 11. Supervisor Rationale
 Proves even an unrealistic best-case oracle-triggered group flood still loses the sub-10-minute timescale argument (`483 s` median adoption vs `300 s` surge).
@@ -219,13 +219,13 @@ Attribution decomposition (`v1.0-exp-controls`, means across `11` seeds in Stres
 Recorded in `exploratory_v1_0_controls/{m2_localonly_stress,m2_localonly_benign}`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
-Separates confirmatory reporting cleanly: `M2-LocalOnly` never modifies frozen `v1.0-tnsm-freeze` claims and is labeled exploratory (`7211..7307`).
+Separates confirmatory reporting cleanly: `M2-LocalOnly` never modifies frozen `v1.0-freeze` claims and is labeled exploratory (`7211..7307`).
 
 ### 9. Worked Mini-Example
 In Benign scenarios (`12 h`), `M2-LocalOnly` retains full throughput (`~82%` bulk) with `126/126` survivors and `0 J` remote control traffic; only prolonged battery-stress blackout shows the `3.8`-node benefit of upgrading SoC floor from `0.20 -> 0.25`.
 
 ### 10. Status Label & Evolution
-`M2`: `Implemented+tested` (`v1.0-tnsm-freeze`); `M2-LocalOnly`: `Implemented+tested` (`v1.0-exp-controls`).
+`M2`: `Implemented+tested` (`v1.0-freeze`); `M2-LocalOnly`: `Implemented+tested` (`v1.0-exp-controls`).
 
 ### 11. Supervisor Rationale
 Directly addresses causal survival attribution: demonstrates `M2`'s stress survival depends partly on remote threshold updates (`0.25`), motivating `v1.1` local energy-drain tuning.
@@ -265,7 +265,7 @@ Supplies neighbors with real-time congestion awareness (`Q_nbr`, `CritQ_nbr`, `S
 When node `53` hits `Q = 0.92` (`P1`, `bpRatio = 0.08`), if its neighbor reports `Q_nbr = 0.90` via its `16 B` beacon, `0.90 > 0.92 - 0.08 (= 0.84)` -> Backpressure **blocks non-direct `BULK_` upload**, sparing the congested peer while still delivering bundles addressed directly to that peer (`dest == peer`).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Enables distributed congestion backpressure (`VDTN_NEIGHBOR_RELIEF`) and energy relief at fixed `16 B` wire budget per handshake.

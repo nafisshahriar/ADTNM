@@ -1,13 +1,13 @@
 {
-  "documented_commit": "af9cb2e57c90fdc22b1ef9b00a3f1432b735a1c2",
-  "documented_commit_short": "af9cb2e",
+  "documented_commit": "e30208ba77a50a384147bc98467bca7d343deadc",
+  "documented_commit_short": "e30208b",
   "branch": "docs/study-guide",
-  "freeze_tag": "v1.0-tnsm-freeze",
+  "freeze_tag": "v1.0-freeze",
   "freeze_tag_object": "c820752c27683f070ec72664c68bb0112a91d1b8",
   "freeze_commit": "ca5d9acccf6b4f606df5a586ecb80d4842179e4d",
   "exploratory_campaign": "v1.0-exp-controls",
   "doc_date": "2026-11-25",
-  "file_count": 101,
+  "file_count": 99,
   "files": [
     {
       "path": ".github/ISSUE_TEMPLATE/user-story.md",
@@ -20,9 +20,9 @@
     {
       "path": ".github/workflows/ci.yml",
       "ext": ".yml",
-      "size_bytes": 1884,
-      "total_lines": 62,
-      "noncomment_loc": 50,
+      "size_bytes": 1852,
+      "total_lines": 51,
+      "noncomment_loc": 41,
       "meta": {}
     },
     {
@@ -36,7 +36,7 @@
     {
       "path": "CLAIMS_LEDGER.md",
       "ext": ".md",
-      "size_bytes": 9470,
+      "size_bytes": 9591,
       "total_lines": 49,
       "noncomment_loc": 33,
       "meta": {}
@@ -44,7 +44,7 @@
     {
       "path": "CONTRIBUTING.md",
       "ext": ".md",
-      "size_bytes": 7315,
+      "size_bytes": 7310,
       "total_lines": 149,
       "noncomment_loc": 102,
       "meta": {}
@@ -60,7 +60,7 @@
     {
       "path": "figures/exploratory_v1_0_controls_summary.md",
       "ext": ".md",
-      "size_bytes": 15698,
+      "size_bytes": 15706,
       "total_lines": 103,
       "noncomment_loc": 77,
       "meta": {}
@@ -92,17 +92,17 @@
     {
       "path": "figures/final_11seed_summary.json",
       "ext": ".json",
-      "size_bytes": 288236,
-      "total_lines": 9495,
-      "noncomment_loc": 9495,
+      "size_bytes": 260395,
+      "total_lines": 8627,
+      "noncomment_loc": 8627,
       "meta": {}
     },
     {
       "path": "figures/final_11seed_tables.md",
       "ext": ".md",
-      "size_bytes": 14111,
-      "total_lines": 151,
-      "noncomment_loc": 122,
+      "size_bytes": 13051,
+      "total_lines": 139,
+      "noncomment_loc": 112,
       "meta": {}
     },
     {
@@ -595,7 +595,7 @@
     {
       "path": "README.md",
       "ext": ".md",
-      "size_bytes": 8023,
+      "size_bytes": 7991,
       "total_lines": 115,
       "noncomment_loc": 69,
       "meta": {}
@@ -875,81 +875,6 @@
             }
           ],
           "total_runs": 22
-        }
-      }
-    },
-    {
-      "path": "scenarios/compA_ntn_space.txt",
-      "ext": ".txt",
-      "size_bytes": 3400,
-      "total_lines": 108,
-      "noncomment_loc": 82,
-      "meta": {
-        "scenario": {
-          "scenario_name": "CompA_NTN_%%Group.router%%_%%MovementModel.rngSeed%%",
-          "end_time": "43200",
-          "update_interval": "0.5",
-          "router": [
-            "SprayAndWaitRouter",
-            "ManagedSprayAndWaitRouter",
-            "ProphetV2Router",
-            "ManagedProphetV2Router",
-            "MaxPropRouter",
-            "ManagedMaxPropRouter",
-            "EpidemicRouter",
-            "ManagedEpidemicRouter"
-          ],
-          "seeds": [
-            "7103",
-            "7109",
-            "7121",
-            "7127",
-            "7129",
-            "7151",
-            "7159",
-            "7177",
-            "7187",
-            "7193",
-            "7207"
-          ],
-          "rules_file": "scenarios/rules_ntn.txt",
-          "report_dir": "reports/final_11seed/compA_ntn_space",
-          "swept": [
-            {
-              "key": "Group.router",
-              "count": 8,
-              "values": [
-                "SprayAndWaitRouter",
-                "ManagedSprayAndWaitRouter",
-                "ProphetV2Router",
-                "ManagedProphetV2Router",
-                "MaxPropRouter",
-                "ManagedMaxPropRouter",
-                "EpidemicRouter",
-                "ManagedEpidemicRouter"
-              ],
-              "line": 22
-            },
-            {
-              "key": "MovementModel.rngSeed",
-              "count": 11,
-              "values": [
-                "7103",
-                "7109",
-                "7121",
-                "7127",
-                "7129",
-                "7151",
-                "7159",
-                "7177",
-                "7187",
-                "7193",
-                "7207"
-              ],
-              "line": 96
-            }
-          ],
-          "total_runs": 88
         }
       }
     },
@@ -1649,49 +1574,6 @@
       }
     },
     {
-      "path": "scenarios/rules_ntn.txt",
-      "ext": ".txt",
-      "size_bytes": 1750,
-      "total_lines": 25,
-      "noncomment_loc": 12,
-      "meta": {
-        "rules": [
-          {
-            "ari": "ARI://DTNMA/SRL/NTN_CRITICAL_FAILSAFE",
-            "priority": 100,
-            "desc": "Low energy survival or critical telecommand saturation",
-            "line": 8,
-            "if": "(EDD_ENERGY_SOC < 0.20) || (EDD_CRIT_QUEUE_RATIO >= 0.50)",
-            "then": "CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)"
-          },
-          {
-            "ari": "ARI://DTNMA/SRL/NTN_SURGE_THROTTLE",
-            "priority": 80,
-            "desc": "Rapid orbital buffer fill surge",
-            "line": 13,
-            "if": "(EDD_QUEUE_RATIO >= 0.88) && (EDD_QUEUE_DRIFT >= 0.008)",
-            "then": "CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)"
-          },
-          {
-            "ari": "ARI://DTNMA/SRL/NTN_ORBITAL_CLUSTER",
-            "priority": 50,
-            "desc": "Congested dense orbital rendezvous cluster",
-            "line": 18,
-            "if": "(EDD_QUEUE_RATIO >= 0.75) && (EDD_NODE_DENSITY >= 4.0)",
-            "then": "CTRL_SET_SPRAY_QUOTA(4); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(180); CTRL_SET_BACKPRESSURE(true)"
-          },
-          {
-            "ari": "ARI://DTNMA/SRL/NTN_DEEP_SPACE_SPARSE",
-            "priority": 10,
-            "desc": "Nominal orbital and deep space exploratory regime",
-            "line": 23,
-            "if": "(EDD_QUEUE_RATIO >= 0.0)",
-            "then": "CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(true)"
-          }
-        ]
-      }
-    },
-    {
       "path": "scenarios/rules_uav.txt",
       "ext": ".txt",
       "size_bytes": 1832,
@@ -2081,7 +1963,7 @@
     {
       "path": "scenarios/scenario_dtnma.txt",
       "ext": ".txt",
-      "size_bytes": 1709,
+      "size_bytes": 1710,
       "total_lines": 66,
       "noncomment_loc": 42,
       "meta": {
@@ -2091,7 +1973,7 @@
           "update_interval": "0.5",
           "router": "DtnmaRouter",
           "seeds": "42",
-          "rules_file": "scenarios/rules_ntn.txt",
+          "rules_file": "scenarios/rules_vdtn.txt",
           "report_dir": "reports/",
           "swept": [],
           "total_runs": 1
@@ -2101,7 +1983,7 @@
     {
       "path": "SEED_ROLES.md",
       "ext": ".md",
-      "size_bytes": 3361,
+      "size_bytes": 3381,
       "total_lines": 31,
       "noncomment_loc": 18,
       "meta": {}
@@ -7188,9 +7070,9 @@
     {
       "path": "tests/DtnmaUnitTests.java",
       "ext": ".java",
-      "size_bytes": 87499,
-      "total_lines": 1591,
-      "noncomment_loc": 1387,
+      "size_bytes": 87049,
+      "total_lines": 1584,
+      "noncomment_loc": 1381,
       "meta": {
         "imports": [
           "java.io.ByteArrayInputStream",
@@ -7265,7 +7147,7 @@
             "extends": "",
             "implements": "",
             "start_line": 74,
-            "end_line": 1591
+            "end_line": 1584
           },
           {
             "kind": "class",
@@ -7429,28 +7311,28 @@
             "return_type": "void",
             "params": "",
             "start_line": 1124,
-            "end_line": 1282
+            "end_line": 1275
           },
           {
             "name": "test21EnergyOnlyGuardsAndGroupControlBroadcast",
             "return_type": "void",
             "params": "",
-            "start_line": 1284,
-            "end_line": 1445
+            "start_line": 1277,
+            "end_line": 1438
           },
           {
             "name": "test22M2LocalOnlyIgnoresRemoteUpdates",
             "return_type": "void",
             "params": "",
-            "start_line": 1447,
-            "end_line": 1557
+            "start_line": 1440,
+            "end_line": 1550
           },
           {
             "name": "main",
             "return_type": "void",
             "params": "String[] args",
-            "start_line": 1559,
-            "end_line": 1590
+            "start_line": 1552,
+            "end_line": 1583
           }
         ]
       }
@@ -7458,7 +7340,7 @@
     {
       "path": "tools/analyze_exploratory_controls.py",
       "ext": ".py",
-      "size_bytes": 26045,
+      "size_bytes": 26050,
       "total_lines": 565,
       "noncomment_loc": 496,
       "meta": {
@@ -7520,50 +7402,50 @@
     {
       "path": "tools/analyze_final_11seed.py",
       "ext": ".py",
-      "size_bytes": 28985,
-      "total_lines": 618,
-      "noncomment_loc": 551,
+      "size_bytes": 28815,
+      "total_lines": 615,
+      "noncomment_loc": 548,
       "meta": {
         "functions": [
           {
             "name": "parse_kv_file",
-            "start_line": 65,
-            "end_line": 81
+            "start_line": 64,
+            "end_line": 80
           },
           {
             "name": "load_campaign_records",
-            "start_line": 84,
-            "end_line": 105
+            "start_line": 83,
+            "end_line": 104
           },
           {
             "name": "mean_ci95",
-            "start_line": 108,
-            "end_line": 120
+            "start_line": 107,
+            "end_line": 119
           },
           {
             "name": "paired_stats",
-            "start_line": 123,
-            "end_line": 174
+            "start_line": 122,
+            "end_line": 173
           },
           {
             "name": "extract_paired",
-            "start_line": 177,
-            "end_line": 189
+            "start_line": 176,
+            "end_line": 188
           },
           {
             "name": "count_noncomment_lines",
-            "start_line": 192,
-            "end_line": 211
+            "start_line": 191,
+            "end_line": 210
           },
           {
             "name": "analyze_equivalence",
-            "start_line": 214,
-            "end_line": 304
+            "start_line": 213,
+            "end_line": 303
           },
           {
             "name": "main",
-            "start_line": 307,
-            "end_line": 614
+            "start_line": 306,
+            "end_line": 611
           }
         ],
         "classes": []
@@ -7572,9 +7454,9 @@
     {
       "path": "tools/evaluate_autonomic_framework.py",
       "ext": ".py",
-      "size_bytes": 56416,
-      "total_lines": 1203,
-      "noncomment_loc": 1081,
+      "size_bytes": 56161,
+      "total_lines": 1199,
+      "noncomment_loc": 1077,
       "meta": {
         "functions": [
           {
@@ -7670,7 +7552,7 @@
           {
             "name": "main",
             "start_line": 1013,
-            "end_line": 1199
+            "end_line": 1195
           }
         ],
         "classes": []
@@ -8247,27 +8129,27 @@
     },
     {
       "label": "Test20: Nominal backpressure (P3), isHostKnownAcked, & ACKed critical eviction split work cleanly",
-      "line": 1262
+      "line": 1255
     },
     {
       "label": "Test20: Nominal backpressure (P3), isHostKnownAcked, & ACKed critical eviction split",
-      "line": 1269
+      "line": 1262
     },
     {
       "label": "Test21: M0e-20/M0e-25 energy-only guards & M1-F-Group broadcast adoption work cleanly",
-      "line": 1426
+      "line": 1419
     },
     {
       "label": "Test21: M0e-20/M0e-25 energy-only guards & M1-F-Group broadcast adoption",
-      "line": 1432
+      "line": 1425
     },
     {
       "label": "Test22: M2-LocalOnly ignores remote CTRL_UPDATE overlays while preserving local rules",
-      "line": 1539
+      "line": 1532
     },
     {
       "label": "Test22: M2-LocalOnly ignores remote CTRL_UPDATE overlays",
-      "line": 1544
+      "line": 1537
     }
   ]
 }

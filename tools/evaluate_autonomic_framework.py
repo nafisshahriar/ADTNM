@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 evaluate_autonomic_framework.py
-Unified TNSM-grade evaluation, statistical inference, deterministic audit replay (RQ4),
+Unified publication-grade evaluation, statistical inference, deterministic audit replay (RQ4),
 cross-scenario oracle regret & Dolan-More performance profiles (RQ2), and publication
 figure generator for the Autonomic DTN Management Framework (ADTNM / RFC 7575 / RFC 9675).
 """
@@ -1028,7 +1028,6 @@ def main():
     mgr_tl = load_timeline_df(rep_root / "phase3_manager_agent")
     eb_df = load_campaign_df(rep_root / "phase3_energy_blackout")
     eb_tl = load_timeline_df(rep_root / "phase3_energy_blackout")
-    ntn_df = load_campaign_df(rep_root / "phase3_ntn_regret")
     sparse_df = load_campaign_df(rep_root / "phase3_vdtn_sparse")
     sens_df = load_campaign_df(rep_root / "phase3_rq5_sensitivity")
     scale_df = load_campaign_df(rep_root / "phase3_rq6_scale")
@@ -1041,7 +1040,7 @@ def main():
     }
     violations = []
     for name, df in [("RQ1Load", load_df), ("RQ1Stress", stress_df), ("Ladder", ladder_df),
-                     ("MgrAgent", mgr_df), ("EnergyBlackout", eb_df), ("NTN", ntn_df),
+                     ("MgrAgent", mgr_df), ("EnergyBlackout", eb_df),
                      ("Sparse", sparse_df), ("RQ5Sens", sens_df), ("RQ6Scale", scale_df)]:
         if df.empty:
             continue
@@ -1061,8 +1060,6 @@ def main():
         scenario_dfs["VDTN-Sparse"] = sparse_df
     if not eb_df.empty:
         scenario_dfs["Energy-Blackout"] = eb_df
-    if not ntn_df.empty:
-        scenario_dfs["Space-NTN"] = ntn_df
 
     make_fig1_component_ladder(ladder_df, plots_dir)
     make_fig2_rq1_self_protection(load_df, stress_df, plots_dir)
@@ -1083,7 +1080,6 @@ def main():
         ("EnergyBlackout", eb_df, "DtnmaGossipAckRLRouter", "PrioritySprayAndWaitRouter", "post_fault_critical_delivery_prob", 100.0, "pp"),
         ("EnergyBlackout", eb_df, "DtnmaGossipAckRLRouter", "DtnmaStaticAckTunedRouter", "post_fault_critical_delivery_prob", 100.0, "pp"),
         ("EnergyBlackout", eb_df, "DtnmaGossipAckRLRouter", "PrioritySprayAndWaitRouter", "alive_nodes_end", 1.0, " nodes"),
-        ("SpaceNTN", ntn_df, "DtnmaGossipAckRLRouter", "DtnmaStaticAckTunedRouter", "delivery_prob", 100.0, "pp"),
     ]
     for sname, df, ra, rb, met, sc, unit in comparisons:
         res = compute_paired_ci(df, ra, rb, met, "seed", sc)

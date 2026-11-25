@@ -9,7 +9,7 @@
 > Deterministic `100.00%` replay across `27,099,616` audit rows holds strictly because `DtnmaAgent` captures pre-decision `eddSnapshot[11]` atomically *before* updating rules or actuators (`DtnmaAgent.java:634-733`).
 
 > [!WARNING] GOTCHA / PITFALL
-> `rules_uav.txt` (`Implemented, experimental`) omits the `PRIORITY: 10` catch-all nominal release present in `rules_vdtn.txt` and `rules_ntn.txt` — add a catch-all recovery rule before experimental deployment.
+> `rules_uav.txt` (`Implemented, experimental`) omits the `PRIORITY: 10` catch-all nominal release present in `rules_vdtn.txt` — add a catch-all recovery rule before experimental deployment.
 
 > [!NOTE] SUPERVISOR NOTE
 > **A3 LOC verification:** Declarative rules (`12` lines in `rules_vdtn.txt`) eliminate `394` lines of fragile bespoke router logic while adding hard `S1–S4` bitmask safety.
@@ -30,7 +30,7 @@ Allows operators to express autonomic policies in human-readable `.txt` files (`
 `Scenario rule file` (`Group.rulesFile` / `DtnmaRouter.rulesFile`) -> `DtnmaRuleParser.parseRulesFile(...)` -> Compiles each `RULE: <ARI> | PRIORITY: <int> | DESC: <text>` + `IF: <clauses>` + `THEN: CTRL_SET_*` block into a priority-sorted list of `StateBasedRule` objects.
 
 ### 4. Inputs & Configuration
-`Group.rulesFile` / `DtnmaRouter.rulesFile` (`scenarios/rules_vdtn.txt`, `scenarios/rules_ntn.txt`, experimental `scenarios/rules_uav.txt`); comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`), `&&` conjunction or `||` disjunction, and `4` `ControlAction` setters (`CTRL_SET_SPRAY_QUOTA`, `CTRL_SET_INGRESS_MODE`, `CTRL_SET_TELEMETRY_INTERVAL`, `CTRL_SET_BACKPRESSURE`).
+`Group.rulesFile` / `DtnmaRouter.rulesFile` (`scenarios/rules_vdtn.txt`, experimental `scenarios/rules_uav.txt`); comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`), `&&` conjunction or `||` disjunction, and `4` `ControlAction` setters (`CTRL_SET_SPRAY_QUOTA`, `CTRL_SET_INGRESS_MODE`, `CTRL_SET_TELEMETRY_INTERVAL`, `CTRL_SET_BACKPRESSURE`).
 
 ### 5. Algorithm & Exact Math / Equations
 Flat clause expression structure (`DtnmaRuleParser.java:117-137`):
@@ -57,7 +57,7 @@ Rules cannot mix nested `&&` and `||` inside a single `IF:` clause (`||` switche
 Evaluated on seed `7103` at `t = 3360.5 s`: `[EDD_QUEUE_RATIO(0.92) >= 0.88 -> TRUE] AND [EDD_QUEUE_DRIFT(0.01) >= 0.01 -> TRUE]`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). (`rules_uav.txt` remains `Implemented, experimental / Not evaluated in v1.0`).
+`Implemented+tested` (`v1.0-freeze`). (`rules_uav.txt` remains `Implemented, experimental / Not evaluated in v1.0`).
 
 ### 11. Supervisor Rationale
 **A3 LOC verification:** `12` non-comment lines of declarative rules match `~97%` of a `394`-line bespoke Java router while running portably across all four substrates.
@@ -96,13 +96,13 @@ Let $r_{\text{match}}$ be highest-priority rule evaluating `true` at time $t$, a
 Logs exact latch preemption and active rule ARI in `DtnmaAuditReport`; `verify_audit_replay` verifies latch continuity across `100.00%` of logged epochs.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
-`PRIORITY: 10` catch-all rules (`IF: (EDD_QUEUE_RATIO >= 0.0)`) provide deterministic recovery backstops in `rules_vdtn.txt` and `rules_ntn.txt` so nodes never remain stuck throttled after congestion subsides (missing in unvalidated `rules_uav.txt`).
+`PRIORITY: 10` catch-all rules (`IF: (EDD_QUEUE_RATIO >= 0.0)`) provide deterministic recovery backstops in `rules_vdtn.txt` so nodes never remain stuck throttled after congestion subsides (missing in unvalidated `rules_uav.txt`).
 
 ### 9. Worked Mini-Example
 On node `94` (`seed 7103`, `t = 29460.5 s`), `VDTN_BUFFER_CRITICAL` (`PRIO 100`) preempts lower-priority states immediately when `EDD_ENERGY_SOC(0.19) < 0.20`, locking `P0` (`SAFE_EMERGENCY_HOLD`) with `ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). Earlier Event A regressions traced to excessive latch windows (`> 300 s`) holding `P1` stale; tuned in `v1.0` to `90–180 s`.
+`Implemented+tested` (`v1.0-freeze`). Earlier Event A regressions traced to excessive latch windows (`> 300 s`) holding `P1` stale; tuned in `v1.0` to `90–180 s`.
 
 ### 11. Supervisor Rationale
 Essential for finite-state oscillation damping without sacrificing sub-minute critical escalation.
@@ -155,7 +155,7 @@ In `M3` (seed `7103`, `t = 3300.5 s`, node `53`), RL proposes **`HIGH_SPRAY_BACK
 `OVERRIDE | 11111100 | ARI://DTNMA/SHIELD/DENSE_STORM_GUARD | SHIELD_OVERRIDE(HIGH_SPRAY_BACKPRESSURE->BALANCED_AGILE_FOCUS)` (actually down to `P3` via composite rule/RL clamped order!).
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). Directly tested across multiple shield unit checks (`Test14`–`Test18`).
+`Implemented+tested` (`v1.0-freeze`). Directly tested across multiple shield unit checks (`Test14`–`Test18`).
 
 ### 11. Supervisor Rationale
 Satisfies **RFC 7575 Sec 4** bounds: learning or rule bugs never crash the safety envelope.
@@ -195,7 +195,7 @@ LRU bound (`512` IDs) bounds RAM overhead per node; active transfers (`isSending
 Across `11` seeds of `CompA` Blackout on `ManagedEpidemicRouter`, Tier 1 (`Protection + ACK pruning`) achieves **`0` unique critical loss** (same `53`-style duplicate prunes occur safely in smoke test), proving protection works independently of throughput controls.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`).
+`Implemented+tested` (`v1.0-freeze`).
 
 ### 11. Supervisor Rationale
 Provides verifiable critical survivability at negligible control byte cost (`<= 128 B/contact`).
@@ -237,7 +237,7 @@ Row from seed `7103` `M2` stress audit log (`t = 3360.5 s`, node `53`):
 `3360.5  3360.5  53  M2_AUTONOMIC_SRL  0.919217000  0.005594100 ... SAFE_THROTTLE_STRICT  PASS  11111111  ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE` — replayed deterministically offline with `0` discrepancies.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze` `R1`). Earlier pre-freeze pilots saw snapshot-timing drift; fixed via atomic snapshot capture prior to `v1.0`.
+`Implemented+tested` (`v1.0-freeze` `R1`). Earlier pre-freeze pilots saw snapshot-timing drift; fixed via atomic snapshot capture prior to `v1.0`.
 
 ### 11. Supervisor Rationale
 Core scientific provenance mechanism — guarantees black-box behavior is never left unverified.

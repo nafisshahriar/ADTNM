@@ -69,11 +69,11 @@ flowchart TD
 ```
 
 ### Level 1: Declarative Policy Rule Changes (Minor)
-- **Files:** `scenarios/rules_ntn.txt`, `rules_vdtn.txt`, `rules_uav.txt`
+- **Files:** `scenarios/rules_vdtn.txt`, `scenarios/rules_uav.txt`
 - **Recompilation needed?** **No.** Rules are parsed dynamically at runtime.
 - **Example:** Testing a more aggressive emergency shedding threshold:
   ```text
-  RULE: ARI://DTNMA/SRL/NTN_AGGRESSIVE_FAILSAFE | PRIORITY: 100 | DESC: High-orbit congestion
+  RULE: ARI://DTNMA/SRL/VDTN_AGGRESSIVE_FAILSAFE | PRIORITY: 100 | DESC: Dense urban congestion
   IF: (EDD_QUEUE_RATIO >= 0.88) || (EDD_QUEUE_DRIFT > 0.05)
   THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_BACKPRESSURE(true)
   ```

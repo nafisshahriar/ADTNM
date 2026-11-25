@@ -45,7 +45,7 @@ Events2.size = 500k, 1M
 Events2.interval = 12, 25
 Events2.hosts = 0, 19
 
-DtnmaRouter.rulesFile = scenarios/rules_ntn.txt
+DtnmaRouter.rulesFile = scenarios/rules_vdtn.txt
 
 ## Movement Model
 MovementModel.rngSeed = 42

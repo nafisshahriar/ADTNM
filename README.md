@@ -20,7 +20,7 @@
 
 ## Why Separate Management from Routing?
 
-In sparse vehicular, emergency, or space DTNs, centralized Manager commands arrive orders of magnitude too slowly (`minutes to hours`) to contain sudden `5`-minute traffic bursts, while unconstrained flooding exhausts node batteries. Rather than inventing yet another routing heuristic, ADTNM wraps diverse routers with uniform, auditable resource governance:
+In sparse vehicular and emergency mobile DTNs, centralized Manager commands arrive orders of magnitude too slowly (`minutes to hours`) to contain sudden `5`-minute traffic bursts, while unconstrained flooding exhausts node batteries. Rather than inventing yet another routing heuristic, ADTNM wraps diverse routers with uniform, auditable resource governance:
 
 - **Tier 1 (Critical Protection & ACK Pruning):** Five-tier $O(N)$ priority queue protection and compact `4 B` delivery acknowledgments preserve critical bundles without changing underlying forwarding paths.
 - **Tier 2 (Ingress & Energy Autonomy):** Node-local `SRL` rules and hard safety limits (`S1–S4`) shed non-critical load during congestion surges and energy depletion before cascading blackouts occur.
@@ -51,7 +51,7 @@ Pop-Location
 
 ## Declarative Policy Example (`SRL`)
 
-Operators customize congestion and energy responses in plain `.txt` rule files (`scenarios/rules_vdtn.txt`, `scenarios/rules_ntn.txt`) without recompiling Java:
+Operators customize congestion and energy responses in plain `.txt` rule files (`scenarios/rules_vdtn.txt`) without recompiling Java:
 
 ```text
 RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Emergency hold on low battery or critical pressure
@@ -71,7 +71,7 @@ THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTE
 
 ## Research Takeaways at a Glance
 
-- **Cross-Router Critical Preservation:** Across held-out evaluations spanning urban overload, energy blackout, sparse NTN relays, and benign operation, all four managed substrates (`SprayAndWait`, `PRoPHETv2`, `MaxProp`, `Epidemic`) achieved zero lost unique critical bundles.
+- **Cross-Router Critical Preservation:** Across held-out evaluations spanning urban overload, energy blackout, and benign vehicular operation, all four managed substrates (`SprayAndWait`, `PRoPHETv2`, `MaxProp`, and `Epidemic`) achieved zero lost unique critical bundles.
 - **Policy Over Routing Churn:** Tier decomposition shows that survival improvements stem chiefly from ingress and energy governance (`Tier 2`), leaving native forwarding logic untouched.
 - **Local Reactivity vs. Remote Delay:** Sub-minute local rules eliminate post-burst stale throttling caused by delayed Manager downlinks during short surges while sustaining benign throughput; however, trade-offs remain between aggressive remote throttling and unconstrained stress survival, and the experimental RL planner lags behind deterministic rules.
 - **Deterministic Traceability:** Decision-time atomic snapshots deliver `100%` deterministic offline audit replay across full multi-seed campaigns.

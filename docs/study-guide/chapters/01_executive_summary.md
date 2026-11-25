@@ -1,12 +1,12 @@
 # Chapter 1: Executive Summary
 
-> **Scope:** Active Research Framework (MIT License) · **Frozen Confirmatory Evaluation:** `v1.0-tnsm-freeze` (`n = 11` seeds, `715` runs) · **Exploratory Follow-Up:** `v1.0-exp-controls` (`176` runs) · **Target:** Standalone `<= 2` PDF pages
+> **Scope:** Active Research Framework (MIT License) · **Frozen Confirmatory Evaluation:** `v1.0-freeze` (`n = 11` seeds, `627` urban VDTN runs) · **Exploratory Follow-Up:** `v1.0-exp-controls` (`176` runs) · **Target:** Standalone `<= 2` PDF pages
 
 ---
 
 ## 1. Architectural Identity & Core Thesis
 
-**ADTNM** (*Autonomic Delay/Disruption-Tolerant Network Management*) is an **architectural management framework** for challenged wireless and space networks implemented in Java atop **The ONE** simulator. Drawing inspiration from **IETF RFC 9675** (*DTN Management Architecture*, Nov 2024) and **IRTF RFC 7575** (*Autonomic Networking*, June 2015), ADTNM decouples *network management semantics* from *bundle forwarding heuristics*:
+**ADTNM** (*Autonomic Delay/Disruption-Tolerant Network Management*) is an **architectural management framework** for challenged vehicular and mobile wireless networks implemented in Java atop **The ONE** simulator. Drawing inspiration from **IETF RFC 9675** (*DTN Management Architecture*, Nov 2024) and **IRTF RFC 7575** (*Autonomic Networking*, June 2015), ADTNM decouples *network management semantics* from *bundle forwarding heuristics*:
 
 - Existing DTN protocols (`EpidemicRouter`, `ProphetV2Router`, `MaxPropRouter`, `SprayAndWaitRouter`, `DtnmaRouter`) remain **managed substrates** whose underlying path estimators stay untouched.
 - A uniform `DtnmaAgent` engine wraps any substrate through a thin adapter (`Managed*Router`, averaging `253.5` non-comment lines of Java) to execute **11 Externally Defined Data (`EDD`)** telemetry sensors, declarative **State-Based Rules (`SRL`)**, discrete **`P0–P7` Control Profiles**, a deterministic **Safety Shield (`S1–S4`)**, and atomic **Application Resource Identifier (`ARI`)** audit logging (`100.00%` replayable offline).
@@ -20,11 +20,11 @@
 
 All metrics trace programmatically to [provenance_ledger.json](../data/provenance_ledger.json). Confirmatory runs (`7103–7207`) and post-freeze exploratory controls (`7211–7307`) never share statistical pools.
 
-### A. Frozen Confirmatory `v1.0-tnsm-freeze` Summary (`715` Runs, `n = 11` Seeds, Holm-Adjusted)
+### A. Frozen Confirmatory `v1.0-freeze` Summary (`627` Urban VDTN Runs, `n = 11` Seeds, Holm-Adjusted)
 
 | Research Claim / Test | Comparison & Scope | Measured Result (`95%` CI, Wins) | Architectural Interpretation |
 |---|---|---|---|
-| **Router-Agnostic Safety** | Critical lost across all `176` managed runs (`4` routers × `4` regimes) | **`0`** unique critical bundles lost (stock loses up to `100%`) | Priority reserve + `4 B` ACK pruning protects criticals across diverse substrates |
+| **Router-Agnostic Safety** | Critical lost across all `132` managed runs (`4` routers × `3` urban VDTN regimes) | **`0`** unique critical bundles lost (stock loses up to `100%`) | Priority reserve + `4 B` ACK pruning protects criticals across diverse substrates |
 | **Tier Ablation (`Epidemic`)** | Tier 1 (protection) vs Tier 2 (+ingress/energy) vs Tier 3 (+quota caps) | Alive nodes: **`15.2`** (T1) → **`123.1`** (T2) → **`123.5/126`** (T3) | Survival derives from ingress & energy rules (`Tier 2`), leaving routing logic untouched |
 | **E1 & E2 Equivalence** | `ManagedSprayAndWait` (Tier 1) vs hard-coded `PrioritySprayAndWait` | **E1:** `11/11` `MessageStats` exact; **E2 TOST:** `-0.31 pp`, `p = 2.29e-6` | Composition introduces zero unintended forwarding penalty |
 | **A3 Policy Reuse** | Bespoke `EnergyAwareEpidemic` (`394` LOC) vs uniform `rules_vdtn.txt` (`12` LOC) | Bulk diff **`+3.39 pp`** vs Tier 2 (`0` crit lost both) | Recovers `~97%` of hand-coded performance at `3%` rule LOC across `4` routers |

@@ -1,6 +1,6 @@
 # Chapter 8: Design Evolution, Engineering Post-Mortems & Architectural Decisions
 
-> **Scope:** Traces ADTNM's empirical development from early single-router RL experiments through the architecture-first refactoring (`v1.0-tnsm-freeze` and exploratory follow-ups), distilling seven engineering post-mortems and core Architectural Decision Records (`ADRs`).
+> **Scope:** Traces ADTNM's empirical development from early single-router RL experiments through the architecture-first refactoring (`v1.0-freeze` and exploratory follow-ups), distilling seven engineering post-mortems and core Architectural Decision Records (`ADRs`).
 
 ---
 
@@ -11,7 +11,7 @@
 | **Phase 1: Single-Router CMDP RL** | Initial shielded Expected SARSA prototype with continuous beacons and parameterized configuration (`DtnmaConfig`) | Dynamic Lagrangian `lambda` multipliers oscillated during multi-timescale traffic bursts; safety had to be hard-enforced deterministically rather than learned asymptotically. |
 | **Phase 2: Composable Substrate Pivot** | Extracted `DtnmaAgent` and `DtnmaManagedRouter` interface (`Managed*Router` adapters) separating management from routing | Reduced per-protocol integration cost from `~400` lines of subclass logic to `~253.5` lines of thin delegation hooks while enabling portable `.txt` policy files. |
 | **Pilot Diagnostics & Pre-Freeze Protocol** | Introduced atomic decision-time snapshots, separated `CritQ` shield gates, added Tier `1–3` ablation, and split `ACK`-pruned evictions | Eliminated `41%` idle over-throttling and `0.1%` tick-timing replay drift; demonstrated `100.00%` deterministic offline audit replay. |
-| **Confirmatory `v1.0` & Post-Freeze Controls** | Executed `715` held-out confirmatory runs (`7103–7207`), followed by `176` exploratory control runs (`7211–7307`) on `M0e-20/25`, `M2-LocalOnly`, and `M1-F-Group` | Exposed the trade-off between stress survival and benign throughput, isolated the `0.25` energy-guard contribution, and confirmed `M3` RL trails `M2` `SRL`. |
+| **Confirmatory `v1.0` & Post-Freeze Controls** | Executed `627` held-out confirmatory urban VDTN runs (`7103–7207`), followed by `176` exploratory control runs (`7211–7307`) on `M0e-20/25`, `M2-LocalOnly`, and `M1-F-Group` | Exposed the trade-off between stress survival and benign throughput, isolated the `0.25` energy-guard contribution, and confirmed `M3` RL trails `M2` `SRL`. |
 
 ---
 
@@ -48,4 +48,4 @@ In the `1 h` smoke scenario, `DtnmaDecisionReport` reports `53` critical drops w
 | **ADR-02** | **Finite `8`-Profile Action Catalog (`P0..P7`)** | Continuous tuning of `L` and `bpRatio` | Guarantees `O(8)` bitmask safety decidability (`11111100`) & clean `ARI` logs |
 | **ADR-03** | **Three-Tier Experimental Ablation (`T1/T2/T3`)** | Single monolithic enable toggle | Isolates critical protection (`T1`) & ingress/energy policy (`T2`) from routing changes (`T3`) |
 | **ADR-04** | **Transparent Disclosure of Weak RL (`M3`)** | Parameter tuning to fit a single scenario | Maintains integrity: deterministic `SRL` beats online linear Q-learning in `v1.0` |
-| **ADR-05** | **Strict Seed & Freeze Separation** | Mixing post-freeze tuning with `7103..7207` seeds | Keeps `715` frozen confirmatory runs byte-reproducible (`6/6` regression verified) |
+| **ADR-05** | **Strict Seed & Freeze Separation** | Mixing post-freeze tuning with `7103..7207` seeds | Keeps `627` frozen confirmatory VDTN runs byte-reproducible (`6/6` regression verified) |

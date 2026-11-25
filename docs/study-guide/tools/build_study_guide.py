@@ -461,7 +461,7 @@ def build_pdfs() -> None:
         Spacer(1, 10),
         Paragraph("Architectural Management Framework for Autonomic Delay/Disruption-Tolerant Networks (RFC 9675 &amp; RFC 7575-Inspired)", ParagraphStyle("CoverS", fontSize=12, leading=16, textColor=colors.HexColor("#334155"))),
         Spacer(1, 18),
-        Paragraph("<b>License:</b> MIT License &nbsp;|&nbsp; <b>Status:</b> Active Research (Work in Progress) &nbsp;|&nbsp; <b>Benchmarks:</b> v1.0-tnsm-freeze &amp; v1.0-exp-controls", st_norm["Body"]),
+        Paragraph("<b>License:</b> MIT License &nbsp;|&nbsp; <b>Status:</b> Active Research (Work in Progress) &nbsp;|&nbsp; <b>Benchmarks:</b> v1.0-freeze &amp; v1.0-exp-controls", st_norm["Body"]),
         PageBreak(),
     ]
     outlines: List[Tuple[str, str, int]] = []

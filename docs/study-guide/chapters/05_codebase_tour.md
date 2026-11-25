@@ -13,7 +13,7 @@ The ADTNM workspace sits beside its host simulator `the-one` (`n:\R&D\cog\the-on
 |---|---|---|---|
 | **`src/routing/`** | `40` `.java` | `5,568` | Autonomic agent (`DtnmaAgent`), telemetry (`EddTelemetrySampler`), rule AST (`DtnmaRuleParser`, `PredicateExpression`, `StateBasedRule`), safety (`DtnmaSafetyShield`), profiles (`DtnmaPolicyProfile`), adapters (`Managed*Router`), experimental RL (`ShieldedCmdpRlAgent`), baselines (`DtnmaM0*..M3*`, `Priority*`, `EnergyAwareEpidemicRouter`) |
 | **`src/report/`** | `4` `.java` | `1,639` | `DtnmaRlMetricsReport`, `DtnmaAuditReport`, `DtnmaRecoveryTimelineReport`, `DtnmaDecisionReport` |
-| **`scenarios/`** | `~20` `.txt` | `—` | Base configs (`dtnma_params_default.txt`), smoke (`scenario_dtnma.txt`), rule files (`rules_vdtn.txt`, `rules_ntn.txt`, experimental `rules_uav.txt`), Comparison A/B and exploratory `.txt` settings |
+| **`scenarios/`** | `~26` `.txt` | `—` | Base configs (`dtnma_params_default.txt`), smoke (`scenario_dtnma.txt`), rule files (`rules_vdtn.txt`, experimental `rules_uav.txt`), Comparison A/B and exploratory `.txt` settings |
 | **`tests/`** | `1` `.java` | `—` | `DtnmaUnitTests.java`: `27` test methods containing `30` `check()` assertions (`Test1a..Test22`) |
 | **`tools/`** | Python scripts | `—` | `parallel_batch_runner.py`, `evaluate_autonomic_framework.py` (`verify_audit_replay`), `analyze_final_11seed.py`, `analyze_exploratory_controls.py` |
 | **Root ledgers** | `.md`, `.yml`, `install.*` | `—` | `CLAIMS_LEDGER.md`, `SEED_ROLES.md`, `CONTRIBUTING.md`, `install.{py,sh,bat}`, `.github/workflows/ci.yml` |
