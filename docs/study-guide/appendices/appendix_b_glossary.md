@@ -9,10 +9,9 @@ Every acronym and domain term used across the ADTNM Study Guide and root `README
 - **`AST` / Predicate Expression:** Structured comparison clause list (`>`, `<`, `>=`, `<=`, `==`, `!=` combined via `&&` or `||`) compiled by `DtnmaRuleParser`.
 - **`Backpressure Guard` (`bp`):** Hop-by-hop check (`allowNonDirectBulkForward`) blocking non-direct `BULK_` forwarding whenever `Q_nbr > Q_local - bpRatio`.
 - **`BULK_` (`SCIENCE_DATA_`):** Low-priority delay-tolerant bundle class (`Tier 0` eviction target).
-- **`CMDP` (Constrained Markov Decision Process):** Mathematical framing motivating `M3` (`ShieldedCmdpRlAgent`); dynamic primal-dual `lambda` updates were retired (`lambda = 0.0`, `DISC-08`), leaving hard safety to `DtnmaSafetyShield`.
+- **`CMDP` (Constrained Markov Decision Process):** Mathematical framing motivating `M3` (`ShieldedCmdpRlAgent`); dynamic primal-dual `lambda` updates were retired (`lambda = 0.0`), leaving hard safety guarantees strictly to `DtnmaSafetyShield`.
 - **`CRIT_` (`CRITICAL_FAULT_`):** High-priority mission-critical fault telemetry (`Tier 4` protection while un-ACKed).
 - **`CTRL_` (`CTRL_UPDATE_`, `CTRL_GROUP_`):** Remote Manager control bundles carrying priority-100 temporary overlay configurations.
-- **`DISC-XX`:** Identifier for an audited code/doc/report discrepancy logged without non-doc source edits in [`appendix_discrepancies.md`](../appendix_discrepancies.md).
 - **`DTN` (Delay/Disruption-Tolerant Network):** Sparse intermittent network relying on store-carry-forward routing (`RFC 9171`).
 - **`DTNMA` (DTN Management Architecture):** Architecture specified in IETF **RFC 9675** (Nov 2024).
 - **`EDD` (Externally Defined Data):** Standardized `11`-element telemetry vector sampled by `EddTelemetrySampler`.
@@ -25,7 +24,6 @@ Every acronym and domain term used across the ADTNM Study Guide and root `README
 - **`P0..P7` (`DtnmaPolicyProfile`):** Eight immutable actuator configurations varying replica quota `L` (`1..12`), `bpRatio` (`0.05..0.30`), and `ingressMode` (`0..2`).
 - **`R1` Deterministic Replay:** Offline verification confirming `100.00%` of audited rows reproduce identical ARIs, actions, and `8`-bit safety masks.
 - **`RL` (Reinforcement Learning):** Experimental `20`-feature linear Q-critic (`M3`, `ShieldedCmdpRlAgent`, `Implemented, experimental`).
-- **`SDR-X`:** Supervisor Decision Record (`SDR-1`..`SDR-5`) highlighting open `v1.1` choices in [`01_executive_summary.md`](../chapters/01_executive_summary.md).
 - **`SoC` (State of Charge):** Normalized remaining battery ratio $E_{\text{rem}} / E_{\text{init}} \in [0, 1]$ (`EDD_ENERGY_SOC`).
 - **`SRL` (State-Based Rule):** Declarative local autonomy rule (`RULE / IF / THEN`) parsed from `.txt` scenario rule sets.
 - **`T50` / `T90`:** Median / `90th`-percentile time (`s`) from Manager wave emission until `50%` / `90%` of target agents adopt the downlink bundle (`# WAVE_ADOPTION_CDF`).

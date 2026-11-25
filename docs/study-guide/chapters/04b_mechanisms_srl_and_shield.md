@@ -9,7 +9,7 @@
 > Deterministic `100.00%` replay across `27,099,616` audit rows holds strictly because `DtnmaAgent` captures pre-decision `eddSnapshot[11]` atomically *before* updating rules or actuators (`DtnmaAgent.java:634-733`).
 
 > [!WARNING] GOTCHA / PITFALL
-> `rules_uav.txt` (`Implemented, experimental`, `DISC-06`) omits the `PRIO 10` catch-all nominal release present in `rules_vdtn.txt` and `rules_ntn.txt` — do not deploy it without adding a catch-all recovery rule first.
+> `rules_uav.txt` (`Implemented, experimental`) omits the `PRIORITY: 10` catch-all nominal release present in `rules_vdtn.txt` and `rules_ntn.txt` — add a catch-all recovery rule before experimental deployment.
 
 > [!NOTE] SUPERVISOR NOTE
 > **A3 LOC verification:** Declarative rules (`12` lines in `rules_vdtn.txt`) eliminate `394` lines of fragile bespoke router logic while adding hard `S1–S4` bitmask safety.
@@ -57,7 +57,7 @@ Rules cannot mix nested `&&` and `||` inside a single `IF:` clause (`||` switche
 Evaluated on seed `7103` at `t = 3360.5 s`: `[EDD_QUEUE_RATIO(0.92) >= 0.88 -> TRUE] AND [EDD_QUEUE_DRIFT(0.01) >= 0.01 -> TRUE]`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-tnsm-freeze`). (`rules_uav.txt` is `Implemented, experimental / Not evaluated in v1.0`; see `DISC-06`).
+`Implemented+tested` (`v1.0-tnsm-freeze`). (`rules_uav.txt` remains `Implemented, experimental / Not evaluated in v1.0`).
 
 ### 11. Supervisor Rationale
 **A3 LOC verification:** `12` non-comment lines of declarative rules match `~97%` of a `394`-line bespoke Java router while running portably across all four substrates.
@@ -96,7 +96,7 @@ Let $r_{\text{match}}$ be highest-priority rule evaluating `true` at time $t$, a
 Logs exact latch preemption and active rule ARI in `DtnmaAuditReport`; `verify_audit_replay` verifies latch continuity across `100.00%` of logged epochs.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
-`PRIO 10` catch-all rule (`IF (EDD_QUEUE_RATIO >= 0.0) THEN P4`) acts as deterministic recovery backstop in `rules_vdtn.txt` and `rules_ntn.txt` so nodes never remain stuck in `P1` indefinitely after congestion subsides. (`DISC-06`: missing in unvalidated `rules_uav.txt`.)
+`PRIORITY: 10` catch-all rules (`IF: (EDD_QUEUE_RATIO >= 0.0)`) provide deterministic recovery backstops in `rules_vdtn.txt` and `rules_ntn.txt` so nodes never remain stuck throttled after congestion subsides (missing in unvalidated `rules_uav.txt`).
 
 ### 9. Worked Mini-Example
 On node `94` (`seed 7103`, `t = 29460.5 s`), `VDTN_BUFFER_CRITICAL` (`PRIO 100`) preempts lower-priority states immediately when `EDD_ENERGY_SOC(0.19) < 0.20`, locking `P0` (`SAFE_EMERGENCY_HOLD`) with `ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL`.

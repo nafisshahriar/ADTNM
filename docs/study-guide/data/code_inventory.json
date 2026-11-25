@@ -1,13 +1,13 @@
 {
-  "documented_commit": "d4a159f3556e32582773bb5fc883917662411dd2",
-  "documented_commit_short": "d4a159f",
+  "documented_commit": "af9cb2e57c90fdc22b1ef9b00a3f1432b735a1c2",
+  "documented_commit_short": "af9cb2e",
   "branch": "docs/study-guide",
   "freeze_tag": "v1.0-tnsm-freeze",
   "freeze_tag_object": "c820752c27683f070ec72664c68bb0112a91d1b8",
   "freeze_commit": "ca5d9acccf6b4f606df5a586ecb80d4842179e4d",
   "exploratory_campaign": "v1.0-exp-controls",
   "doc_date": "2026-11-25",
-  "file_count": 109,
+  "file_count": 101,
   "files": [
     {
       "path": ".github/ISSUE_TEMPLATE/user-story.md",
@@ -50,46 +50,6 @@
       "meta": {}
     },
     {
-      "path": "docs/DTNMA_Autonomic_Framework_Mathematical_Derivations_and_Formulations.md",
-      "ext": ".md",
-      "size_bytes": 72807,
-      "total_lines": 1034,
-      "noncomment_loc": 766,
-      "meta": {}
-    },
-    {
-      "path": "docs/DTNMA_Framework_Implementation_and_Router_Architecture.md",
-      "ext": ".md",
-      "size_bytes": 10751,
-      "total_lines": 148,
-      "noncomment_loc": 111,
-      "meta": {}
-    },
-    {
-      "path": "docs/dtnma_mathematical_formulation.pdf",
-      "ext": ".pdf",
-      "size_bytes": 377285,
-      "total_lines": 0,
-      "noncomment_loc": 0,
-      "meta": {}
-    },
-    {
-      "path": "docs/dtnma_mathematical_formulation.tex",
-      "ext": ".tex",
-      "size_bytes": 28925,
-      "total_lines": 489,
-      "noncomment_loc": 426,
-      "meta": {}
-    },
-    {
-      "path": "docs/verification_proof.png",
-      "ext": ".png",
-      "size_bytes": 495514,
-      "total_lines": 0,
-      "noncomment_loc": 0,
-      "meta": {}
-    },
-    {
       "path": "figures/exploratory_v1_0_controls_summary.json",
       "ext": ".json",
       "size_bytes": 329453,
@@ -125,30 +85,6 @@
       "path": "figures/fig_final_11seed_compB_pareto.png",
       "ext": ".png",
       "size_bytes": 190818,
-      "total_lines": 0,
-      "noncomment_loc": 0,
-      "meta": {}
-    },
-    {
-      "path": "figures/fig_pilot_compA_energy_depletion.png",
-      "ext": ".png",
-      "size_bytes": 331569,
-      "total_lines": 0,
-      "noncomment_loc": 0,
-      "meta": {}
-    },
-    {
-      "path": "figures/fig_pilot_compB_adoption_cdf.png",
-      "ext": ".png",
-      "size_bytes": 357698,
-      "total_lines": 0,
-      "noncomment_loc": 0,
-      "meta": {}
-    },
-    {
-      "path": "figures/fig_pilot_compB_pareto.png",
-      "ext": ".png",
-      "size_bytes": 184461,
       "total_lines": 0,
       "noncomment_loc": 0,
       "meta": {}
@@ -659,9 +595,9 @@
     {
       "path": "README.md",
       "ext": ".md",
-      "size_bytes": 18727,
-      "total_lines": 352,
-      "noncomment_loc": 254,
+      "size_bytes": 8023,
+      "total_lines": 115,
+      "noncomment_loc": 69,
       "meta": {}
     },
     {

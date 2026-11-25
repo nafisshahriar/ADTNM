@@ -1,7 +1,7 @@
 # Chapter 5: Codebase Tour & Developer Architecture Guide
 
-> **Audience:** Developers extending ADTNM adapters, rules, safety shields, or reports (`d4a159f`).  
-> **Repository Totals:** `109` files documented in [`00_inventory.md`](../00_inventory.md) and `data/code_inventory.json`.
+> **Audience:** Developers extending ADTNM adapters, telemetry indicators, safety rules, or report analyzers.  
+> **Code Inventory:** Generated programmatically in [`data/code_inventory.json`](../data/code_inventory.json).
 
 ---
 
@@ -69,21 +69,21 @@ DTNSim.main -> SimScenario parses dtnma_params_default.txt + scenario.txt
 ## 4. Safe Extension Recipes (`How Do I Extend ADTNM?`)
 
 ### Recipe A: Add a New `SRL` Policy Without Recompiling Java
-1. Author a rule line using valid `EDD_*` names, operators (`>=`, `<=`, `>`, `<`, `==`), `AND`/`OR`/`NOT`, target `P0..P7`, `LATCH <sec>`, `PRIO <int>`, and unique `ID <ARI_TAG>`.
-2. Always include a low-priority catch-all recovery rule (`PRIO 10`, e.g., `IF (EDD_QUEUE_RATIO >= 0.0) THEN P4`) so nodes release throttling smoothly when load drops (`DISC-06`).
-3. Point `Group.dtnmaRuleFile = scenarios/my_rules.txt` and validate `100%` replay via `verify_audit_replay`.
+1. Author a `RULE: ... / IF: ... / THEN: ...` rule block using valid `EDD_*` names, comparison operators (`>`, `<`, `>=`, `<=`, `==`, `!=`), `&&` or `||`, `CTRL_SET_*` actuators, and a unique `ARI://DTNMA/SRL/...` URI.
+2. Always include a low-priority catch-all recovery rule (`PRIORITY: 10`, e.g., `IF: (EDD_QUEUE_RATIO >= 0.0)`) so nodes release throttling smoothly when congestion subsides.
+3. Point `Group.rulesFile` and `DtnmaRouter.rulesFile` to your custom `.txt` file and verify `100.00%` replay via `verify_audit_replay`.
 
 ### Recipe B: Wrap Another Stock ONE Router
 1. Subclass `StockOneRouter implements DtnmaManagedRouter`.
-2. Instantiate `private final DtnmaAgent agent` in constructor & copy constructor (compute `initialEnergy` safely, defaulting to `1.0` if missing).
-3. Implement all getters/setters from `DtnmaManagedRouter.java:1-46`, overriding `update()`, `createNewMessage()`, `checkReceiving()`, `makeRoomForMessage()`, `changedConnection()`, and prioritizing `CRIT_`/`CTRL_` tuples ahead of native `tryAllMessages` ordering.
-4. Run `DtnmaUnitTests` and test Tier 1 (`TIER1_PROTECTION_ONLY`) equivalence against a priority-only baseline.
+2. Instantiate `private final DtnmaAgent agent` in both constructor and copy constructor (safely normalizing `initialEnergy`, defaulting to `1.0` when mains-powered).
+3. Implement all getters and setters specified in `DtnmaManagedRouter.java:1-46`, overriding `update()`, `createNewMessage()`, `checkReceiving()`, `makeRoomForMessage()`, `changedConnection()`, and prioritizing `CRIT_`/`CTRL_` tuples ahead of native `tryAllMessages` ordering.
+4. Run `DtnmaUnitTests` and verify Tier 1 (`TIER1_PROTECTION_ONLY`) equivalence against a priority-only baseline.
 
-### Recipe C: Wire an Existing Unused Telemetry Signal (`EDD_ENERGY_DRAIN`)
-`EddTelemetrySampler` already updates `EDD_ENERGY_DRAIN` (`EddTelemetrySampler.java:33,204`, logged as `DISC-05`), making it immediately readable in `PredicateExpression` once tuned cleanly against false triggers during legitimate multi-contact transfers.
+### Recipe C: Wire an Existing Auxiliary Telemetry Signal (`EDD_ENERGY_DRAIN`)
+`EddTelemetrySampler` already computes `EDD_ENERGY_DRAIN` (`EddTelemetrySampler.java:33,204`), making it immediately usable in `PredicateExpression` rules once calibrated against benign multi-contact traffic bursts.
 
-> [!WARNING] GOTCHA / PITFALL
-> Never read un-sanitized `CONTRIBUTING.md` line pointers (`DISC-03`) — telemetry now lives in `EddTelemetrySampler`, actuators in `ControlAction` / `DtnmaPolicyProfile`, and `verify_and_plot.py` has been removed (`DISC-02`).
+> [!WARNING] DEVELOPER NOTE
+> Some legacy contributor notes outside the Study Guide still cite pre-refactor helpers (`sampleTelemetry`) or retired plotting scripts (`verify_and_plot.py`). Use this guide (`EddTelemetrySampler`, `ControlAction`, `DtnmaPolicyProfile`) and Chapter 7 as the authoritative code map.
 
 ## Dependency DAG (`Figure 13`)
 

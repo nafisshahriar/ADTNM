@@ -216,6 +216,12 @@ MMD_SPECS: Dict[str, str] = {
   FREEZE --> CONF["Confirmatory (715 runs): 7103..7207 (Holm m=4)"]
   CONF -. Disjoint Fresh Seeds .-> EXP["Exploratory (176 runs): 7211..7307 (p_unadj)"]
 """,
+    "fig22_evaluation_methodology_timeline": """flowchart LR
+  S1["1. .txt Sweep & Seed Pairing"] --> S2["2. Multi-Worker DTNSim (dt=0.5s, warmup=1000s)"]
+  S2 --> S3["3. 4-Stream Report Capture (MsgStats, RlMetrics, Audit, Timeline)"]
+  S3 --> S4["4. Offline Deterministic ARI Replay (100.00%)"]
+  S4 --> S5["5. Paired Student-t, Holm-Bonferroni & TOST Inference"]
+""",
 }
 
 
@@ -634,6 +640,65 @@ def build_all_plots() -> None:
     fig.tight_layout()
     save_fig(fig, "fig21_exp_wave_adoption_cdf")
 
+    # Fig 22: 5-Stage Evaluation Methodology & 12h Multi-Timescale Disturbance Timeline
+    fig = plt.figure(figsize=(12.2, 6.2))
+    gs = fig.add_gridspec(2, 1, height_ratios=[1.0, 1.35], hspace=0.35)
+    ax_top = fig.add_subplot(gs[0])
+    ax_top.set_xlim(0, 1)
+    ax_top.set_ylim(0, 1)
+    ax_top.axis("off")
+    ax_top.set_title("Figure 22: Experimental Evaluation Pipeline & 12-Hour Multi-Timescale Mission Timeline", fontsize=12.5, fontweight="bold", pad=8)
+    stages = [
+        ("1. Coprime Sweep", "Scenario .txt\nMatched Seeds\n(n=11 primes)", "#EFF6FF", OI["blue"]),
+        ("2. Batch Execution", "parallel_batch_runner\ndt=0.5s, 43,200s\nwarmup=1000s", "#ECFDF5", OI["green"]),
+        ("3. 4-Stream Reports", "MsgStats, RlMetrics\nAudit (16-col ARI)\nTimeline (300s)", "#F5F3FF", OI["purple"]),
+        ("4. Offline Replay", "verify_audit_replay\n100.00% ARI &\nShield Bitmask", "#FEF3C7", OI["orange"]),
+        ("5. Statistical Tests", "Paired t (df=10)\nHolm (m=4)\nTOST (+/-1 pp)", "#FFF7ED", OI["vermillion"]),
+    ]
+    for i, (st, sd, fc, ec) in enumerate(stages):
+        x = 0.01 + i * 0.202
+        draw_box(ax_top, x, 0.16, 0.152, 0.68, f"{st}\n\n{sd}", fc=fc, ec=ec, fontsize=8.2)
+        if i < 4:
+            draw_arrow(ax_top, x + 0.167, 0.50, x + 0.187, 0.50, color=OI["slate"])
+
+    ax_bot = fig.add_subplot(gs[1])
+    ax_bot.set_xlim(0, 12.2)
+    ax_bot.set_ylim(0, 3.45)
+    ax_bot.set_xlabel("Simulation Wall Time (hours; total run endTime = 43,200 s = 12.0 h)", fontsize=10)
+    ax_bot.set_yticks([0.6, 1.6, 2.55])
+    ax_bot.set_yticklabels(["Remote Waves\n(W1-W3)", "Stressor Windows\n& +1h Horizon", "Baseline &\nWarm-up"], fontsize=9, fontweight="bold")
+    ax_bot.grid(axis="x", ls=":", alpha=0.5)
+
+    # Track 3: Baseline & warmup
+    ax_bot.broken_barh([(0, 1000/3600)], (2.25, 0.55), facecolors=OI["slate"], alpha=0.45)
+    ax_bot.broken_barh([(1000/3600, 12.0 - 1000/3600)], (2.25, 0.55), facecolors=OI["sky"], alpha=0.28)
+    ax_bot.text(6.2, 2.52, "Steady Mixed Workload: BULK_ (14-20s), TELEM_NORM_ (30-45s), CRITICAL_FAULT_ (90-140s)", ha="center", va="center", fontsize=8.3)
+    ax_bot.text(0.14, 2.92, "Warm-up\n(0-1000s)", ha="center", va="bottom", fontsize=7.5, color=OI["slate"])
+
+    # Track 2: Events A, B, C + 3600s Horizon
+    events = [
+        (1.0, 300/3600, "Event A\n(5m Burst)\n3600-3900s", OI["vermillion"]),
+        (2.0, 0.5, "Event B\n(30m Shock)\n7200-9000s", OI["orange"]),
+        (6.0, 2.0, "Event C (2h Shift)\n21600-28800s", OI["blue"]),
+    ]
+    for st_h, dur_h, lbl, col in events:
+        ax_bot.broken_barh([(st_h, dur_h)], (1.30, 0.55), facecolors=col, alpha=0.88)
+        ax_bot.broken_barh([(st_h + dur_h, 1.0)], (1.30, 0.55), facecolors=col, alpha=0.22, hatch="//", edgecolor=col)
+        tx = st_h + dur_h / 2 if dur_h >= 0.4 else st_h + 0.05
+        ax_bot.text(tx, 1.93, lbl, ha="center", va="bottom", fontsize=7.7, fontweight="bold", color=col)
+    ax_bot.text(8.5, 1.57, "+1h Horizon", ha="center", va="center", fontsize=7.6, color=OI["blue"])
+    ax_bot.axvline(9.0, ls="--", color=OI["green"], lw=1.2)
+    ax_bot.text(10.55, 1.57, "No Right-Censoring\n(9.0h < 12.0h end)", ha="center", va="center", fontsize=8.2, color=OI["green"], fontweight="bold")
+
+    # Track 1: Downlink waves W1, W2, W3
+    for w_h, rel_h, wlbl in [(1.0, 3900/3600, "W1"), (2.0, 2.5, "W2"), (6.0, 8.0, "W3")]:
+        ax_bot.scatter([w_h], [0.6], marker="^", s=95, color=OI["vermillion"], zorder=4)
+        ax_bot.scatter([rel_h], [0.6], marker="v", s=95, color=OI["green"], zorder=4)
+        ax_bot.text(w_h, 0.80, f"{wlbl} Throt", ha="center", fontsize=7.5, color=OI["vermillion"])
+        ax_bot.text(rel_h + 0.18, 0.30, f"{wlbl} Nom", ha="center", fontsize=7.5, color=OI["green"])
+    fig.tight_layout()
+    save_fig(fig, "fig22_evaluation_methodology_timeline")
+
 
 def main() -> None:
     build_all_diagrams()
@@ -642,7 +707,7 @@ def main() -> None:
     pngs = sorted(PNG_DIR.glob("*.png"))
     mmds = sorted(MMD_DIR.glob("*.mmd"))
     print(f"Generated: {len(mmds)} MMDs, {len(svgs)} SVGs, {len(pngs)} PNGs")
-    assert len(mmds) == 14 and len(svgs) == 21 and len(pngs) == 21
+    assert len(mmds) == 15 and len(svgs) == 22 and len(pngs) == 22
 
 
 if __name__ == "__main__":

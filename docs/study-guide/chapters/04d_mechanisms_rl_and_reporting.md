@@ -6,13 +6,13 @@
 > Reporting in a multi-timescale DTN needs a **Zoom lens AND a Wide lens**: a `12 h` mission mean misses a `5 min` surge (`Event A`), so `DtnmaRlMetricsReport` measures fixed-horizon cohorts *inside* each disturbance window (`A, B, C`) alongside `12 h` fleet survival.
 
 > [!IMPORTANT] FORMAL / CODE
-> Dynamic primal-dual Lagrangian adaptation is **`Deprecated or removed`** (`lambda = 0.0`, `rlEtaLambda = 0.0` at `d4a159f`); hard constraints live exclusively in `DtnmaSafetyShield`, while `getLagrangianValue()` stays solely as a compatibility shim (`DISC-08`).
+> Dynamic primal-dual Lagrangian adaptation is **`Deprecated or removed`** (`lambda = 0.0`, `rlEtaLambda = 0.0`); hard constraints live exclusively in `DtnmaSafetyShield`, while `getLagrangianValue()` remains solely as a backward-compatible API shim.
 
 > [!WARNING] GOTCHA / PITFALL
 > **`M3` (`ShieldedCmdpRlAgent`) is `Implemented, experimental`** and lost to hand-written `SRL` (`M2`) across every stress and benign endpoint (`bulk 63.0% vs 66.0%` stress, `79.8% vs 82.0%` benign, `76.0 vs 83.8` alive).
 
 > [!NOTE] SUPERVISOR NOTE
-> Static non-strawman baselines (`M0b`, `M0c`, `M0d`, `M0e-20`, `M0e-25`) plus fixed-horizon event cohorts make every comparative claim falsifiable (`SDR-2`, `SDR-3`).
+> Static non-strawman baselines (`M0b`, `M0c`, `M0d`, `M0e-20`, `M0e-25`) plus fixed-horizon event cohorts make every comparative claim falsifiable.
 
 ---
 
@@ -56,7 +56,7 @@ At `t = 3300.5 s` (seed `7103`, node `53`), `M3` chooses greedy/exploratory `P6`
 `Implemented, experimental` (`v1.0-tnsm-freeze`). **Honest negative:** Underperformed hand-written `SRL` (`M2`) on every stress and benign endpoint (`H3`/`CompB`).
 
 ### 11. Supervisor Rationale
-**Open decision (`SDR-2`):** Demonstrates safety shielding protects critical traffic even under weak learned policies, while honestly concluding hand-crafted domain rules beat shallow online Q-learning in `v1.0`.
+**Open research question:** Demonstrates safety shielding protects critical traffic even under weak learned policies, while honestly showing hand-crafted domain rules outperform shallow online Q-learning in `v1.0`.
 
 ---
 
@@ -74,7 +74,7 @@ Shares learned Q-weights (`wReward[8][20]`) across opportunistic contacts (`goss
 Peer contact opens (`M3` only) -> Serialize `8 x 20` float matrix + header (`8 * 20 * 4 + 8 = 648 B`, `GOSSIP_PAYLOAD_BYTES`) -> Merge symmetrically with blending coefficient `rlGossipAlpha` -> Log gossip bytes into `control_bytes_total`.
 
 ### 4. Inputs & Configuration
-`DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES = 648`; `DtnmaConfig.java:63-66` & `scenarios/dtnma_params_default.txt:29-32`: `rlLambdaInit = 0.0`, `rlEtaLambda = 0.0`, `rlTargetCost = 0.30`, `rlLambdaMax = 5.0` (compatibility shims, see `DISC-08`).
+`DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES = 648`; `DtnmaConfig.java:63-66` & `scenarios/dtnma_params_default.txt:29-32`: `rlLambdaInit = 0.0`, `rlEtaLambda = 0.0`, `rlTargetCost = 0.30`, `rlLambdaMax = 5.0` (backward-compatibility shims).
 
 ### 5. Algorithm & Exact Math / Equations
 Symmetric weight blend between local $W^{(i)}$ and peer $W^{(j)}$:
@@ -96,10 +96,10 @@ Two `M3` taxis meet after 1 hour (`648 B` exchanged); instead of resetting explo
 
 ### 10. Status Label & Evolution
 - Symmetric Gossip: `Implemented, experimental` (`M3` only).
-- Primal-Dual Dynamic `lambda` Adaptation: `Deprecated or removed` (`lambda = 0.0` at `d4a159f`, compatibility keys noted in `DISC-08`).
+- Primal-Dual Dynamic `lambda` Adaptation: `Deprecated or removed` (`lambda = 0.0`, compatibility keys kept for older config loading).
 
 ### 11. Supervisor Rationale
-Preserves full scientific memory (`DISC-08`) so newcomers do not wonder why `getLagrangianValue()` exists in source while `lambda = 0.0`.
+Preserves full scientific memory so newcomers understand why `getLagrangianValue()` exists in source while `lambda` remains `0.0`.
 
 ---
 
@@ -174,7 +174,7 @@ $$\text{cohort\_deliv}(W) = \frac{|\{m : t_{\text{create}}(m) \in [t_{\text{star
 Emits `60+` machine-parseable `key: value` fields (`unique_critical_lost`, `critical_buffer_dropped`, `critical_buffer_dropped_acked`, `eventA_stale_throttle_nodesec`, `eventC_bulk_deliv`, `alive_nodes_end`, `total_ctrl_tx_J`, `decision_cpu_us_mean`) + `# WAVE_ADOPTION_CDF` rows.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
-`unique_critical_lost` counts distinct un-delivered non-TTL critical IDs dropped rather than inflated multi-copy replica drops (`DISC-01` explains why `DtnmaDecisionReport` differs).
+`unique_critical_lost` counts distinct un-delivered non-TTL critical IDs dropped rather than inflated multi-copy replica drops (whereas `DtnmaDecisionReport` folds ACK-pruned copies into its summary drop total).
 
 ### 9. Worked Mini-Example
 Event C (`21600–28800 s`) bulk delivery shows why cohort tracking matters (`H2`): whole-mission bulk differs by `-7.0 pp` (`66%` vs `73%`), whereas *inside* the late 2-hour storm Event C cohort (`1h` horizon), **`M2` beats `M1-U` by `+19.21 +/- 3.97 pp`** (`p_holm = 1.58e-6`, `11/11` seeds) because `M1-U`'s delayed throttle wave stays stuck!

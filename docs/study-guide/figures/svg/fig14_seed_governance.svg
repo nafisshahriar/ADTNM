@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-11-25T04:08:53.584176</dc:date>
+    <dc:date>2026-11-25T06:29:44.882647</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -806,7 +806,7 @@ Q 23.2425 84.5388 23.2425 93.132
 L 23.2425 189.37584 
 Q 23.2425 197.96904 39.285 197.96904 
 z
-" clip-path="url(#p4706ebb134)" style="fill: #f1f5f9; stroke: #475569; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8a041d9307)" style="fill: #f1f5f9; stroke: #475569; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="patch_5">
     <path d="M 238.212 197.96904 
@@ -819,7 +819,7 @@ Q 222.1695 84.5388 222.1695 93.132
 L 222.1695 189.37584 
 Q 222.1695 197.96904 238.212 197.96904 
 z
-" clip-path="url(#p4706ebb134)" style="fill: #dcfce7; stroke: #009e73; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8a041d9307)" style="fill: #dcfce7; stroke: #009e73; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="patch_6">
     <path d="M 462.807 197.96904 
@@ -832,7 +832,7 @@ Q 446.7645 84.5388 446.7645 93.132
 L 446.7645 189.37584 
 Q 446.7645 197.96904 462.807 197.96904 
 z
-" clip-path="url(#p4706ebb134)" style="fill: #fef3c7; stroke: #e69f00; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8a041d9307)" style="fill: #fef3c7; stroke: #e69f00; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="patch_7">
     <path d="M 103.455 307.962 
@@ -845,7 +845,7 @@ Q 87.4125 242.65368 87.4125 251.24688
 L 87.4125 299.3688 
 Q 87.4125 307.962 103.455 307.962 
 z
-" clip-path="url(#p4706ebb134)" style="fill: #eff6ff; stroke: #0072b2; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8a041d9307)" style="fill: #eff6ff; stroke: #0072b2; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="text_2">
     <!-- Stressor Calibration -->
@@ -2919,7 +2919,7 @@ z
   </g>
  </g>
  <defs>
-  <clipPath id="p4706ebb134">
+  <clipPath id="p8a041d9307">
    <rect x="7.2" y="7.2" width="641.7" height="343.728"/>
   </clipPath>
  </defs>

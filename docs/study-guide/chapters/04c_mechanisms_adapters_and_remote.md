@@ -9,10 +9,10 @@
 > Control byte accounting spans three orders of magnitude across dissemination channels: `118.7 kJ` (`M1-F` per-node flood) -> `2.51 kJ` (`M1-U` unicast) -> `201.6 J` (`M1-F-Group` single-copy group flood).
 
 > [!WARNING] GOTCHA / PITFALL
-> When a mode such as `M2` receives zero group-flood packets in `groupflood_stress`, `DtnmaRlMetricsReport` writes `downlink_t90_sec = 30849.0` (end-of-horizon sentinel, `DISC-07`) alongside `downlink_90pct_reached = 0.0`. Always filter by reachability!
+> When a mode such as `M2` receives zero group-flood packets in `groupflood_stress`, `DtnmaRlMetricsReport` writes `downlink_t90_sec = 30849.0` (end-of-horizon sentinel) alongside `downlink_90pct_reached = 0.0`. Always filter by `downlink_90pct_reached` before interpreting adoption latencies.
 
 > [!NOTE] SUPERVISOR NOTE
-> Exploratory isolation (`M2-LocalOnly = 80.0`, `M0e-25 = 83.8`, `M2 = 83.8`) clarifies honestly how much of `M2`'s stress survival stemmed from its `0.25` remote guard wave (`SDR-1`).
+> Exploratory isolation (`M2-LocalOnly = 80.0`, `M0e-25 = 83.8`, `M2 = 83.8`) clarifies how much of `M2`'s end-of-mission survival stemmed from its `0.25` remote guard wave.
 
 ---
 
@@ -132,7 +132,7 @@ Sampled across `[0, 60]` one-minute bins (`q10, q25, q50, q75, q90, q95`) into `
 - `src/report/DtnmaRlMetricsReport.java:1229-1266` (`# WAVE_ADOPTION_CDF` computation)
 
 ### 7. Outputs, Telemetry & Logs
-Logs wave percentiles, `downlink_t90_sec`, and `total_ctrl_tx_J`. **Gotcha (`DISC-07`):** When `0` waves are received (e.g., `M2` in `groupflood`), `downlink_t90_sec` outputs `30849.0` sentinel.
+Logs wave percentiles, `downlink_t90_sec`, and `total_ctrl_tx_J`. **Reporting Note:** When `0` waves are received (e.g., `M2` in `groupflood`), `downlink_t90_sec` records an end-of-horizon sentinel (`30849.0`) while `downlink_90pct_reached = 0.0`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
 Duplicate remote wave copies are deduplicated cleanly by message ID; remote overlays never drop `P0` liveness admissibility (`S1–S2` safety guards stay active).
@@ -228,7 +228,7 @@ In Benign scenarios (`12 h`), `M2-LocalOnly` retains full throughput (`~82%` bul
 `M2`: `Implemented+tested` (`v1.0-tnsm-freeze`); `M2-LocalOnly`: `Implemented+tested` (`v1.0-exp-controls`).
 
 ### 11. Supervisor Rationale
-Directly answered reviewer audit (`SDR-1`): proved `M2`'s survival depends partly on remote threshold updates (`0.25`), informing `v1.1` local energy-drain tuning.
+Directly addresses causal survival attribution: demonstrates `M2`'s stress survival depends partly on remote threshold updates (`0.25`), motivating `v1.1` local energy-drain tuning.
 
 ---
 

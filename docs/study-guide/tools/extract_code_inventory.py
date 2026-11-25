@@ -11,7 +11,6 @@ Scans every file in ADTNM (at commit d4a159f) to record:
 
 Writes:
 - docs/study-guide/data/code_inventory.json
-- docs/study-guide/00_inventory.md
 """
 
 from __future__ import annotations
@@ -354,86 +353,7 @@ def main() -> None:
 
     json_path = DATA_DIR / "code_inventory.json"
     json_path.write_text(json.dumps(inv, indent=2), encoding="utf-8")
-
-    # Write 00_inventory.md
-    md: List[str] = [
-        "# Phase 0 Repository Inventory (`00_inventory.md`)",
-        "",
-        f"> **Documented Commit:** `{head_short}` (`{head_full}`) on branch `{branch}` | "
-        f"**Frozen Tag:** `{FREEZE_TAG}` (`{FREEZE_TAG_OBJ[:8]}` -> `{FREEZE_COMMIT[:7]}`) | "
-        f"**Exploratory Campaign:** `{EXP_CAMPAIGN}` | **Generated:** `{DOC_DATE}` by `docs/study-guide/tools/extract_code_inventory.py`",
-        "",
-        f"Total non-study-guide repository files scanned at `{head_short}`: **`{len(files_inv)}`**.",
-        "",
-        "## 1. File Inventory (Path, Total Lines, Non-Comment LOC, Size)",
-        "",
-        "| Path | Ext | Total Lines | Non-Comment LOC | Bytes | Types / Functions |",
-        "|---|---|---:|---:|---:|---|",
-    ]
-    for f in files_inv:
-        m = f["meta"]
-        summary_syms = []
-        if "types" in m:
-            summary_syms.extend(f"{t['kind']} `{t['name']}` ({t['start_line']}-{t['end_line']})" for t in m["types"])
-        if "functions" in m:
-            summary_syms.append(f"{len(m['functions'])} py defs")
-        if "rules" in m:
-            summary_syms.append(f"{len(m['rules'])} rules")
-        if "scenario" in m and m["scenario"].get("total_runs"):
-            summary_syms.append(f"{m['scenario']['total_runs']} runs")
-        md.append(
-            f"| `{f['path']}` | `{f['ext'] or 'none'}` | {f['total_lines']} | {f['noncomment_loc']} | {f['size_bytes']} | {', '.join(summary_syms[:4])} |"
-        )
-
-    md.extend([
-        "",
-        "## 2. Java Source Line Totals (`src/routing/` + `src/report/`)",
-        "",
-        "| Category | Files | Total Lines | Non-Comment LOC |",
-        "|---|---:|---:|---:|",
-    ])
-    routing_files = [f for f in files_inv if f["path"].startswith("src/routing/")]
-    report_files = [f for f in files_inv if f["path"].startswith("src/report/")]
-    md.append(f"| `src/routing/*.java` | {len(routing_files)} | {sum(x['total_lines'] for x in routing_files)} | {sum(x['noncomment_loc'] for x in routing_files)} |")
-    md.append(f"| `src/report/*.java` | {len(report_files)} | {sum(x['total_lines'] for x in report_files)} | {sum(x['noncomment_loc'] for x in report_files)} |")
-
-    md.extend([
-        "",
-        f"## 3. `DtnmaConfig.java` Parameter Inventory ({len(cfg_keys)} Tunable Fields)",
-        "",
-        "| Key | Type | Default | Clamp Rule | Line |",
-        "|---|---|---|---|---:|",
-    ])
-    for ck in cfg_keys:
-        md.append(f"| `{ck['key']}` | `{ck['type']}` | `{ck['default']}` | `{ck['clamp']}` | `src/routing/DtnmaConfig.java:{ck['line']}` |")
-
-    md.extend([
-        "",
-        "## 4. Scenario Catalog Extracted from `scenarios/*.txt`",
-        "",
-        "| File | EndTime (s) | UpdateInterval (s) | Total Runs | Rules File | Report Dir |",
-        "|---|---:|---:|---:|---|---|",
-    ])
-    for f in files_inv:
-        sc = f["meta"].get("scenario")
-        if sc:
-            md.append(
-                f"| `{f['path']}` | {sc['end_time']} | {sc['update_interval']} | {sc['total_runs']} | `{sc['rules_file'] or 'default'}` | `{sc['report_dir']}` |"
-            )
-
-    md.extend([
-        "",
-        f"## 5. `DtnmaUnitTests.java` Check Catalog ({len(unit_checks)} `check()` Assertions)",
-        "",
-        "| # | Assertion Label | Location |",
-        "|---:|---|---|",
-    ])
-    for i, uc in enumerate(unit_checks, 1):
-        md.append(f"| {i} | `{uc['label']}` | `tests/DtnmaUnitTests.java:{uc['line']}` |")
-
-    out_md = GUIDE_DIR / "00_inventory.md"
-    out_md.write_text("\n".join(md) + "\n", encoding="utf-8")
-    print(f"Wrote {json_path} and {out_md} ({len(files_inv)} files, {len(cfg_keys)} config keys, {len(unit_checks)} unit checks)")
+    print(f"Wrote {json_path} ({len(files_inv)} files, {len(cfg_keys)} config keys, {len(unit_checks)} unit checks)")
 
 
 if __name__ == "__main__":

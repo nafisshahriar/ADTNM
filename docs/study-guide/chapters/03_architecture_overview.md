@@ -58,13 +58,15 @@ ADTNM operates simultaneously across three distinct temporal scales (`implemente
 
 ## 3. Three Intervention Tiers (Architecture Decomposition)
 
-To separate *what protection buys* from *what routing caps buy*, Comparison A decomposes management cleanly into three additive tiers (`DtnmaConfig.java` `dtnmaInterventionTier`):
+| **Intervention Tier (1 / 2 / 3)** | `DtnmaConfig.interventionTier` | **Status:** `Implemented+tested` |
+
+To separate *what critical protection contributes* from *what admission throttling or forwarding caps contribute*, Comparison A decomposes management cleanly into three additive layers:
 
 | Tier | Constant Name | Active Capabilities | Touches Core Routing? |
 |---|---|---|---|
-| **Tier 1** | `TIER1_PROTECTION_ONLY` | 5-tier priority queue + byte reservation (`CRIT_`/`CTRL_` protected over `BULK_`) + critical ACK exchange & pruning | **No** (empirically verified bit-for-bit identical to hard-coded `PrioritySprayAndWaitRouter` in `E1`) |
-| **Tier 2** | `TIER2_PROTECTION_INGRESS_ENERGY` | Tier 1 **plus** `BULK_` ingress admission throttling (`ing = 0/1/2`), `S1–S4` Shield, and local `SRL` rules (`P0..P7` energy & congestion guards) | **Minimal** (only admits/rejects `BULK_` at ingress & hold; keeps forwarding order/estimates unchanged) |
-| **Tier 3** | `TIER3_FULL_WITH_REPLICA_CAPS` | Tier 2 **plus** dynamic replica copy-limit `L` (`1..12`) / spray/backpressure forwarding caps applied in adapters | **Yes** (modulates substrate forwarding breadth) |
+| **Tier 1** | `TIER1_PROTECTION_ONLY` | Five-tier priority queue + byte reservation (`CRIT_`/`CTRL_` protected over `BULK_`) + critical ACK exchange & pruning | **No** (empirically verified bit-for-bit identical to hard-coded `PrioritySprayAndWaitRouter` in `E1`) |
+| **Tier 2** | `TIER2_PROTECTION_INGRESS_ENERGY` | Tier 1 **plus** `BULK_` ingress admission throttling (`ing = 0/1/2`), `S1–S4` Shield, and local `SRL` rules | **Minimal** (admits/rejects `BULK_` at ingress & hold; keeps forwarding heuristics unchanged) |
+| **Tier 3** | `TIER3_FULL_WITH_REPLICA_CAPS` | Tier 2 **plus** dynamic replica copy-limit `L` (`1..12`) / backpressure forwarding caps applied in adapters | **Yes** (modulates substrate forwarding breadth) |
 
 ---
 
@@ -95,7 +97,7 @@ Comparison B compares **architecture operating modes** using a shared substrate 
 | **Agent / Manager split** | RFC 9675 Sec 3 | `DtnmaAgent` per node; remote `Manager` scenarios emit `CTRL_` rules | No interactive Manager GUI/CLI or automated remote policy synthesis (`v1.0`) |
 | **EDD telemetry** | RFC 9675 Sec 4.2 | `11` named EDD metrics (`EDD_QUEUE_RATIO` .. `EDD_DEST_PROB`) | Internal Java array + string enum (`EddTelemetrySampler`), not ADMs/CBOR |
 | **ARI identifiers** | RFC 9675 Sec 4.1 | Human-readable URIs (`ARI://DTNMA/SRL/<RULE_ID>`) in audit log | String tags for deterministic replay, not RFC 9171/DTN WG binary CBOR ARIs |
-| **State-Based Rules (SRL)** | RFC 9675 Sec 4.4 | `DtnmaRuleParser` parses `IF (...) THEN P<0-7> LATCH <s> PRIO <p>` | Deterministic infix boolean expressions over the 11 EDDs |
+| **State-Based Rules (SRL)** | RFC 9675 Sec 4.4 | `DtnmaRuleParser` compiles `RULE / IF / THEN: CTRL_SET_*` rules | Deterministic flat `&&` / `\|\|` clauses over the `11` EDDs |
 | **Self-\* + Bounded Autonomy** | RFC 7575 Sec 3–4 | Shield `S1–S4` hard-masks unsafe actions before actuator dispatch | Does **not** allow unconstrained dynamic goal invention outside safe bounds |
 
 See [Chapter 4a](04a_mechanisms_telemetry_and_profiles.md) through [Chapter 4d](04d_mechanisms_rl_and_reporting.md) for full `11`-part specifications of all `23` mechanisms, and [Appendix A](../appendices/appendix_a_rfc_conformance.md) for clause-by-clause RFC traceability.

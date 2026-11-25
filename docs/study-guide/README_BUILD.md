@@ -6,7 +6,7 @@ All build scripts under `docs/study-guide/tools/` are deterministic, offline, an
 - **Java JDK `24`** (`javac`, `java`) + compiled `n:\R&D\cog\the-one\target` classes
 - **Python `3.12+`** packages: `markdown`, `pygments`, `matplotlib`, `numpy`, `scipy`, `reportlab`, `PyMuPDF` (`fitz`), `Pillow` (`PIL`)
 
-> Note (`OPEN_QUESTIONS.md`): Because `pandoc`, `wkhtmltopdf`, `weasyprint`, `mmdc`, and headless Edge `--print-to-pdf` are not installed/usable on this Windows host, `build_study_guide.py` builds the searchable offline HTML via pure Python `markdown` + `pygments` and renders bookmarked PDFs natively via `reportlab` + `PIL`, verified page-by-page using `fitz` (`PyMuPDF`).
+> **Build Toolchain Note:** Because `pandoc`, `wkhtmltopdf`, `weasyprint`, and `mmdc` are unnecessary under pure-Python tooling, `build_study_guide.py` generates the searchable offline HTML monograph via `markdown` + `pygments` and renders bookmarked PDFs natively via `reportlab` + `PIL`, verified page-by-page using `fitz` (`PyMuPDF`).
 
 ## Full Build Commands (PowerShell)
 ```powershell

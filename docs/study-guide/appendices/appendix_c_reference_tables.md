@@ -22,7 +22,7 @@ Override any key in `scenarios/dtnma_params_default.txt` or scenario settings vi
 | `rlEpochInterval` | `double` | `15.0` | Clamped `[1.0..600.0]` s |
 | `rlAlpha` / `rlGamma` / `rlWeightDecay` | `double` | `0.15` / `0.90` / `1e-4` | `[1e-4..1.0]`, `[0..0.999]`, `[0..0.1]` |
 | `rlEpsilonStart` / `rlEpsilonMin` / `rlEpsilonDecay` | `double` | `0.15` / `0.01` / `900.0` | Exploration schedule (`decay >= 10.0`) |
-| `rlLambdaInit` / `rlEtaLambda` / `rlTargetCost` / `rlLambdaMax` | `double` | `0.0` / `0.0` / `0.30` / `5.0` | Retired primal-dual shims (`DISC-08`; active `lambda = 0.0`) |
+| `rlLambdaInit` / `rlEtaLambda` / `rlTargetCost` / `rlLambdaMax` | `double` | `0.0` / `0.0` / `0.30` / `5.0` | Retired primal-dual shims (active `lambda = 0.0`) |
 | `rlOptimisticInit` | `double` | `0.0` | Initial Q-weight bias |
 | `rewardDirectDelivery` / `AckDelivery` / `PredProgress` / `CoverageGain` | `double` | `2.5` / `1.5` / `1.5` / `1.0` | All `>= 0.0` |
 | `penaltyBulkDrop` / `penaltyRelayCost` | `double` | `0.35` / `0.02` | All `>= 0.0` |
@@ -48,7 +48,7 @@ Override any key in `scenarios/dtnma_params_default.txt` or scenario settings vi
 | `EDD_ACTIVE_CONNECTIONS` | Open links on host interfaces | `[0, ...]` | RL features |
 | `EDD_NODE_SPEED` | EWMA ($\alpha=0.25$) displacement rate (`m/s`) | `>= 0.0` | Rules (`VDTN_TRAFFIC_JAM`), Mobility class |
 | `EDD_ENERGY_SOC` | `clamp(E_rem / E_init, 0, 1)` | `[0.0, 1.0]` | Rules (`< 0.20`), Shield (`S2`) |
-| `EDD_ENERGY_DRAIN` | EWMA battery drain rate | `>= 0.0` | Computed & exposed; unused in `v1.0` rules (`DISC-05`) |
+| `EDD_ENERGY_DRAIN` | EWMA battery drain rate | `>= 0.0` | Computed & exposed; reserved for future `v1.1` slope triggers |
 | `EDD_NEIGHBOR_MIN_QUEUE` | Minimum `Q` over fresh beacons | `[0.0, 1.0]` | Backpressure / RL |
 | `EDD_NEIGHBOR_QUEUE_GRAD` | $Q_{\text{local}} - Q_{\text{nbr}}^{\min}$ | `[-1.0, 1.0]` | RL / Backpressure |
 | `EDD_DEST_PROB` | Native PRoPHET-style encounter predictability | `[0.0, 1.0]` | RL features & reward shaping |

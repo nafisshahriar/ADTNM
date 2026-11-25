@@ -1,0 +1,5 @@
+flowchart LR
+  S1["1. .txt Sweep & Seed Pairing"] --> S2["2. Multi-Worker DTNSim (dt=0.5s, warmup=1000s)"]
+  S2 --> S3["3. 4-Stream Report Capture (MsgStats, RlMetrics, Audit, Timeline)"]
+  S3 --> S4["4. Offline Deterministic ARI Replay (100.00%)"]
+  S4 --> S5["5. Paired Student-t, Holm-Bonferroni & TOST Inference"]

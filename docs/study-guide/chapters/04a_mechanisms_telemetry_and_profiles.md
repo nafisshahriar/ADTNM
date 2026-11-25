@@ -10,7 +10,7 @@
 > Every mechanism below enforces **hard capacity invariance** (`maxOvershoot = 1`) and `O(N)` single-pass buffer partitioning (`DtnmaRouter.java:275-291`) before the `30 s` controller loop runs.
 
 > [!WARNING] GOTCHA / PITFALL
-> `DtnmaDecisionReport` (`DISC-01`) aggregates harmless ACKed duplicate evictions (Tier 1) together with live `CRIT_` drops (`53` in smoke test vs `0` un-ACKed `unique_critical_lost` in `DtnmaRlMetricsReport`).
+> `DtnmaDecisionReport` aggregates harmless ACKed duplicate evictions (Tier 1) together with live `CRIT_` drops (`53` in smoke test vs `0` un-ACKed `unique_critical_lost` in `DtnmaRlMetricsReport`).
 
 > [!NOTE] SUPERVISOR NOTE
 > **`A2` Tier evidence:** Isolating Mechanisms `03–05` into Tiers `1` and `2` demonstrates that admission & energy conservation produce `~100%` of Epidemic's blackout survival gain (`14.5 -> 125.9` alive) without touching core forwarding logic.
@@ -54,7 +54,7 @@ In confirmatory `compB_multitimescale` (seed `7103`), Manager wave `W1` starts a
 `Implemented+tested` (`v1.0-tnsm-freeze`). Earlier prototypes lacked per-wave CDF adoption logging (`# WAVE_ADOPTION_CDF` added prior to freeze).
 
 ### 11. Supervisor Rationale
-Directly operationalizes **RFC 9675 Sec 3** (asynchronous autonomy). Limitation: Manager campaigns in `v1.0` are schedule-driven rather than dynamically computed from uplink telemetry (`SDR-3`).
+Directly operationalizes **RFC 9675 Sec 3** (asynchronous autonomy). Limitation: Manager campaigns in `v1.0` are schedule-driven rather than dynamically synthesized from uplink telemetry.
 
 ---
 
@@ -80,7 +80,7 @@ Configured via `dtnmaTelemetryIntervalSec` (`30.0 s`). Hard-coded constants (`Ed
 - `EDD_QUEUE_DRIFT`: $\Delta Q_t = \alpha_d (Q_t - Q_{t-1}) + (1 - \alpha_d)\Delta Q_{t-1}$, $\alpha_d = 0.30$
 - `EDD_NODE_DENSITY`: count of distinct peers seen within sliding `[now - 300.0 s, now]` window
 - `EDD_ACTIVE_CONNECTIONS`: current open `Connection` count; `EDD_NODE_SPEED`: EWMA speed ($\alpha_s = 0.25$)
-- `EDD_ENERGY_SOC` ($E \in [0,1]$) = $\text{clamp}(E_{\text{rem}} / E_{\text{init}})$; `EDD_ENERGY_DRAIN`: EWMA battery depletion rate (`DISC-05`: computed but unused in `v1.0` rules)
+- `EDD_ENERGY_SOC` ($E \in [0,1]$) = $\text{clamp}(E_{\text{rem}} / E_{\text{init}})$; `EDD_ENERGY_DRAIN`: EWMA battery depletion rate (computed and exposed for `v1.1` slope triggers, unused in `v1.0` rules).
 - `EDD_NEIGHBOR_MIN_QUEUE` ($Q_{\text{nbr}}^{\min}$), `EDD_NEIGHBOR_QUEUE_GRAD` = $Q - Q_{\text{nbr}}^{\min}$, and `EDD_DEST_PROB` ($P_{\text{dest}} \in [0,1]$ encounter table).
 
 ### 6. Code Anchors
@@ -132,7 +132,7 @@ Single-pass scan partitions buffer into `5` buckets, evicting from lowest non-em
 - `src/routing/DtnmaAgent.java:1004-1027` (`selectNextMessageToRemove`)
 
 ### 7. Outputs, Telemetry & Logs
-`DtnmaRlMetricsReport` distinguishes `critical_buffer_dropped` (un-ACKed Tier 4) vs `critical_buffer_dropped_acked` (Tier 1). **Gotcha (`DISC-01`):** `DtnmaDecisionReport.java:103-107` aggregates both into `Critical Fault Messages Dropped` (`53` in 1h smoke vs `0` un-ACKed loss).
+`DtnmaRlMetricsReport` distinguishes `critical_buffer_dropped` (un-ACKed Tier 4) vs `critical_buffer_dropped_acked` (Tier 1). **Reporting Note:** `DtnmaDecisionReport.java:103-107` aggregates both into `Critical Fault Messages Dropped` (`53` in `1 h` smoke vs `0` un-ACKed loss).
 
 ### 8. Edge Cases, Failure Modes & Safeguards
 Messages currently mid-transfer (`isSending`) are skipped unless zero other candidates exist. Tested in `DtnmaUnitTests` (`Test1a`, `Test5`, `Test7`).
