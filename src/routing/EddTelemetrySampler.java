@@ -2,6 +2,11 @@
  * EddTelemetrySampler.java
  * Samples strongly-typed Externally Defined Data (EDD) across physical, link,
  * energy, and mobility subsystems conforming to RFC 9675 / RFC 7575.
+ *
+ * Hardened for Phase 1:
+ * - EWMA smoothing for Queue Drift and Node Speed (eliminates burst spikes).
+ * - Decentralized local-only & contact-handshake neighbor sensing via DtnmaContactBeacon.
+ * - Normalized [0, 1] state vector export for Shielded CMDP RL.
  */
 package routing;
 
@@ -19,6 +24,7 @@ public class EddTelemetrySampler {
 
     // Standardized EDD ARIs
     public static final String EDD_QUEUE_RATIO = "EDD_QUEUE_RATIO";
+    public static final String EDD_CRIT_QUEUE_RATIO = "EDD_CRIT_QUEUE_RATIO";
     public static final String EDD_QUEUE_DRIFT = "EDD_QUEUE_DRIFT";
     public static final String EDD_NODE_DENSITY = "EDD_NODE_DENSITY";
     public static final String EDD_ACTIVE_CONNECTIONS = "EDD_ACTIVE_CONNECTIONS";
@@ -26,7 +32,12 @@ public class EddTelemetrySampler {
     public static final String EDD_ENERGY_SOC = "EDD_ENERGY_SOC";
     public static final String EDD_ENERGY_DRAIN = "EDD_ENERGY_DRAIN";
     public static final String EDD_NEIGHBOR_MIN_QUEUE = "EDD_NEIGHBOR_MIN_QUEUE";
+    public static final String EDD_NEIGHBOR_QUEUE_GRAD = "EDD_NEIGHBOR_QUEUE_GRAD";
     public static final String EDD_DEST_PROB = "EDD_DEST_PROB";
+
+    // EWMA Smoothing Constants
+    private static final double ALPHA_DRIFT = 0.30;
+    private static final double ALPHA_SPEED = 0.25;
 
     // PRoPHET Predictability Constants (RFC 6693)
     public static final double P_INIT = 0.75;
@@ -35,19 +46,19 @@ public class EddTelemetrySampler {
     public static final double SECONDS_IN_TIME_UNIT = 30.0;
 
     private DTNHost host;
-    private DtnmaRouter router;
+    private DtnmaManagedRouter router;
 
     // Smoothing & Drift tracking
     private double lastSampleTime = 0.0;
     private double lastQueueRatio = 0.0;
     private double queueDrift = 0.0;
 
-    // Mobility tracking (Universal speed calculation)
+    // Mobility tracking (EWMA-smoothed speed calculation)
     private Coord lastLocation = null;
     private double nodeSpeed = 0.0;
 
-    // Energy tracking
-    private double lastEnergy = 1.0;
+    // Energy tracking (normalized SoC in [0, 1])
+    private double lastEnergySoc = 1.0;
     private double energyDrainRate = 0.0;
 
     // Contact Density Sliding Window Tracking
@@ -58,7 +69,7 @@ public class EddTelemetrySampler {
     private Map<DTNHost, Double> preds;
     private double lastAgeUpdate = 0.0;
 
-    public EddTelemetrySampler(DTNHost host, DtnmaRouter router) {
+    public EddTelemetrySampler(DTNHost host, DtnmaManagedRouter router) {
         this.host = host;
         this.router = router;
         this.contactTimestamps = new HashMap<Integer, Double>();
@@ -66,6 +77,9 @@ public class EddTelemetrySampler {
         this.lastAgeUpdate = SimClock.getTime();
         if (host != null && host.getLocation() != null) {
             this.lastLocation = host.getLocation().clone();
+        }
+        if (router != null) {
+            this.lastEnergySoc = router.getEnergySoc();
         }
     }
 
@@ -106,10 +120,10 @@ public class EddTelemetrySampler {
         if (peer == null || peer.getRouter() == null) return;
         double pForHost = getPredFor(peer);
         Map<DTNHost, Double> othersPreds = null;
-        if (peer.getRouter() instanceof DtnmaRouter) {
-            DtnmaRouter pr = (DtnmaRouter) peer.getRouter();
-            if (pr.getEddSampler() != null) {
-                othersPreds = pr.getEddSampler().getDeliveryPreds();
+        if (peer.getRouter() instanceof DtnmaManagedRouter) {
+            DtnmaManagedRouter pr = (DtnmaManagedRouter) peer.getRouter();
+            if (pr.getDtnmaAgent() != null && pr.getDtnmaAgent().getEddSampler() != null) {
+                othersPreds = pr.getDtnmaAgent().getEddSampler().getDeliveryPreds();
             }
         } else if (peer.getRouter() instanceof ProphetRouter) {
             othersPreds = ((ProphetRouter) peer.getRouter()).getDeliveryPreds();
@@ -158,34 +172,37 @@ public class EddTelemetrySampler {
     }
 
     /**
-     * Refreshes dynamic EDDs across all subsystems.
+     * Refreshes dynamic EDDs across all subsystems with EWMA filtering.
      */
     public void sampleNow() {
         double now = SimClock.getTime();
         double dt = now - lastSampleTime;
 
         if (dt >= 0.5) {
-            // 1. Queue Ratio & Drift
+            // 1. Queue Ratio & EWMA-smoothed Drift
             double currentQueueRatio = router != null ? router.getBufferOccupancyRatio() : 0.0;
-            this.queueDrift = (currentQueueRatio - lastQueueRatio) / dt;
+            double rawDrift = (currentQueueRatio - lastQueueRatio) / dt;
+            rawDrift = clamp(rawDrift, -0.25, 0.25);
+            this.queueDrift = ALPHA_DRIFT * rawDrift + (1.0 - ALPHA_DRIFT) * this.queueDrift;
             this.lastQueueRatio = currentQueueRatio;
 
-            // 2. Universal Speed calculation (m/s)
+            // 2. EWMA-smoothed Universal Speed calculation (m/s)
             if (host != null && host.getLocation() != null) {
                 Coord curLoc = host.getLocation();
                 if (lastLocation != null) {
                     double dist = curLoc.distance(lastLocation);
-                    this.nodeSpeed = dist / dt;
+                    double instSpeed = dist / dt;
+                    this.nodeSpeed = ALPHA_SPEED * instSpeed + (1.0 - ALPHA_SPEED) * this.nodeSpeed;
                     this.lastLocation = curLoc.clone();
                 } else {
                     this.lastLocation = curLoc.clone();
                 }
             }
 
-            // 3. Energy SoC & Drain Rate
-            double curEnergy = (router != null) ? router.getEnergyLevel() : 1.0;
-            this.energyDrainRate = Math.max(0.0, (lastEnergy - curEnergy) / dt);
-            this.lastEnergy = curEnergy;
+            // 3. Normalized Energy SoC [0, 1] & Drain Rate
+            double curEnergySoc = (router != null) ? router.getEnergySoc() : 1.0;
+            this.energyDrainRate = Math.max(0.0, (lastEnergySoc - curEnergySoc) / dt);
+            this.lastEnergySoc = curEnergySoc;
 
             this.lastSampleTime = now;
         }
@@ -195,11 +212,50 @@ public class EddTelemetrySampler {
     }
 
     /**
+     * Classifies the node's mobility regime for peer-class Gossip consensus:
+     * 0 = Pedestrian / Slow (< 2.2 m/s)
+     * 1 = Vehicle / Standard (2.2 to 9.5 m/s)
+     * 2 = Tram / Fast Backbone (>= 9.5 m/s or multi-interface relay)
+     */
+    public int getMobilityClass() {
+        if (host != null && host.getInterfaces().size() > 1) {
+            return 2;
+        }
+        if (this.nodeSpeed >= 9.5) {
+            return 2;
+        }
+        if (this.nodeSpeed < 2.2) {
+            return 0;
+        }
+        return 1;
+    }
+
+    /**
+     * Exports normalized 6-dimensional local state vector s_t in [0, 1]^6
+     * for the Shielded CMDP Reinforcement Learning Agent.
+     */
+    public double[] getNormalizedStateVector() {
+        double q = router != null ? clamp(router.getBufferOccupancyRatio(), 0.0, 1.0) : 0.0;
+        double dDrift = clamp(0.5 + 5.0 * this.queueDrift, 0.0, 1.0);
+        double dDens = clamp(getNodeDensity() / 15.0, 0.0, 1.0);
+        double dSpeed = clamp(this.nodeSpeed / 15.0, 0.0, 1.0);
+        double minNbrQ = getMinNeighborQueueRatio();
+        double dGrad = clamp(0.5 + 0.5 * (q - minNbrQ), 0.0, 1.0);
+        double dSoc = clamp((router != null) ? router.getEnergySoc() : 1.0, 0.0, 1.0);
+
+        return new double[] { q, dDrift, dDens, dSpeed, dGrad, dSoc };
+    }
+
+    /**
      * Retrieves numeric value for a named EDD identifier.
      */
     public double getEddValue(String eddName) {
         if (EDD_QUEUE_RATIO.equals(eddName)) {
             return router != null ? router.getBufferOccupancyRatio() : 0.0;
+        } else if (EDD_CRIT_QUEUE_RATIO.equals(eddName)) {
+            if (router == null) return 0.0;
+            DtnmaAgent ag = router.getDtnmaAgent();
+            return ag != null ? ag.getCachedCriticalOccupancyRatio() : router.getCriticalOccupancyRatio();
         } else if (EDD_QUEUE_DRIFT.equals(eddName)) {
             return this.queueDrift;
         } else if (EDD_NODE_DENSITY.equals(eddName)) {
@@ -209,11 +265,14 @@ public class EddTelemetrySampler {
         } else if (EDD_NODE_SPEED.equals(eddName)) {
             return this.nodeSpeed;
         } else if (EDD_ENERGY_SOC.equals(eddName)) {
-            return (router != null) ? router.getEnergyLevel() : 1.0;
+            return (router != null) ? router.getEnergySoc() : 1.0;
         } else if (EDD_ENERGY_DRAIN.equals(eddName)) {
             return this.energyDrainRate;
         } else if (EDD_NEIGHBOR_MIN_QUEUE.equals(eddName)) {
             return getMinNeighborQueueRatio();
+        } else if (EDD_NEIGHBOR_QUEUE_GRAD.equals(eddName)) {
+            double q = router != null ? router.getBufferOccupancyRatio() : 0.0;
+            return q - getMinNeighborQueueRatio();
         } else if (EDD_DEST_PROB.equals(eddName)) {
             ageDeliveryPreds();
             double maxP = 0.0;
@@ -245,24 +304,37 @@ public class EddTelemetrySampler {
         return uniqueNodes.size();
     }
 
+    /**
+     * Computes minimum queue ratio across currently connected peers strictly from
+     * explicit Contact Beacons (decentralized contact-handshake awareness).
+     */
     public double getMinNeighborQueueRatio() {
-        if (host == null || host.getConnections().isEmpty()) {
+        if (host == null || host.getConnections().isEmpty() || router == null) {
             return 1.0;
         }
 
         double minRatio = 1.0;
         for (Connection c : host.getConnections()) {
             DTNHost other = c.getOtherNode(host);
-            if (other != null && other.getRouter() instanceof DtnmaRouter) {
-                DtnmaRouter otherRouter = (DtnmaRouter) other.getRouter();
-                double otherRatio = otherRouter.getBufferOccupancyRatio();
+            if (other != null) {
+                double otherRatio = router.getBeaconNeighborQueueRatio(other);
                 if (otherRatio < minRatio) {
                     minRatio = otherRatio;
                 }
-            } else {
-                minRatio = 0.5;
             }
         }
         return minRatio;
+    }
+
+    public double getNodeSpeed() {
+        return nodeSpeed;
+    }
+
+    public double getQueueDrift() {
+        return queueDrift;
+    }
+
+    private static double clamp(double val, double min, double max) {
+        return Math.max(min, Math.min(max, val));
     }
 }

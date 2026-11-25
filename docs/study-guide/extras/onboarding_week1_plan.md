@@ -1,0 +1,11 @@
+# Week 1 Guided Onboarding Plan (`onboarding_week1_plan.md`)
+
+> **Objective:** Equip any newcomer without prior DTN, RFC, or simulator experience to build and run ADTNM, write custom autonomic rules, and critically interpret empirical evaluations within five focused half-day sessions.
+
+| Session | Learning Focus | Core Readings (`docs/study-guide/`) | Practical Lab Exercise |
+|---|---|---|---|
+| **Day 1** | DTN fundamentals & managed-substrate framing | [`01 Executive Summary`](../chapters/01_executive_summary.md), [`02 Primer`](../chapters/02_primer_for_newcomers.md), [`03 Architecture`](../chapters/03_architecture_overview.md) | Compile via `Tutorial 1`, pass all `27/27` unit tests, and summarize why routers act as managed substrates |
+| **Day 2** | Scenario files, logs & drop accounting | [`04a Mechanisms`](../chapters/04a_mechanisms_telemetry_and_profiles.md), [`07 Scenario Guide & Tutorials`](../chapters/07_howto_and_tutorials.md), [`Worked Example 6`](../worked_examples/worked_examples.md) | Run `Tutorial 2` (`1 h` smoke: `262 created / 184 delivered`) and reconcile ACK-pruned copies vs live losses |
+| **Day 3** | State-based rules, safety shield & audit replay | [`04b Mechanisms`](../chapters/04b_mechanisms_srl_and_shield.md), [`Worked Examples 1–3`](../worked_examples/worked_examples.md), `Tutorial 3` | Author a custom `RULE/IF/THEN` policy with a `PRIORITY: 10` catch-all rule and verify `100.00%` `ARI` replay |
+| **Day 4** | Adapter architecture & codebase navigation | [`04c Mechanisms`](../chapters/04c_mechanisms_adapters_and_remote.md), [`05 Codebase Tour`](../chapters/05_codebase_tour.md), [`Worked Examples 4–5`](../worked_examples/worked_examples.md) | Compare `ManagedEpidemicRouter.java` against `EnergyAwareEpidemicRouter.java` and preview `parallel_batch_runner.py --dry-run` |
+| **Day 5** | Empirical rigor & honest negative results | [`06 Evaluation & Results`](../chapters/06_evaluation_and_results.md), [`08 History & Decisions`](../chapters/08_history_and_decisions.md), [`Appendix A`](../appendices/appendix_a_rfc_conformance.md) | Contrast confirmatory `H1–H4` against exploratory controls (`M0e-25`, `M1-F-Group`), failed `H2_orig`, and `M3` RL limitations |

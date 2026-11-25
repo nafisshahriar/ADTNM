@@ -1,12 +1,8 @@
 /*
  * DtnmaRouter.java
- * Solidified Autonomic DTNMA Router implementing RFC 9675 (DTNMA) & RFC 7575 (Autonomic Networking).
- * Features:
- * 1. Strongly-typed RFC 9675 Predicate Autonomy Engine with State-Based Rules (SRLs).
- * 2. Density-Aware Dynamic Forwarding (Adapts spray quotas between Sparse and Dense regimes).
- * 3. Backpressure Queue Gradient Forwarding (Suppresses transfers into congested neighbors).
- * 4. Dual-Tier Priority Queuing (Strict Head-of-Line preemption & zero drops for Critical Faults).
- * 5. Constructive Ingress Admission Control (Eliminates destructive post-hoc mass purges).
+ * Autonomic DTNMA Router implementing RFC 9675-inspired declarative policy
+ * management & RFC 7575 autonomic closed-loop principles, delegating its
+ * entire management plane by composition to DtnmaAgent.
  */
 package routing;
 
@@ -15,19 +11,27 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import core.Connection;
 import core.DTNHost;
 import core.Message;
-import core.MessageListener;
 import core.Settings;
 import core.SimClock;
 import util.Tuple;
 
-public class DtnmaRouter extends ActiveRouter {
+public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
+
+    public enum IntelligenceMode {
+        STATIC_RULES,
+        UNSHIELDED_RL,
+        SHIELDED_RL_PASSIVE,
+        SHIELDED_CMDP_RL
+    }
 
     public static final String DTNMA_NS = "DtnmaRouter";
     public static final String MSG_COPIES_PROPERTY = "Dtnma_Copies";
+    public static final String MSG_SPLIT_PROPERTY = "Dtnma_PendingSplit";
 
     // Ingress Control Modes
     public static final int INGRESS_ACCEPT_ALL = 0;
@@ -42,185 +46,192 @@ public class DtnmaRouter extends ActiveRouter {
     // Default Policy Bounds
     public static final int DEFAULT_SPARSE_QUOTA = 6;
     public static final int DEFAULT_DENSE_QUOTA = 2;
-    public static final int DEFAULT_CRITICAL_QUOTA = 1;
+    public static final int DEFAULT_CRITICAL_QUOTA = 8;
 
+    // Settings Identifiers
     public static final String RULES_FILE_SETTING = "rulesFile";
+    public static final String INTELLIGENCE_MODE_SETTING = "intelligenceMode";
+    public static final String GOSSIP_ENABLED_SETTING = "gossipEnabled";
+    public static final String ACK_FEEDBACK_SETTING = "ackFeedbackEnabled";
+    public static final String RL_EPOCH_INTERVAL_SETTING = "rlEpochInterval";
 
-    // DTNMA Subsystem
-    private EddTelemetrySampler eddSampler;
-    private List<StateBasedRule> ruleDatabase;
-    private String activeRuleAri = "ARI://DTNMA/SRL/BOOTSTRAP";
-    private String lastExplanation = "INITIAL_STATE";
-    private int activeRegime = REGIME_SPARSE_NOMINAL;
+    // Preset compatibility fields (synchronized with DtnmaAgent)
+    protected DtnmaConfig config;
+    protected IntelligenceMode intelligenceMode = IntelligenceMode.SHIELDED_CMDP_RL;
+    protected boolean gossipEnabled = true;
+    protected boolean ackFeedbackEnabled = true;
+    protected double rlEpochInterval = 15.0;
+    protected long scenarioRngSeed = 0L;
 
-    // Dynamic Policy Variables (Adjusted via RFC 9675 Controls)
-    private int currentSprayQuota = DEFAULT_SPARSE_QUOTA;
-    private int currentIngressMode = INGRESS_ACCEPT_ALL;
-    private double routineTelemetryInterval = 60.0;
-    private boolean backpressureEnabled = true;
+    // Composed Autonomic Management Plane Agent
+    private final DtnmaAgent agent;
 
-    // Autonomy Engine Timing
-    private double lastAutonomyEvalTime = -1.0;
-    private double autonomyEvalInterval = 1.0; // Evaluate rules at 1.0 Hz
+    // Normalized Energy Reference (captured on host instantiation)
+    private double initialEnergy = 1.0;
 
     public DtnmaRouter(Settings s) {
         super(s);
-        this.ruleDatabase = new ArrayList<StateBasedRule>();
-        if (s.contains(RULES_FILE_SETTING)) {
-            String rFile = s.getSetting(RULES_FILE_SETTING);
-            try {
-                this.ruleDatabase = DtnmaRuleParser.parseFile(rFile);
-            } catch (Exception e) {
-                System.err.println("Warning: Failed to load DTNMA rules from " + rFile + " (" + e.getMessage() + "), using defaults.");
-                initDefaultRuleDatabase();
-            }
-        } else {
-            initDefaultRuleDatabase();
-        }
+        this.agent = new DtnmaAgent(this, s);
+        this.config = this.agent.config;
+        this.intelligenceMode = this.agent.intelligenceMode;
+        this.gossipEnabled = this.agent.gossipEnabled;
+        this.ackFeedbackEnabled = this.agent.ackFeedbackEnabled;
+        this.rlEpochInterval = this.agent.rlEpochInterval;
+        this.scenarioRngSeed = this.agent.scenarioRngSeed;
     }
 
     protected DtnmaRouter(DtnmaRouter r) {
         super(r);
-        this.ruleDatabase = new ArrayList<StateBasedRule>();
-        for (StateBasedRule rule : r.ruleDatabase) {
-            this.ruleDatabase.add(rule);
+        r.syncPrototypeToAgent();
+        this.agent = new DtnmaAgent(this, r.agent);
+        this.config = this.agent.config;
+        this.intelligenceMode = this.agent.intelligenceMode;
+        this.gossipEnabled = this.agent.gossipEnabled;
+        this.ackFeedbackEnabled = this.agent.ackFeedbackEnabled;
+        this.rlEpochInterval = this.agent.rlEpochInterval;
+        this.scenarioRngSeed = this.agent.scenarioRngSeed;
+
+        if (this.energy != null && this.energy.getEnergy() > 0.0) {
+            this.initialEnergy = this.energy.getEnergy();
+        } else {
+            this.initialEnergy = 1.0;
         }
-        this.currentSprayQuota = r.currentSprayQuota;
-        this.currentIngressMode = r.currentIngressMode;
-        this.routineTelemetryInterval = r.routineTelemetryInterval;
-        this.backpressureEnabled = r.backpressureEnabled;
-        this.autonomyEvalInterval = r.autonomyEvalInterval;
-        this.activeRegime = r.activeRegime;
-        this.activeRuleAri = r.activeRuleAri;
-        this.lastExplanation = r.lastExplanation;
     }
 
-    /**
-     * Initializes the default RFC 9675 State-Based Rule database.
-     * Incorporates Node Density, Queue Congestion, and Critical Fault Preservation.
-     */
-    private void initDefaultRuleDatabase() {
-        // RULE 1: CRITICAL CONGESTION & LOW ENERGY (Priority 100)
-        // IF Queue >= 92% OR Energy < 20% -> Quota = 2, Ingress = Throttle, Interval = 600s
-        PredicateExpression pCrit = new PredicateExpression(false); // OR
-        pCrit.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.GREATER_EQUAL, 0.92);
-        pCrit.addClause(EddTelemetrySampler.EDD_ENERGY_SOC, PredicateExpression.Operator.LESS_THAN, 0.20);
-        StateBasedRule rCrit = new StateBasedRule("ARI://DTNMA/SRL/CRITICAL_CONGESTION",
-                "Severe queue congestion or low energy: Restrict quota to 2 and enable backpressure", 100, pCrit);
-        rCrit.addAction(ControlAction.setSprayQuota(2));
-        rCrit.addAction(ControlAction.setIngressMode(INGRESS_THROTTLE_BULK));
-        rCrit.addAction(ControlAction.setTelemetryInterval(600.0));
-        rCrit.addAction(ControlAction.setBackpressure(true));
-        this.ruleDatabase.add(rCrit);
-
-        // RULE 2: DENSE REGIME (Priority 50)
-        // IF NodeDensity >= 4 -> Quota = 3, Interval = 300s
-        PredicateExpression pDense = new PredicateExpression(false);
-        pDense.addClause(EddTelemetrySampler.EDD_NODE_DENSITY, PredicateExpression.Operator.GREATER_EQUAL, 4.0);
-        StateBasedRule rDense = new StateBasedRule("ARI://DTNMA/SRL/DENSE_CLUSTER",
-                "High density cluster: Set balanced spray quota to 3", 50, pDense);
-        rDense.addAction(ControlAction.setSprayQuota(3));
-        rDense.addAction(ControlAction.setIngressMode(INGRESS_ACCEPT_ALL));
-        rDense.addAction(ControlAction.setTelemetryInterval(300.0));
-        rDense.addAction(ControlAction.setBackpressure(true));
-        this.ruleDatabase.add(rDense);
-
-        // RULE 3: SPARSE NOMINAL REGIME (Priority 10)
-        // IF Queue < 85% AND NodeDensity < 4 -> Quota = 6, Ingress = Accept All, Interval = 60s
-        PredicateExpression pSparse = new PredicateExpression(true); // AND
-        pSparse.addClause(EddTelemetrySampler.EDD_QUEUE_RATIO, PredicateExpression.Operator.LESS_THAN, 0.85);
-        pSparse.addClause(EddTelemetrySampler.EDD_NODE_DENSITY, PredicateExpression.Operator.LESS_THAN, 4.0);
-        StateBasedRule rSparse = new StateBasedRule("ARI://DTNMA/SRL/SPARSE_EXPLORATION",
-                "Sparse topology with healthy buffer: Use exploratory spray quota 6", 10, pSparse);
-        rSparse.addAction(ControlAction.setSprayQuota(DEFAULT_SPARSE_QUOTA));
-        rSparse.addAction(ControlAction.setIngressMode(INGRESS_ACCEPT_ALL));
-        rSparse.addAction(ControlAction.setTelemetryInterval(60.0));
-        rSparse.addAction(ControlAction.setBackpressure(false));
-        this.ruleDatabase.add(rSparse);
-
-        // Sort rules by priority descending
-        Collections.sort(this.ruleDatabase, (r1, r2) -> Integer.compare(r2.getPriority(), r1.getPriority()));
+    private void syncPrototypeToAgent() {
+        this.agent.intelligenceMode = this.intelligenceMode;
+        this.agent.gossipEnabled = this.gossipEnabled;
+        this.agent.ackFeedbackEnabled = this.ackFeedbackEnabled;
+        this.agent.rlEpochInterval = this.rlEpochInterval;
+        this.agent.scenarioRngSeed = this.scenarioRngSeed;
+        this.agent.config.intelligenceMode = this.intelligenceMode;
+        this.agent.config.gossipEnabled = this.gossipEnabled;
+        this.agent.config.ackFeedbackEnabled = this.ackFeedbackEnabled;
+        this.agent.config.rlEpochInterval = this.rlEpochInterval;
     }
+
+    protected final void applyBaselinePresetKnobs() {
+        syncPrototypeToAgent();
+        this.agent.applyConfiguredBaselineKnobs();
+    }
+
+    protected final void loadRulesFromFile(String rFile) {
+        this.agent.loadRulesFromFile(rFile);
+    }
+
+    protected final void loadRulesFromString(String ruleText) {
+        this.agent.loadRulesFromString(ruleText);
+    }
+
+    @Override
+    public boolean supportsDynamicControlReconfig() {
+        return true;
+    }
+
+    @Override
+    public DtnmaAgent getDtnmaAgent() {
+        syncPrototypeToAgent();
+        return this.agent;
+    }
+
+    // DtnmaManagedRouter adapters
+    @Override public DTNHost getManagedHost() { return getHost(); }
+    @Override public ActiveRouter getManagedActiveRouter() { return this; }
+    @Override public Collection<Message> getManagedMessageCollection() { return getMessageCollection(); }
+    @Override public Message getManagedMessage(String id) { return getMessage(id); }
+    @Override public long getManagedBufferSize() { return getBufferSize(); }
+    @Override public long getManagedFreeBufferSize() { return getFreeBufferSize(); }
+    @Override public boolean hasManagedMessage(String id) { return hasMessage(id); }
+    @Override public boolean isManagedSending(String id) { return isSending(id); }
+    @Override public void deleteManagedMessage(String id, boolean drop) { deleteMessage(id, drop); }
+    @Override public List<Connection> getManagedConnections() { return getConnections(); }
+    @Override public Collection<Connection> getManagedSendingConnections() { return this.sendingConnections; }
+    @Override public int getManagedMsgTtl() { return this.msgTtl; }
+    @Override public int compareManagedByQueueMode(Message m1, Message m2) { return compareByQueueMode(m1, m2); }
 
     @Override
     public void changedConnection(Connection con) {
         super.changedConnection(con);
-        if (con.isUp()) {
-            if (this.eddSampler == null && getHost() != null) {
-                this.eddSampler = new EddTelemetrySampler(getHost(), this);
-            }
-            if (this.eddSampler != null) {
-                this.eddSampler.recordContact(con.getOtherNode(getHost()));
+        syncPrototypeToAgent();
+        this.agent.onChangedConnection(con);
+    }
+
+    public DtnmaContactBeacon getBeaconSnapshot(double now) {
+        return this.agent.getBeaconSnapshot(now);
+    }
+
+    @Override
+    public double getBeaconNeighborQueueRatio(DTNHost peer) {
+        return this.agent.getBeaconNeighborQueueRatio(peer);
+    }
+
+    @Override
+    protected List<Tuple<Message, Connection>> getMessagesForConnected() {
+        List<Tuple<Message, Connection>> tuples = super.getMessagesForConnected();
+        if (tuples == null || tuples.isEmpty()) {
+            return tuples;
+        }
+        boolean hasGrp = false;
+        for (Tuple<Message, Connection> t : tuples) {
+            if (isGroupControlMessage(t.getKey())) {
+                hasGrp = true;
+                break;
             }
         }
+        if (!hasGrp) {
+            return tuples;
+        }
+        List<Tuple<Message, Connection>> filtered = new ArrayList<Tuple<Message, Connection>>(tuples.size());
+        for (Tuple<Message, Connection> t : tuples) {
+            if (!isGroupControlMessage(t.getKey())) {
+                filtered.add(t);
+            }
+        }
+        return filtered;
     }
 
     @Override
     public void update() {
         super.update();
-
-        // Lazy initialize EDD sampler once host is attached
-        if (this.eddSampler == null && getHost() != null) {
-            this.eddSampler = new EddTelemetrySampler(getHost(), this);
-        }
-
+        syncPrototypeToAgent();
         double now = SimClock.getTime();
-
-        // 1. RUN RFC 9675 AUTONOMY ENGINE EVALUATION LOOP
-        if (now - lastAutonomyEvalTime >= autonomyEvalInterval) {
-            evaluateAutonomyEngine();
-            lastAutonomyEvalTime = now;
-        }
+        this.agent.onBeforeUpdate(now);
 
         if (isTransferring() || !canStartTransfer()) {
             return;
         }
 
-        // 2. DELIVER LOCAL DELIVERABLE MESSAGES TO RECIPIENTS FIRST
         if (exchangeDeliverableMessages() != null) {
             return;
         }
 
-        // 3. POLICY-GOVERNED SPRAY & FOCUS FORWARDING
         tryPolicyGovernedForwarding();
     }
 
     /**
-     * RFC 9675 Autonomy Engine: Evaluates active State-Based Rules (SRLs) in priority order.
+     * Computes exact relay-time copy split respecting active spray quota while conserving tokens.
      */
-    private void evaluateAutonomyEngine() {
-        if (eddSampler == null) return;
-        eddSampler.sampleNow();
-
-        for (StateBasedRule rule : ruleDatabase) {
-            if (rule.isTriggered(eddSampler)) {
-                this.activeRuleAri = rule.getAri();
-                this.lastExplanation = rule.getLastExplanation();
-                rule.execute(this);
-
-                // Update regime reporting state
-                if (rule.getPriority() >= 100) {
-                    this.activeRegime = REGIME_CONGESTED_SAFE;
-                } else if (rule.getPriority() >= 50) {
-                    this.activeRegime = REGIME_DENSE_BALANCED;
-                } else {
-                    this.activeRegime = REGIME_SPARSE_NOMINAL;
-                }
-                break; // Highest priority triggered rule governs
-            }
+    public static int computeRelaySplit(int copies, int activeQuota, boolean isCritical) {
+        if (copies <= 1) {
+            return 0;
         }
+        if (isCritical) {
+            return Math.max(1, (int) Math.floor(copies / 2.0));
+        }
+        if (activeQuota <= 1) {
+            return 0;
+        }
+        int eff = Math.min(copies, activeQuota);
+        return Math.max(1, Math.min(copies - 1, (int) Math.floor(eff / 2.0)));
     }
 
     /**
-     * Policy-Governed Spray & Focus Forwarding.
-     * Combines dynamic token spray (copies > 1) with PRoPHET-assisted cognitive handoff (copies == 1).
-     * Eliminates redundant O(M*C) buffer queries for ultra-fast simulation throughput.
+     * Policy-Governed Binary Spray & Cognitive Focus Forwarding.
      */
     private void tryPolicyGovernedForwarding() {
         List<Connection> connections = getConnections();
         if (connections.isEmpty()) return;
 
-        // Fast filtering: find connections ready for transfer
         List<Connection> readyConnections = null;
         for (Connection con : connections) {
             if (con.isReadyForTransfer()) {
@@ -232,10 +243,9 @@ public class DtnmaRouter extends ActiveRouter {
         }
         if (readyConnections == null || readyConnections.isEmpty()) return;
 
-        // Pre-cache peer metadata once per ready connection (O(C) instead of O(M*C))
         int nReady = readyConnections.size();
         DTNHost[] peerHosts = new DTNHost[nReady];
-        DtnmaRouter[] peerRouters = new DtnmaRouter[nReady];
+        DtnmaManagedRouter[] peerManaged = new DtnmaManagedRouter[nReady];
         ProphetRouter[] prophetRouters = new ProphetRouter[nReady];
         double[] peerQueueRatios = new double[nReady];
 
@@ -243,10 +253,9 @@ public class DtnmaRouter extends ActiveRouter {
             Connection con = readyConnections.get(i);
             DTNHost other = con.getOtherNode(getHost());
             peerHosts[i] = other;
-            if (other != null && other.getRouter() instanceof DtnmaRouter) {
-                DtnmaRouter pr = (DtnmaRouter) other.getRouter();
-                peerRouters[i] = pr;
-                peerQueueRatios[i] = pr.getBufferOccupancyRatio();
+            if (other != null && other.getRouter() instanceof DtnmaManagedRouter) {
+                peerManaged[i] = (DtnmaManagedRouter) other.getRouter();
+                peerQueueRatios[i] = getBeaconNeighborQueueRatio(other);
             } else if (other != null && other.getRouter() instanceof ProphetRouter) {
                 prophetRouters[i] = (ProphetRouter) other.getRouter();
                 peerQueueRatios[i] = 0.5;
@@ -256,75 +265,137 @@ public class DtnmaRouter extends ActiveRouter {
         }
 
         double myQueueRatio = getBufferOccupancyRatio();
-
         Collection<Message> msgColl = getMessageCollection();
         if (msgColl.isEmpty()) return;
 
-        List<Message> messages = new ArrayList<Message>(msgColl);
-        sortMessagesDualTier(messages);
+        int activeQuota = this.agent.getCurrentSprayQuota();
+        boolean critOnly = (this.agent.getCurrentIngressMode() == INGRESS_CRITICAL_ONLY);
 
-        for (Message m : messages) {
-            if (isSending(m.getId())) continue;
+        // Linear O(N) 5-tier bucketing: avoids double-sorting all messages every tick
+        // Buckets: 0=epidemicCtrl, 1=crit(L>1), 2=crit(L<=1), 3=bulk(L>1), 4=bulk(L<=1)
+        @SuppressWarnings("unchecked")
+        List<Message>[] buckets = (List<Message>[]) new List<?>[5];
+        for (Message m : msgColl) {
+            if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
+            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
+            boolean isCrit = epiCtrl || isCriticalMessage(m);
+            if (!isCrit && critOnly) continue;
 
-            boolean isCritical = isCriticalMessage(m);
-            Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-            if (copies == null) {
-                copies = isCritical ? 8 : this.currentSprayQuota;
-                m.updateProperty(MSG_COPIES_PROPERTY, copies);
+            Integer copiesObj = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+            int copies = (copiesObj != null) ? copiesObj.intValue() : (isCrit ? DEFAULT_CRITICAL_QUOTA : activeQuota);
+            int b = epiCtrl ? 0 : (isCrit ? (copies > 1 ? 1 : 2) : (copies > 1 ? 3 : 4));
+            if (buckets[b] == null) {
+                buckets[b] = new ArrayList<Message>();
+            }
+            buckets[b].add(m);
+        }
+
+        EddTelemetrySampler edd = this.agent.getEddSampler();
+        boolean bpEnabled = this.agent.isBackpressureEnabled();
+        double bpDelta = this.agent.getCurrentBackpressureDelta();
+        double focusMinPred = this.agent.getCurrentFocusMinPred();
+        double focusMargin = this.agent.getCurrentFocusMargin();
+
+        for (int b = 0; b < 5; b++) {
+            List<Message> bucket = buckets[b];
+            if (bucket == null || bucket.isEmpty()) continue;
+            if (bucket.size() > 1) {
+                super.sortByQueueMode(bucket);
             }
 
-            DTNHost dest = m.getTo();
-            double myPred = (eddSampler != null && dest != null) ? eddSampler.getPredFor(dest) : 0.0;
-
-            for (int i = 0; i < nReady; i++) {
-                Connection con = readyConnections.get(i);
-                DTNHost other = peerHosts[i];
-                if (other == null) continue;
-
-                // 1. Direct delivery to final recipient always executes immediately
-                if (dest == other) {
-                    if (startTransfer(m, con) == RCV_OK) {
-                        return;
-                    }
-                    continue;
+            for (Message m : bucket) {
+                boolean isCritical = isCriticalMessage(m);
+                boolean epidemicCtrl = (b == 0);
+                Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
+                if (copies == null) {
+                    copies = isCritical ? DEFAULT_CRITICAL_QUOTA : activeQuota;
+                    m.updateProperty(MSG_COPIES_PROPERTY, copies);
                 }
 
-                double peerQueue = peerQueueRatios[i];
+                DTNHost dest = m.getTo();
+                double myPred = -1.0;
 
-                // 2. SPRAY PHASE (copies > 1)
-                if (copies > 1) {
-                    // Backpressure check: suppress non-critical forwarding into congested peers
-                    if (!isCritical && backpressureEnabled && peerRouters[i] != null) {
-                        if (peerQueue >= myQueueRatio + 0.15) {
-                            continue;
+                for (int i = 0; i < nReady; i++) {
+                    Connection con = readyConnections.get(i);
+                    DTNHost other = peerHosts[i];
+                    if (other == null) continue;
+
+                    // 1. Direct delivery to final recipient always executes immediately (except shared group control broadcasts)
+                    if (dest == other && !isGroupControlMessage(m)) {
+                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                        if (startTransfer(m, con) == RCV_OK) {
+                            return;
                         }
-                    }
-
-                    if (!isCritical && peerQueue >= 0.95) {
                         continue;
                     }
 
-                    if (startTransfer(m, con) == RCV_OK) {
-                        return;
+                    // 1b. Optional Epidemic Control Flooding for M1/M2/M3 convergence upper bound
+                    if (epidemicCtrl) {
+                        if (isGroupControlMessage(m) && dest == other) {
+                            continue;
+                        }
+                        if (other.getRouter() != null && other.getRouter().hasMessage(m.getId())) {
+                            continue;
+                        }
+                        m.updateProperty(MSG_SPLIT_PROPERTY, -1);
+                        if (startTransfer(m, con) == RCV_OK) {
+                            return;
+                        }
+                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                        continue;
                     }
-                }
-                // 3. COGNITIVE FOCUS HANDOFF PHASE (copies == 1)
-                else {
-                    int maxHops = isCritical ? 3 : 2;
-                    if (m.getHopCount() < maxHops) {
-                        double peerPred = 0.0;
-                        if (peerRouters[i] != null && peerRouters[i].getEddSampler() != null) {
-                            peerPred = peerRouters[i].getEddSampler().getPredFor(dest);
-                        } else if (prophetRouters[i] != null) {
-                            peerPred = prophetRouters[i].getPredFor(dest);
+
+                    double peerQueue = peerQueueRatios[i];
+
+                    // 2. SPRAY PHASE (copies > 1)
+                    if (copies > 1) {
+                        if (!isCritical && bpEnabled && peerManaged[i] != null) {
+                            if (peerQueue >= 0.65 && peerQueue >= myQueueRatio + bpDelta) {
+                                continue;
+                            }
                         }
 
-                        // Focus handoff: Hand off single copy only to peers with high genuine predictability
-                        double minAbsolutePred = isCritical ? 0.25 : 0.35;
-                        double requiredAdvantage = isCritical ? 0.10 : 0.15;
-                        if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < 0.90) {
-                            if (startTransfer(m, con) == RCV_OK) {
-                                return;
+                        int toSend = computeRelaySplit(copies, activeQuota, isCritical);
+                        int naturalSplit = Math.max(1, (int) Math.floor(copies / 2.0));
+                        if (!isCritical) {
+                            this.agent.recordStarvationCheck(peerQueue, toSend, naturalSplit);
+                        }
+                        if (toSend <= 0) {
+                            continue;
+                        }
+
+                        m.updateProperty(MSG_SPLIT_PROPERTY, toSend);
+                        if (startTransfer(m, con) == RCV_OK) {
+                            return;
+                        }
+                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                    }
+                    // 3. COGNITIVE FOCUS HANDOFF PHASE (copies == 1)
+                    else {
+                        if (!isCritical && m.getTtl() < 15) {
+                            continue;
+                        }
+                        int maxHops = isCritical ? 3 : 2;
+                        if (m.getHopCount() < maxHops) {
+                            if (myPred < 0.0) {
+                                myPred = (edd != null && dest != null) ? edd.getPredFor(dest) : 0.0;
+                            }
+                            double peerPred = 0.0;
+                            if (peerManaged[i] != null && peerManaged[i].getDtnmaAgent() != null
+                                    && peerManaged[i].getDtnmaAgent().getEddSampler() != null) {
+                                peerPred = peerManaged[i].getDtnmaAgent().getEddSampler().getPredFor(dest);
+                            } else if (prophetRouters[i] != null) {
+                                peerPred = prophetRouters[i].getPredFor(dest);
+                            }
+
+                            double minAbsolutePred = isCritical ? 0.35 : Math.max(0.60, focusMinPred);
+                            double requiredAdvantage = isCritical ? 0.20 : Math.max(0.30, focusMargin);
+                            double maxPeerQ = isCritical ? 0.90 : 0.70;
+                            if (peerPred >= minAbsolutePred && peerPred > myPred + requiredAdvantage && peerQueue < maxPeerQ) {
+                                m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+                                if (startTransfer(m, con) == RCV_OK) {
+                                    return;
+                                }
                             }
                         }
                     }
@@ -333,213 +404,321 @@ public class DtnmaRouter extends ActiveRouter {
         }
     }
 
-    @Override
-    public boolean createNewMessage(Message msg) {
-        makeRoomForNewMessage(msg.getSize());
-        msg.setTtl(this.msgTtl);
-        boolean isCrit = isCriticalMessage(msg);
-        int initialCopies = isCrit ? 8 : this.currentSprayQuota;
-        msg.addProperty(MSG_COPIES_PROPERTY, initialCopies);
-        addToMessages(msg, true);
+    /**
+     * Computes total bytes belonging to active non-sending incoming transfers on this host
+     * that are not destined for this host (i.e., will be buffered upon transfer completion).
+     */
+    public static long computeReservedIncomingBytes(
+            DTNHost host, List<Connection> connections, Collection<Connection> sendingConnections) {
+        if (host == null || connections == null) return 0L;
+        long reserved = 0L;
+        for (Connection con : connections) {
+            if (con != null && con.isUp() && con.getMessage() != null
+                    && (sendingConnections == null || !sendingConnections.contains(con))
+                    && con.getMessage().getTo() != host) {
+                reserved += con.getMessage().getSize();
+            }
+        }
+        return reserved;
+    }
+
+    /**
+     * Emergency room reclamation for critical creation under saturated all-critical buffers:
+     * evicts only already-ACKed critical copies, never evicting un-ACKed critical messages.
+     */
+    public static boolean reclaimCriticalEmergency(
+            ActiveRouter router, String copiesPropKey,
+            Map<String, Boolean> deliveredAckSet, int size) {
+        if (size > router.getBufferSize()) {
+            return false;
+        }
+        while (router.getFreeBufferSize() < size) {
+            Message ackedCand = null;
+
+            for (Message m : router.getMessageCollection()) {
+                if (router.isSending(m.getId()) || !isCriticalMessage(m)) continue;
+                if (deliveredAckSet != null && deliveredAckSet.containsKey(m.getId())) {
+                    ackedCand = m;
+                    break;
+                }
+            }
+
+            if (ackedCand != null) {
+                router.deleteMessage(ackedCand.getId(), false);
+            } else {
+                return false;
+            }
+        }
         return true;
     }
 
     /**
-     * Binary spray quota update & cognitive focus handoff finalization.
+     * Reclaims any post-transfer physical buffer overshoot so occupancy stays <= 1.0.
      */
+    public static void clampPostTransferDeficit(
+            ActiveRouter router, Message incomingMsg, String copiesPropKey,
+            Map<String, Boolean> deliveredAckSet) {
+        if (router.getFreeBufferSize() < 0) {
+            router.makeRoomForMessage(0);
+            if (router.getFreeBufferSize() < 0 && incomingMsg != null) {
+                if (!isCriticalMessage(incomingMsg) && router.hasMessage(incomingMsg.getId())) {
+                    router.deleteMessage(incomingMsg.getId(), true);
+                } else if (isCriticalMessage(incomingMsg)) {
+                    if (!reclaimCriticalEmergency(router, copiesPropKey, deliveredAckSet, 0)
+                            && router.hasMessage(incomingMsg.getId())) {
+                        router.deleteMessage(incomingMsg.getId(), false);
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
+    public boolean createNewMessage(Message msg) {
+        syncPrototypeToAgent();
+        if (!this.agent.prepareRoomForNewMessage(msg, MSG_COPIES_PROPERTY)) {
+            return false;
+        }
+        msg.setTtl(this.msgTtl);
+        boolean isCrit = isCriticalMessage(msg);
+        int initialCopies = isCrit ? DEFAULT_CRITICAL_QUOTA : this.agent.getCurrentSprayQuota();
+        msg.addProperty(MSG_COPIES_PROPERTY, initialCopies);
+        addToMessages(msg, true);
+        this.agent.onAfterCreateNewMessage(msg, initialCopies);
+        return true;
+    }
+
+    @Override
+    public void deleteMessage(String id, boolean drop) {
+        Message m = getMessage(id);
+        this.agent.onDeleteMessage(m, drop);
+        super.deleteMessage(id, drop);
+    }
+
     @Override
     protected void transferDone(Connection con) {
         Message m = getMessage(con.getMessage().getId());
         if (m == null) return;
 
         DTNHost recipient = con.getOtherNode(getHost());
-        // Destination delivery: transfer is complete
         if (m.getTo() == recipient) {
+            this.agent.onTransferDone(con, m, MSG_COPIES_PROPERTY, 0);
+            m.updateProperty(MSG_SPLIT_PROPERTY, 0);
             return;
         }
 
         Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-        if (copies != null && copies > 1) {
-            // Binary spray: sender retains ceil(copies / 2)
-            int remainingCopies = (int) Math.ceil(copies / 2.0);
-            m.updateProperty(MSG_COPIES_PROPERTY, Math.max(1, remainingCopies));
+        Integer splitProp = (Integer) m.getProperty(MSG_SPLIT_PROPERTY);
+        int actualSent = 0;
+        if (splitProp != null && splitProp == -1) {
+            actualSent = 1;
+        } else if (copies != null && copies > 1) {
+            actualSent = (splitProp != null && splitProp > 0)
+                    ? Math.max(1, Math.min(copies - 1, splitProp))
+                    : Math.max(1, (int) Math.floor(copies / 2.0));
+            m.updateProperty(MSG_COPIES_PROPERTY, Math.max(1, copies - actualSent));
         } else if (copies != null && copies == 1) {
-            // Focus handoff: single copy was transferred to a higher-predictability relay.
-            // Relinquish local copy to conserve network copies to exactly 1.
             deleteMessage(m.getId(), false);
         }
+        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
+
+        this.agent.onTransferDone(con, m, MSG_COPIES_PROPERTY, actualSent);
     }
 
-    /**
-     * Initializes copies property for incoming messages accepted from peers.
-     */
     @Override
     public Message messageTransferred(String id, DTNHost from) {
         Message m = super.messageTransferred(id, from);
         if (m != null) {
+            this.agent.onMessageTransferred(m, from, MSG_COPIES_PROPERTY);
             Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-            if (copies != null && copies > 1) {
-                // Binary spray: receiver gets floor(copies / 2)
-                int peerCopies = (int) Math.floor(copies / 2.0);
-                m.updateProperty(MSG_COPIES_PROPERTY, Math.max(1, peerCopies));
+            Integer splitProp = (Integer) m.getProperty(MSG_SPLIT_PROPERTY);
+            if (splitProp != null && splitProp == -1) {
+                m.updateProperty(MSG_COPIES_PROPERTY, DEFAULT_CRITICAL_QUOTA);
+            } else if (copies != null && copies > 1) {
+                int peerCopies = (splitProp != null && splitProp > 0)
+                        ? Math.max(1, Math.min(copies - 1, splitProp))
+                        : Math.max(1, (int) Math.floor(copies / 2.0));
+                m.updateProperty(MSG_COPIES_PROPERTY, peerCopies);
             } else {
-                // Focus handoff or single copy: receiver maintains exactly 1 copy.
-                // Strict copy conservation: NEVER re-seed extra copies!
                 m.updateProperty(MSG_COPIES_PROPERTY, 1);
             }
+            m.updateProperty(MSG_SPLIT_PROPERTY, 0);
         }
         return m;
     }
 
-    /**
-     * Ingress Admission Control: Applies backpressure at reception instead of post-hoc dropping.
-     */
     @Override
     protected int checkReceiving(Message m, DTNHost from) {
-        if (isCriticalMessage(m)) {
-            return super.checkReceiving(m, from); // Always admit critical faults!
+        Integer denied = this.agent.evaluateCheckReceiving(m, from, MSG_COPIES_PROPERTY);
+        if (denied != null) {
+            return denied.intValue();
         }
-
-        // Only block incoming bulk transfers if buffer is critically congested (>95%)
-        if (currentIngressMode == INGRESS_CRITICAL_ONLY && getBufferOccupancyRatio() > 0.95) {
-            return MessageRouter.DENIED_NO_SPACE;
-        }
-
         return super.checkReceiving(m, from);
     }
 
-    /**
-     * Buffer Replacement: Prioritizes shedding low-value replicas over critical data.
-     * NEVER drops critical fault messages!
-     */
     @Override
     protected Message getNextMessageToRemove(boolean excludeMsgBeingSent) {
-        Collection<Message> messages = this.getMessageCollection();
-        Message candidate = null;
-
-        for (Message m : messages) {
-            if (excludeMsgBeingSent && isSending(m.getId())) continue;
-            if (isCriticalMessage(m)) continue; // Inviolable safety guarantee
-
-            // Prefer removing bulk science messages with remaining copies or low TTL
-            if (candidate == null) {
-                candidate = m;
-            } else {
-                Integer cCopies = (Integer) candidate.getProperty(MSG_COPIES_PROPERTY);
-                Integer mCopies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
-                int cVal = cCopies != null ? cCopies : 1;
-                int mVal = mCopies != null ? mCopies : 1;
-
-                if (mVal < cVal || (mVal == cVal && m.getTtl() < candidate.getTtl())) {
-                    candidate = m;
-                }
-            }
-        }
-
-        return candidate;
+        return this.agent.selectNextMessageToRemove(excludeMsgBeingSent, null);
     }
 
-    /**
-     * Dual-Tier Priority Sorting: Critical fault observability messages strictly placed at head of line.
-     */
-    private void sortMessagesDualTier(List<Message> list) {
-        Collections.sort(list, new Comparator<Message>() {
-            public int compare(Message m1, Message m2) {
-                boolean c1 = isCriticalMessage(m1);
-                boolean c2 = isCriticalMessage(m2);
-
-                if (c1 && !c2) return -1; // Critical first
-                if (!c1 && c2) return 1;
-
-                // Secondary sort: smaller remaining TTL first
-                return Double.compare(m1.getTtl(), m2.getTtl());
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static List sortCriticalFirst(List list) {
+        if (list == null || list.size() <= 1) {
+            return list;
+        }
+        List crit = null;
+        List nonCrit = null;
+        for (Object o : list) {
+            Message m = (o instanceof Tuple) ? ((Tuple<Message, Connection>) o).getKey() : (Message) o;
+            if (isCriticalMessage(m)) {
+                if (crit == null) crit = new ArrayList();
+                crit.add(o);
+            } else {
+                if (nonCrit == null) nonCrit = new ArrayList();
+                nonCrit.add(o);
             }
-        });
+        }
+        if (crit == null || nonCrit == null) {
+            return list;
+        }
+        list.clear();
+        list.addAll(crit);
+        list.addAll(nonCrit);
+        return list;
     }
 
     @Override
     @SuppressWarnings("unchecked")
     protected List sortByQueueMode(List list) {
-        list = super.sortByQueueMode(list);
-        Collections.sort(list, new Comparator() {
-            public int compare(Object o1, Object o2) {
-                Message m1 = (o1 instanceof Tuple) ? ((Tuple<Message, Connection>) o1).getKey() : (Message) o1;
-                Message m2 = (o2 instanceof Tuple) ? ((Tuple<Message, Connection>) o2).getKey() : (Message) o2;
-                boolean c1 = isCriticalMessage(m1);
-                boolean c2 = isCriticalMessage(m2);
+        return sortCriticalFirst(super.sortByQueueMode(list));
+    }
 
-                if (c1 && !c2) return -1;
-                if (!c1 && c2) return 1;
-                return 0;
-            }
-        });
-        return list;
+    /**
+     * Returns strictly normalized battery State-of-Charge in [0.0, 1.0].
+     */
+    @Override
+    public double getEnergySoc() {
+        if (this.energy == null || this.initialEnergy <= 0.0) {
+            return 1.0;
+        }
+        double soc = this.energy.getEnergy() / this.initialEnergy;
+        return Math.max(0.0, Math.min(1.0, soc));
     }
 
     public double getEnergyLevel() {
-        return (this.energy != null) ? this.energy.getEnergy() : 1.0;
+        return getEnergySoc();
     }
 
     public static boolean isCriticalMessage(Message m) {
         return m != null && isCriticalMessage(m.getId());
     }
 
+    public static boolean isGroupControlMessage(Message m) {
+        return m != null && m.getId() != null && m.getId().startsWith("CTRL_GROUP_");
+    }
+
     public static boolean isCriticalMessage(String id) {
-        if (id == null) return false;
-        return id.startsWith("CRITICAL_FAULT") || id.startsWith("FAULT") || id.startsWith("CRIT");
+        if (id == null || id.isEmpty()) return false;
+        char c = id.charAt(0);
+        if (c != 'C' && c != 'F' && c != 'A' && c != 'T') {
+            return false;
+        }
+        return id.startsWith("CRITICAL_FAULT")
+            || id.startsWith("FAULT")
+            || id.startsWith("CRIT")
+            || id.startsWith("CTRL_UPDATE")
+            || id.startsWith("CTRL_GROUP_")
+            || id.startsWith("ALARM")
+            || id.startsWith("TELEM_CRIT");
     }
 
-    // Controls Actuators
-    public void setDynamicSprayQuota(int quota) {
-        this.currentSprayQuota = Math.max(1, quota);
+    public static boolean isDownlinkControlMessage(Message m) {
+        if (m == null || m.getId() == null) return false;
+        String id = m.getId();
+        return id.startsWith("CTRL_UPDATE") || id.startsWith("CTRL_GROUP_");
     }
 
-    public void setIngressMode(int mode) {
-        this.currentIngressMode = mode;
+    public static boolean isTelemetryOrAlarmMessage(Message m) {
+        if (m == null || m.getId() == null) return false;
+        String id = m.getId();
+        return !id.startsWith("CTRL_UPDATE")
+            && !id.startsWith("CTRL_GROUP_")
+            && (id.startsWith("TELEM_") || id.startsWith("ALARM") || isCriticalMessage(id));
     }
 
-    public void setRoutineTelemetryInterval(double intervalSec) {
-        this.routineTelemetryInterval = Math.max(10.0, intervalSec);
-    }
-
-    public void setBackpressureEnabled(boolean enabled) {
-        this.backpressureEnabled = enabled;
-    }
+    // RFC 9675 Controls Actuators
+    @Override public void setDynamicSprayQuota(int quota) { this.agent.setDynamicSprayQuota(quota); }
+    @Override public void setIngressMode(int mode) { this.agent.setIngressMode(mode); }
+    @Override public void setRoutineTelemetryInterval(double intervalSec) { this.agent.setRoutineTelemetryInterval(intervalSec); }
+    @Override public void setBackpressureEnabled(boolean enabled) { this.agent.setBackpressureEnabled(enabled); }
 
     public long getBufferOccupancy() {
         return getBufferSize() - getFreeBufferSize();
     }
 
+    @Override
     public double getBufferOccupancyRatio() {
         long bSize = getBufferSize();
         if (bSize <= 0) return 0.0;
         return (double) (bSize - getFreeBufferSize()) / bSize;
     }
 
-    public int getLastActionIndex() {
-        return this.activeRegime;
-    }
-
-    public String getActionDescription(int action) {
-        switch (action) {
-            case REGIME_SPARSE_NOMINAL: return "SPARSE_NOMINAL(Quota=" + currentSprayQuota + ")";
-            case REGIME_DENSE_BALANCED: return "DENSE_BALANCED(Quota=" + currentSprayQuota + ")";
-            case REGIME_CONGESTED_SAFE: return "CONGESTED_SAFE(Quota=" + currentSprayQuota + ")";
-            default: return "REGIME_" + action;
+    @Override
+    public double getCriticalOccupancyRatio() {
+        long bSize = getBufferSize();
+        if (bSize <= 0) return 0.0;
+        long critBytes = 0L;
+        for (Message m : getMessageCollection()) {
+            if (isCriticalMessage(m)) {
+                critBytes += m.getSize();
+            }
         }
+        return (double) critBytes / bSize;
     }
 
-    public String getActiveRuleAri() {
-        return this.activeRuleAri;
-    }
-
-    public String getLastExplanation() {
-        return this.lastExplanation;
-    }
-
-    public EddTelemetrySampler getEddSampler() {
-        return this.eddSampler;
-    }
+    // Delegated Getters (full backwards compatibility for tests & reports)
+    public int getLastActionIndex() { return this.agent.getLastActionIndex(); }
+    public String getActionDescription(int action) { return this.agent.getActionDescription(action); }
+    public String getActiveRuleAri() { return this.agent.getActiveRuleAri(); }
+    public String getLastExplanation() { return this.agent.getLastExplanation(); }
+    public EddTelemetrySampler getEddSampler() { return this.agent.getEddSampler(); }
+    public IntelligenceMode getIntelligenceMode() { syncPrototypeToAgent(); return this.agent.getIntelligenceMode(); }
+    public boolean isGossipEnabled() { syncPrototypeToAgent(); return this.agent.isGossipEnabled(); }
+    public boolean isAckFeedbackEnabled() { syncPrototypeToAgent(); return this.agent.isAckFeedbackEnabled(); }
+    public int getLastProposedProfile() { return this.agent.getLastProposedProfile(); }
+    public int getLastExecutedProfile() { return this.agent.getLastExecutedProfile(); }
+    public boolean isLastShieldIntervened() { return this.agent.isLastShieldIntervened(); }
+    public String getShieldTriggerAri() { return this.agent.getShieldTriggerAri(); }
+    public DtnmaSafetyShield getSafetyShield() { return this.agent.getSafetyShield(); }
+    public ShieldedCmdpRlAgent getRlAgent() { return this.agent.getRlAgent(); }
+    public long getBeaconOverheadBytes() { return this.agent.getBeaconOverheadBytes(); }
+    public long getGossipExchanges() { return this.agent.getGossipExchanges(); }
+    public long getGossipOverheadBytes() { return this.agent.getGossipOverheadBytes(); }
+    public long getAckExchanges() { return this.agent.getAckExchanges(); }
+    public long getAckOverheadBytes() { return this.agent.getAckOverheadBytes(); }
+    public double getMaxBufferOccupancy() { return this.agent.getMaxBufferOccupancy(); }
+    public long getCriticalCreationRejected() { return this.agent.getCriticalCreationRejected(); }
+    public long getBulkCreationRejected() { return this.agent.getBulkCreationRejected(); }
+    public long getLocalCreationRejected() { return this.agent.getLocalCreationRejected(); }
+    public long[] getProfileExecCounts() { return this.agent.getProfileExecCounts(); }
+    public int getCurrentSprayQuota() { return this.agent.getCurrentSprayQuota(); }
+    public List<StateBasedRule> getRuleDatabase() { return this.agent.getRuleDatabase(); }
+    public int getLastRlFallbackProfile() { return this.agent.getLastRlFallbackProfile(); }
+    public int getLastSafeMaskBits() { return this.agent.getLastSafeMaskBits(); }
+    public int getAppliedControlVersion() { return this.agent.getAppliedControlVersion(); }
+    public double getLastControlAdoptTime() { return this.agent.getLastControlAdoptTime(); }
+    public String getLastControlAri() { return this.agent.getLastControlAri(); }
+    public long getDecisionCpuNanosTotal() { return this.agent.getDecisionCpuNanosTotal(); }
+    public long getDecisionCpuCount() { return this.agent.getDecisionCpuCount(); }
+    public double getLastDecisionTime() { return this.agent.getLastDecisionTime(); }
+    public double getLastDecisionQ() { return this.agent.getLastDecisionQ(); }
+    public double getLastDecisionCritQ() { return this.agent.getLastDecisionCritQ(); }
+    public double getLastDecisionDq() { return this.agent.getLastDecisionDq(); }
+    public double getLastDecisionDensity() { return this.agent.getLastDecisionDensity(); }
+    public double getLastDecisionSpeed() { return this.agent.getLastDecisionSpeed(); }
+    public double getLastDecisionSoc() { return this.agent.getLastDecisionSoc(); }
+    public int getLastDecisionActiveConn() { return this.agent.getLastDecisionActiveConn(); }
+    public DtnmaConfig getConfig() { return this.agent.getConfig(); }
 
     @Override
     public MessageRouter replicate() {

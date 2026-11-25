@@ -1,0 +1,29 @@
+# ====================================================================
+# RFC 9675-INSPIRED DTNMA DECLARATIVE RULES: VEHICULAR DTN (L=10 TUNED BASELINE)
+# Identical to rules_vdtn.txt EXCEPT nominal Rule 3 sets spray quota L = 10
+# (unhandicapped dev-optimal static control baseline for fair RL comparison).
+# ====================================================================
+
+# Rule 0: Hard Safety Failsafe - Critical Buffer Saturation or Low Energy
+# Priority >= 100 is reserved strictly for inviolable safety constraints
+RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Critical buffer congestion or low energy across any vehicular speed regime
+IF: (EDD_QUEUE_RATIO >= 0.95) || (EDD_ENERGY_SOC < 0.20)
+THEN: CTRL_SET_SPRAY_QUOTA(1); CTRL_SET_INGRESS_MODE(2); CTRL_SET_TELEMETRY_INTERVAL(600); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 1: Traffic Jam / Intersection Gridlock (Operational Heuristic)
+# High vehicle density with near-zero speed AND elevated buffer occupancy
+RULE: ARI://DTNMA/SRL/VDTN_TRAFFIC_JAM | PRIORITY: 60 | DESC: Congested vehicle cluster at intersection or traffic jam
+IF: (EDD_QUEUE_RATIO >= 0.65) && (EDD_NODE_DENSITY >= 5.0) && (EDD_NODE_SPEED < 2.0)
+THEN: CTRL_SET_SPRAY_QUOTA(3); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 2: Highway High-Speed Transit Under Buffer Pressure
+# Moving at high speed (>= 10 m/s) with rising buffer load: balanced spray with backpressure
+RULE: ARI://DTNMA/SRL/VDTN_HIGHWAY_PASS | PRIORITY: 50 | DESC: Congested high-speed highway passing encounter
+IF: (EDD_QUEUE_RATIO >= 0.65) && (EDD_NODE_SPEED >= 10.0)
+THEN: CTRL_SET_SPRAY_QUOTA(4); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(120); CTRL_SET_BACKPRESSURE(true)
+
+# Rule 3: Urban Nominal Cruising (Tuned High-Headroom Spray Quota L = 10)
+# Uncongested operation across urban/suburban mobility regimes
+RULE: ARI://DTNMA/SRL/VDTN_URBAN_NOMINAL | PRIORITY: 10 | DESC: Uncongested nominal cruising across vehicular regimes (L=10)
+IF: (EDD_QUEUE_RATIO < 0.85)
+THEN: CTRL_SET_SPRAY_QUOTA(10); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)

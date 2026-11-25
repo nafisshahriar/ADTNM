@@ -1,0 +1,6 @@
+flowchart LR
+  PROP["Proposed P0..P7"] --> S1["S1: CritQ / Surge Guard"]
+  S1 --> S2["S2: Battery SoC < Min -> {P0,P1}"]
+  S2 --> S3["S3: Q>=0.78 & Dens>=5 -> Block {P6,P7}"]
+  S3 --> S4["S4: Remote Clamp + Liveness mask[0]=1"]
+  S4 --> OUT["PASS or OVERRIDE <= Proposed"]

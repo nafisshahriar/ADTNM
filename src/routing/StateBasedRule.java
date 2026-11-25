@@ -36,7 +36,7 @@ public class StateBasedRule {
         return predicate.evaluate(sampler);
     }
 
-    public void execute(DtnmaRouter router) {
+    public void execute(DtnmaManagedRouter router) {
         for (ControlAction action : actions) {
             action.execute(router);
         }
