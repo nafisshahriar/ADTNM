@@ -1,8 +1,0 @@
-# ====================================================================
-# FIXED NON-ADAPTIVE QUOTA PROFILE (L=6) FOR COMPONENT LADDER STEP 3
-# No adaptive SRL state-based throttling; fixed L=6 with ACK + Priority
-# ====================================================================
-
-RULE: ARI://DTNMA/SRL/FIXED_L6 | PRIORITY: 10 | DESC: Fixed non-adaptive spray quota L=6
-IF: (EDD_QUEUE_RATIO >= 0.0)
-THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(false)

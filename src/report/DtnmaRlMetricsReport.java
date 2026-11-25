@@ -33,7 +33,7 @@ import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaSafetyShield;
 import routing.EnergyAwareEpidemicRouter;
-import routing.PriorityMaxPropRouter;
+import routing.ManagedMaxPropRouter;
 import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
 import routing.util.EnergyModel;
@@ -498,8 +498,6 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                 curBulkRej = er.getBulkCreationRejected();
             } else if (h.getRouter() instanceof PrioritySprayAndWaitRouter) {
                 curBulkRej = ((PrioritySprayAndWaitRouter) h.getRouter()).getLocalCreationRejected();
-            } else if (h.getRouter() instanceof PriorityMaxPropRouter) {
-                curBulkRej = ((PriorityMaxPropRouter) h.getRouter()).getLocalCreationRejected();
             }
             long dCritRej = Math.max(0L, curCritRej - this.prevCritRejByHost.getOrDefault(addr, curCritRej));
             long dBulkRej = Math.max(0L, curBulkRej - this.prevBulkRejByHost.getOrDefault(addr, curBulkRej));
@@ -799,6 +797,10 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
 
         long cpuNanosTotal = 0;
         long cpuDecisionsTotal = 0;
+        long agentStateBytesSum = 0L;
+        double contactDurSum = 0.0;
+        double ictSum = 0.0;
+        double encRateSum = 0.0;
 
         double energySocSum = 0.0;
         double allEnergySocSum = 0.0;
@@ -845,6 +847,12 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                         ackOverheadBytes += r.getAckOverheadBytes();
                         cpuNanosTotal += r.getDecisionCpuNanosTotal();
                         cpuDecisionsTotal += r.getDecisionCpuCount();
+                        agentStateBytesSum += r.estimateAgentStateBytes();
+                        if (r.getEddSampler() != null) {
+                            contactDurSum += r.getEddSampler().getContactDurationMeanSec();
+                            ictSum += r.getEddSampler().getEffectiveInterContactTimeSec();
+                            encRateSum += r.getEddSampler().getEncounterRatePerMin();
+                        }
 
                         if (isHostAlive && expectedCtrlVer > 0) {
                             aliveDtnmaAgents++;
@@ -897,12 +905,6 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
                         maxBufferOccupancy = pr.getMaxBufferOccupancy();
                     }
                     localCreationRejected += pr.getLocalCreationRejected();
-                } else if (h.getRouter() instanceof PriorityMaxPropRouter) {
-                    PriorityMaxPropRouter pm = (PriorityMaxPropRouter) h.getRouter();
-                    if (pm.getMaxBufferOccupancy() > maxBufferOccupancy) {
-                        maxBufferOccupancy = pm.getMaxBufferOccupancy();
-                    }
-                    localCreationRejected += pm.getLocalCreationRejected();
                 }
 
                 Object eObj = h.getComBus().getProperty(EnergyModel.ENERGY_VALUE_ID);
@@ -1139,7 +1141,17 @@ public class DtnmaRlMetricsReport extends Report implements MessageListener, Upd
         int totalHostsN = (hosts != null && !hosts.isEmpty()) ? hosts.size() : 1;
         sb.append("n_hosts: ").append(totalHostsN).append("\n");
         sb.append(String.format(Locale.US, "total_energy_J: %.4f\n", this.totalEnergyJ));
-        sb.append(String.format(Locale.US, "total_ctrl_tx_J: %.4f", this.totalCtrlTxJ));
+        sb.append(String.format(Locale.US, "total_ctrl_tx_J: %.4f\n", this.totalCtrlTxJ));
+        double agentStateBytesPerNode = dtnmaNodes > 0 ? ((double) agentStateBytesSum / dtnmaNodes) : 0.0;
+        double ctrlEnergyShare = this.totalEnergyJ > 1e-9 ? (this.totalCtrlTxJ / this.totalEnergyJ) : 0.0;
+        double avgContactDurS = dtnmaNodes > 0 ? (contactDurSum / dtnmaNodes) : 0.0;
+        double avgIctS = dtnmaNodes > 0 ? (ictSum / dtnmaNodes) : 0.0;
+        double avgEncRate = dtnmaNodes > 0 ? (encRateSum / dtnmaNodes) : 0.0;
+        sb.append(String.format(Locale.US, "agent_state_bytes_per_node: %.2f\n", agentStateBytesPerNode));
+        sb.append(String.format(Locale.US, "ctrl_energy_share: %.6f\n", ctrlEnergyShare));
+        sb.append(String.format(Locale.US, "avg_contact_duration_s: %.4f\n", avgContactDurS));
+        sb.append(String.format(Locale.US, "avg_ict_s: %.4f\n", avgIctS));
+        sb.append(String.format(Locale.US, "avg_encounter_rate_per_min: %.4f", avgEncRate));
 
         for (EventWindowState w : this.eventWindows) {
             List<Double> critLats = new ArrayList<Double>();

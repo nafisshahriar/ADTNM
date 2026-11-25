@@ -29,6 +29,7 @@ public class DtnmaConfig {
         M0_STATIC,
         M1_REMOTE_ONLY,
         M2_AUTONOMIC_SRL,
+        M2_MOBILITY_AWARE,
         M3_AUTONOMIC_RL
     }
 
@@ -96,6 +97,14 @@ public class DtnmaConfig {
     public double shieldEnergyMin = 0.20;
     public boolean equivalenceConnOuterOrder = false;
 
+    // Mobility-Aware Resource Controller Parameters (M2_MOBILITY_AWARE)
+    public double mobHorizonSec = 0.0;
+    public double mobTtdWarnRatio = 1.05;
+    public double mobTtdCritRatio = 0.65;
+    public double mobShortContactSec = 12.0;
+    public double mobLongIctSec = 180.0;
+    public String mobAblationMode = "JOINT";
+
     public DtnmaConfig() {}
 
     public DtnmaConfig(DtnmaConfig o) {
@@ -152,6 +161,13 @@ public class DtnmaConfig {
         this.shieldStormDensity = o.shieldStormDensity;
         this.shieldEnergyMin = o.shieldEnergyMin;
         this.equivalenceConnOuterOrder = o.equivalenceConnOuterOrder;
+
+        this.mobHorizonSec = o.mobHorizonSec;
+        this.mobTtdWarnRatio = o.mobTtdWarnRatio;
+        this.mobTtdCritRatio = o.mobTtdCritRatio;
+        this.mobShortContactSec = o.mobShortContactSec;
+        this.mobLongIctSec = o.mobLongIctSec;
+        this.mobAblationMode = o.mobAblationMode;
     }
 
     /**
@@ -287,6 +303,15 @@ public class DtnmaConfig {
         shieldStormDensity = parseDouble(params, "shieldStormDensity", shieldStormDensity);
         shieldEnergyMin = parseDouble(params, "shieldEnergyMin", shieldEnergyMin);
         equivalenceConnOuterOrder = parseBool(params, "equivalenceConnOuterOrder", equivalenceConnOuterOrder);
+
+        mobHorizonSec = parseDouble(params, "mobHorizonSec", mobHorizonSec);
+        mobTtdWarnRatio = parseDouble(params, "mobTtdWarnRatio", mobTtdWarnRatio);
+        mobTtdCritRatio = parseDouble(params, "mobTtdCritRatio", mobTtdCritRatio);
+        mobShortContactSec = parseDouble(params, "mobShortContactSec", mobShortContactSec);
+        mobLongIctSec = parseDouble(params, "mobLongIctSec", mobLongIctSec);
+        if (params.containsKey("mobAblationMode")) {
+            mobAblationMode = params.get("mobAblationMode").trim().toUpperCase();
+        }
     }
 
     private void applySettings(Settings s) {
@@ -348,6 +373,13 @@ public class DtnmaConfig {
         if (s.contains("shieldStormDensity")) shieldStormDensity = s.getDouble("shieldStormDensity");
         if (s.contains("shieldEnergyMin")) shieldEnergyMin = s.getDouble("shieldEnergyMin");
         if (s.contains("equivalenceConnOuterOrder")) equivalenceConnOuterOrder = s.getBoolean("equivalenceConnOuterOrder");
+
+        if (s.contains("mobHorizonSec")) mobHorizonSec = s.getDouble("mobHorizonSec");
+        if (s.contains("mobTtdWarnRatio")) mobTtdWarnRatio = s.getDouble("mobTtdWarnRatio");
+        if (s.contains("mobTtdCritRatio")) mobTtdCritRatio = s.getDouble("mobTtdCritRatio");
+        if (s.contains("mobShortContactSec")) mobShortContactSec = s.getDouble("mobShortContactSec");
+        if (s.contains("mobLongIctSec")) mobLongIctSec = s.getDouble("mobLongIctSec");
+        if (s.contains("mobAblationMode")) mobAblationMode = s.getSetting("mobAblationMode").trim().toUpperCase();
     }
 
     public void clampSafeBounds() {
@@ -389,6 +421,17 @@ public class DtnmaConfig {
         shieldStormQueue = Math.max(0.30, Math.min(shieldCongestionQueue, shieldStormQueue));
         shieldStormDensity = Math.max(1.0, shieldStormDensity);
         shieldEnergyMin = Math.max(0.0, Math.min(0.90, shieldEnergyMin));
+
+        mobHorizonSec = Math.max(0.0, mobHorizonSec);
+        mobTtdCritRatio = Math.max(0.10, Math.min(2.0, mobTtdCritRatio));
+        mobTtdWarnRatio = Math.max(mobTtdCritRatio, Math.min(3.0, mobTtdWarnRatio));
+        mobShortContactSec = Math.max(1.0, Math.min(300.0, mobShortContactSec));
+        mobLongIctSec = Math.max(10.0, Math.min(7200.0, mobLongIctSec));
+        if (mobAblationMode == null || mobAblationMode.trim().isEmpty()) {
+            mobAblationMode = "JOINT";
+        } else {
+            mobAblationMode = mobAblationMode.trim().toUpperCase();
+        }
     }
 
     public ManagementMode getEffectiveManagementMode() {

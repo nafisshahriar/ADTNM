@@ -370,6 +370,7 @@ public class DtnmaAgent {
     public boolean isAutonomicControlActive() {
         DtnmaConfig.ManagementMode eff = getEffectiveManagementMode();
         return (eff == DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL
+                || eff == DtnmaConfig.ManagementMode.M2_MOBILITY_AWARE
                 || eff == DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL)
                 && (config == null || !config.openLoopAuditOnly);
     }
@@ -401,12 +402,17 @@ public class DtnmaAgent {
     // ------------------------------------------------------------------
 
     public void onChangedConnection(Connection con) {
-        if (con == null || !con.isUp()) return;
-        ensureSubsystemsInitialized();
+        if (con == null) return;
         DTNHost host = owner.getManagedHost();
         if (host == null) return;
-
         DTNHost other = con.getOtherNode(host);
+        if (!con.isUp()) {
+            if (this.eddSampler != null && other != null) {
+                this.eddSampler.recordContactEnd(other);
+            }
+            return;
+        }
+        ensureSubsystemsInitialized();
         if (other == null) return;
 
         if (this.eddSampler != null) {
@@ -621,6 +627,15 @@ public class DtnmaAgent {
             return;
         }
 
+        // M2-Mob: Joint Mobility-Aware Online Resource Controller (within hard SafetyShield)
+        if (effMode == DtnmaConfig.ManagementMode.M2_MOBILITY_AWARE) {
+            evaluateMobilityAwareController();
+            if (config.openLoopAuditOnly) {
+                applyConfiguredBaselineKnobs();
+            }
+            return;
+        }
+
         // M2: Autonomic Local SRLs (+ optional Remote Rules)
         if (effMode == DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL
                 || intelligenceMode == DtnmaRouter.IntelligenceMode.STATIC_RULES) {
@@ -769,6 +784,79 @@ public class DtnmaAgent {
                 break;
             }
         }
+    }
+
+    /**
+     * Evaluates closed-form Mobility-Aware Distributed Resource Coordination (M2_MOBILITY_AWARE).
+     * Jointly coordinates energy-horizon throttling, ICT-scaled buffer protection, and contact-duration-scaled replication.
+     */
+    private void evaluateMobilityAwareController() {
+        double q = owner.getBufferOccupancyRatio();
+        double critQ = getCachedCriticalOccupancyRatio();
+        double dq = eddSampler.getQueueDrift();
+        double soc = owner.getEnergySoc();
+        double dens = eddSampler.getNodeDensity();
+        double encRate = eddSampler.getEncounterRatePerMin();
+        double durMean = eddSampler.getContactDurationMeanSec();
+        double ictEff = eddSampler.getEffectiveInterContactTimeSec();
+        double ttdRatio = eddSampler.getEnergyTtdRatio(config != null ? config.mobHorizonSec : 0.0);
+
+        String ab = (config != null && config.mobAblationMode != null) ? config.mobAblationMode : "JOINT";
+        boolean isJoint = "JOINT".equals(ab);
+        boolean useEnergy = isJoint || "ENERGY_ONLY".equals(ab);
+        boolean useBuf = isJoint || "BUFFER_ONLY".equals(ab);
+        boolean useRep = isJoint || "REPLICA_ONLY".equals(ab);
+
+        double energyMin = (config != null) ? config.shieldEnergyMin : 0.20;
+        double critCritQ = (config != null) ? config.shieldCriticalCritQueue : 0.50;
+        double ttdCrit = (config != null) ? config.mobTtdCritRatio : 0.65;
+        double ttdWarn = (config != null) ? config.mobTtdWarnRatio : 1.05;
+        double shortDur = (config != null) ? config.mobShortContactSec : 12.0;
+        double longIct = (config != null) ? config.mobLongIctSec : 180.0;
+
+        double ictFrac = Math.min(1.0, Math.max(0.0, ictEff / Math.max(30.0, longIct)));
+        double qThresh = useBuf ? Math.max(0.76, Math.min(0.88, 0.88 - 0.12 * ictFrac)) : 0.88;
+
+        int proposed;
+        String propAri;
+        if (critQ >= critCritQ || soc < energyMin || (useEnergy && soc < 0.55 && ttdRatio < ttdCrit)) {
+            proposed = 0;
+            propAri = "ARI://DTNMA/MOB/ENERGY_CRIT_HOLD";
+        } else if (useEnergy && soc < 0.70 && ttdRatio < ttdWarn) {
+            proposed = 1;
+            propAri = "ARI://DTNMA/MOB/ENERGY_HORIZON_THROTTLE";
+        } else if ((useBuf && q >= qThresh && dq >= 0.006) || (q >= 0.88 && dq >= 0.008)) {
+            proposed = 1;
+            propAri = "ARI://DTNMA/MOB/ICT_SURGE_THROTTLE";
+        } else if ((useRep && durMean < shortDur && q >= 0.55) || (q >= 0.75 && dens >= 5.0)) {
+            proposed = 2;
+            propAri = "ARI://DTNMA/MOB/SHORT_CONTACT_CAP";
+        } else if (useRep && durMean >= 25.0 && encRate < 1.5 && q < 0.60 && (!useEnergy || ttdRatio >= 1.25)) {
+            proposed = 5;
+            propAri = "ARI://DTNMA/MOB/SPARSE_LONG_CONTACT_BOOST";
+        } else {
+            proposed = 3;
+            propAri = "ARI://DTNMA/MOB/NOMINAL_BALANCED";
+        }
+
+        DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(
+                proposed, proposed, 0, eddSampler, ruleDatabase);
+        int executed = dec.getExecutedAction();
+        boolean intervened = dec.isIntervened();
+        this.lastSafeMaskBits = encodeMaskBits(safetyShield.computeSafeActionMask(eddSampler, ruleDatabase, null));
+
+        if (config == null || !config.openLoopAuditOnly) {
+            applyPolicyProfile(executed);
+        }
+        if (profileExecCounts != null && executed >= 0 && executed < profileExecCounts.length) {
+            profileExecCounts[executed]++;
+        }
+        String effAri = intervened ? dec.getTriggerAri() : propAri;
+        String expl = String.format(java.util.Locale.US,
+                "MOB[%s](Q=%.2f,SoC=%.2f,TTD=%.2f,Dur=%.1f,ICT=%.1f,Enc=%.2f)->%s",
+                ab, q, soc, ttdRatio, durMean, ictEff, encRate,
+                DtnmaPolicyProfile.get(executed).getName());
+        updateAuditState(proposed, executed, intervened, effAri, expl);
     }
 
     private static int encodeMaskBits(boolean[] mask) {
@@ -1392,4 +1480,13 @@ public class DtnmaAgent {
     public double getLastDecisionShieldWarnCritQ() { return lastDecisionShieldWarnCritQ; }
     public DtnmaConfig getConfig() { return config; }
     public Map<String, Boolean> getDeliveredAckSet() { return deliveredAckSet; }
+
+    public long estimateAgentStateBytes() {
+        long fixedBytes = 512L;
+        long beaconBytes = 48L * (neighborBeacons != null ? neighborBeacons.size() : 0);
+        long ackBytes = 24L * (deliveredAckSet != null ? deliveredAckSet.size() : 0);
+        long gossipBytes = 24L * (gossipLastExchange != null ? gossipLastExchange.size() : 0);
+        long samplerBytes = (eddSampler != null) ? eddSampler.estimateStateBytes() : 0L;
+        return fixedBytes + beaconBytes + ackBytes + gossipBytes + samplerBytes;
+    }
 }

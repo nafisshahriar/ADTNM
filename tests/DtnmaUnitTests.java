@@ -35,7 +35,6 @@ import routing.ControlAction;
 import routing.DtnmaAgent;
 import routing.DtnmaConfig;
 import routing.DtnmaContactBeacon;
-import routing.DtnmaFixedAckRouter;
 import routing.DtnmaM0bStaticRouter;
 import routing.DtnmaM0cV1GuardRouter;
 import routing.DtnmaM0dConservativeRouter;
@@ -46,6 +45,7 @@ import routing.DtnmaM1FloodRouter;
 import routing.DtnmaM1RemoteRouter;
 import routing.util.EnergyModel;
 import routing.DtnmaM2LocalOnlyRouter;
+import routing.DtnmaM2MobRouter;
 import routing.DtnmaM2SrlRouter;
 import routing.DtnmaM3RlRouter;
 import routing.DtnmaManagedRouter;
@@ -53,12 +53,6 @@ import routing.DtnmaPolicyProfile;
 import routing.DtnmaRouter;
 import routing.DtnmaRuleParser;
 import routing.DtnmaSafetyShield;
-import routing.DtnmaShieldedAckRLRouter;
-import routing.DtnmaStaticAckL2Router;
-import routing.DtnmaStaticAckL4Router;
-import routing.DtnmaStaticAckL8Router;
-import routing.DtnmaStaticAckL12Router;
-import routing.DtnmaStaticAckTunedRouter;
 import routing.EddTelemetrySampler;
 import routing.EnergyAwareEpidemicRouter;
 import routing.ManagedEpidemicRouter;
@@ -66,7 +60,6 @@ import routing.ManagedMaxPropRouter;
 import routing.ManagedProphetV2Router;
 import routing.ManagedSprayAndWaitRouter;
 import routing.PredicateExpression;
-import routing.PriorityMaxPropRouter;
 import routing.PrioritySprayAndWaitRouter;
 import routing.ShieldedCmdpRlAgent;
 import routing.StateBasedRule;
@@ -383,13 +376,14 @@ public class DtnmaUnitTests {
                 && pSnW.hasMessage("CRITICAL_FAULT_P1")
                 && pSnW.hasMessage("CRITICAL_FAULT_P2");
 
-        DtnmaShieldedAckRLRouter ackRl = new DtnmaShieldedAckRLRouter(grpSnW);
-        boolean ackRlFlagsOk = ackRl.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL
-                && !ackRl.isGossipEnabled()
-                && ackRl.isAckFeedbackEnabled();
+        // Test8: localCreationRejected counter, PrioritySprayAndWaitRouter, & DtnmaM3RlRouter
+        DtnmaM3RlRouter rlProto = new DtnmaM3RlRouter(grpSnW);
+        boolean ackRlFlagsOk = rlProto.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL
+                && rlProto.isGossipEnabled()
+                && rlProto.isAckFeedbackEnabled();
 
         check(rejCountOk && psOk1 && psOk2 && psBlkBulk && psOccOk && ackRlFlagsOk,
-                "Test8: localCreationRejected audit, PrioritySprayAndWaitRouter protection & DtnmaShieldedAckRLRouter flags",
+                "Test8: localCreationRejected audit, PrioritySprayAndWaitRouter protection & DtnmaM3RlRouter flags",
                 String.format("rej=%d psOk=(%s,%s,%s,%s) flags=%s",
                         r0.getLocalCreationRejected(), psOk1, psOk2, psBlkBulk, psOccOk, ackRlFlagsOk));
     }
@@ -466,14 +460,14 @@ public class DtnmaUnitTests {
         Settings.initFromStream(new ByteArrayInputStream(cfgText.getBytes(StandardCharsets.UTF_8)));
         Settings grp = new Settings("Group");
         MovementModel mm = new StationaryMovement(grp);
-        PriorityMaxPropRouter mpProto = new PriorityMaxPropRouter(grp);
+        ManagedMaxPropRouter mpProto = new ManagedMaxPropRouter(grp);
         List<NetworkInterface> ifaces = new ArrayList<NetworkInterface>();
 
         DTNHost h0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
                 "m", ifaces, new ModuleCommunicationBus(), mm, mpProto);
         DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
                 "m", ifaces, new ModuleCommunicationBus(), mm, mpProto);
-        PriorityMaxPropRouter pm0 = (PriorityMaxPropRouter) h0.getRouter();
+        ManagedMaxPropRouter pm0 = (ManagedMaxPropRouter) h0.getRouter();
 
         Message c1 = new Message(h0, h1, "CRITICAL_FAULT_MP1", 20000);
         Message c2 = new Message(h0, h1, "CRITICAL_FAULT_MP2", 20000);
@@ -487,7 +481,7 @@ public class DtnmaUnitTests {
         // Mixed critical + bulk host: new bulk evicts old bulk while strictly keeping critical
         DTNHost hMix = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
                 "m", ifaces, new ModuleCommunicationBus(), mm, mpProto);
-        PriorityMaxPropRouter pmMix = (PriorityMaxPropRouter) hMix.getRouter();
+        ManagedMaxPropRouter pmMix = (ManagedMaxPropRouter) hMix.getRouter();
         Message mc = new Message(hMix, h1, "CRITICAL_FAULT_MIX", 20000);
         mc.setReceiveTime(1.0);
         Message mb1 = new Message(hMix, h1, "SCIENCE_DATA_MIX1", 20000);
@@ -498,18 +492,21 @@ public class DtnmaUnitTests {
                 && pmMix.hasMessage("CRITICAL_FAULT_MIX")
                 && !pmMix.hasMessage("SCIENCE_DATA_MIX1")
                 && pmMix.hasMessage("SCIENCE_DATA_MIX2")
-                && pmMix.getBufferOccupancyRatio() <= 1.000001;
+                && pmMix.getDtnmaAgent().getMaxBufferOccupancy() <= 1.000001;
 
         boolean mpOk = ok1 && ok2 && deniedBulk && deniedCrit
                 && pm0.hasMessage("CRITICAL_FAULT_MP1") && pm0.hasMessage("CRITICAL_FAULT_MP2")
-                && pm0.getLocalCreationRejected() == 2
+                && pm0.getDtnmaAgent().getLocalCreationRejected() == 2
                 && pm0.getBufferOccupancyRatio() <= 1.000001
                 && mixOk;
 
-        DtnmaStaticAckTunedRouter tunedProto = new DtnmaStaticAckTunedRouter(grp);
+        String tunedCfg = cfgText + "DtnmaRouter.staticQuota = 10\n";
+        Settings.initFromStream(new ByteArrayInputStream(tunedCfg.getBytes(StandardCharsets.UTF_8)));
+        Settings tunedGrp = new Settings("Group");
+        DtnmaM0bStaticRouter tunedProto = new DtnmaM0bStaticRouter(tunedGrp);
         DTNHost hTuned = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
                 "t", ifaces, new ModuleCommunicationBus(), mm, tunedProto);
-        DtnmaStaticAckTunedRouter rTuned = (DtnmaStaticAckTunedRouter) hTuned.getRouter();
+        DtnmaM0bStaticRouter rTuned = (DtnmaM0bStaticRouter) hTuned.getRouter();
         rTuned.update();
         boolean tunedOk = (rTuned.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.STATIC_RULES)
                 && !rTuned.isGossipEnabled()
@@ -517,9 +514,9 @@ public class DtnmaUnitTests {
                 && rTuned.getCurrentSprayQuota() == 10;
 
         check(mpOk && tunedOk,
-                "Test10: PriorityMaxProp zero-drop & cap enforcement + DtnmaStaticAckTunedRouter L=10 load",
+                "Test10: ManagedMaxProp zero-drop & cap enforcement + M0b staticQuota=10 override",
                 String.format("mpOk=%s mixOk=%s rej=%d occ=%.4f tunedOk=%s quota=%d",
-                        mpOk, mixOk, pm0.getLocalCreationRejected(), pm0.getBufferOccupancyRatio(),
+                        mpOk, mixOk, pm0.getDtnmaAgent().getLocalCreationRejected(), pm0.getBufferOccupancyRatio(),
                         tunedOk, rTuned.getCurrentSprayQuota()));
     }
 
@@ -538,10 +535,10 @@ public class DtnmaUnitTests {
         MovementModel mm = new StationaryMovement(grp);
         List<NetworkInterface> ifaces = new ArrayList<NetworkInterface>();
 
-        DtnmaFixedAckRouter fixedProto = new DtnmaFixedAckRouter(grp);
+        DtnmaM2SrlRouter srlProto = new DtnmaM2SrlRouter(grp);
         DTNHost hFix = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
-                "f", ifaces, new ModuleCommunicationBus(), mm, fixedProto);
-        DtnmaFixedAckRouter rFix = (DtnmaFixedAckRouter) hFix.getRouter();
+                "f", ifaces, new ModuleCommunicationBus(), mm, srlProto);
+        DtnmaM2SrlRouter rFix = (DtnmaM2SrlRouter) hFix.getRouter();
         rFix.update();
         boolean fixedOk = (rFix.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.STATIC_RULES)
                 && !rFix.isGossipEnabled()
@@ -549,19 +546,19 @@ public class DtnmaUnitTests {
                 && rFix.getCurrentSprayQuota() == 6
                 && rFix.getDecisionCpuCount() >= 1;
 
-        DtnmaStaticAckL2Router l2Proto = new DtnmaStaticAckL2Router(grp);
+        DtnmaM0dConservativeRouter consProto = new DtnmaM0dConservativeRouter(grp);
         DTNHost hL2 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
-                "l2", ifaces, new ModuleCommunicationBus(), mm, l2Proto);
-        DtnmaStaticAckL2Router rL2 = (DtnmaStaticAckL2Router) hL2.getRouter();
+                "l2", ifaces, new ModuleCommunicationBus(), mm, consProto);
+        DtnmaM0dConservativeRouter rL2 = (DtnmaM0dConservativeRouter) hL2.getRouter();
         rL2.update();
 
-        DtnmaStaticAckL4Router l4Proto = new DtnmaStaticAckL4Router(grp);
-        DTNHost hL4 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
-                "l4", ifaces, new ModuleCommunicationBus(), mm, l4Proto);
-        DtnmaStaticAckL4Router rL4 = (DtnmaStaticAckL4Router) hL4.getRouter();
-        rL4.update();
+        DtnmaM0bStaticRouter statProto = new DtnmaM0bStaticRouter(grp);
+        DTNHost hL6 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "l6", ifaces, new ModuleCommunicationBus(), mm, statProto);
+        DtnmaM0bStaticRouter rL6 = (DtnmaM0bStaticRouter) hL6.getRouter();
+        rL6.update();
 
-        boolean l2l4Ok = (rL2.getCurrentSprayQuota() == 2) && (rL4.getCurrentSprayQuota() == 4);
+        boolean l2l6Ok = (rL2.getCurrentSprayQuota() == 2) && (rL6.getCurrentSprayQuota() == 6);
 
         boolean prefixOk = DtnmaRouter.isCriticalMessage("CTRL_UPDATE_V1_1")
                 && DtnmaRouter.isCriticalMessage("ALARM_1")
@@ -570,10 +567,10 @@ public class DtnmaUnitTests {
                 && !DtnmaRouter.isTelemetryOrAlarmMessage(new Message(hFix, hL2, "CTRL_UPDATE_V1_1", 1024))
                 && DtnmaRouter.isTelemetryOrAlarmMessage(new Message(hFix, hL2, "TELEM_CRIT_1", 1024));
 
-        check(fixedOk && l2l4Ok && prefixOk,
-                "Test11: Step-3 DtnmaFixedAckRouter, StaticAck L2/L4, CPU counter & CTRL/TELEM classification",
-                String.format("fixedOk=%s l2Quota=%d l4Quota=%d prefixOk=%s",
-                        fixedOk, rL2.getCurrentSprayQuota(), rL4.getCurrentSprayQuota(), prefixOk));
+        check(fixedOk && l2l6Ok && prefixOk,
+                "Test11: M2-SRL CPU counter, M0d L=2 / M0b L=6 presets & CTRL/TELEM classification",
+                String.format("fixedOk=%s l2Quota=%d l6Quota=%d prefixOk=%s",
+                        fixedOk, rL2.getCurrentSprayQuota(), rL6.getCurrentSprayQuota(), prefixOk));
     }
 
     private static void test12DownlinkInBandControlAdoption() {
@@ -915,19 +912,19 @@ public class DtnmaUnitTests {
                 "Group.speed = 1.0, 1.0\n" +
                 "Group.waitTime = 0, 0\n" +
                 "Group.nodeLocation = 0, 0\n";
-        Settings.initFromStream(new ByteArrayInputStream(cfgText.getBytes(StandardCharsets.UTF_8)));
-        SimClock.reset();
-        Settings grp = new Settings("Group");
         SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
-        ifc.setGroupSettings(grp);
-        MovementModel mm = new StationaryMovement(grp);
-
-        DtnmaStaticAckL8Router p8 = new DtnmaStaticAckL8Router(grp);
-        DtnmaStaticAckL12Router p12 = new DtnmaStaticAckL12Router(grp);
+        Settings.initFromStream(new ByteArrayInputStream((cfgText + "DtnmaRouter.staticQuota = 8\n").getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp8 = new Settings("Group");
+        ifc.setGroupSettings(grp8);
+        MovementModel mm = new StationaryMovement(grp8);
         DTNHost h8 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
-                "h8", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, p8);
+                "h8", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, new DtnmaM0bStaticRouter(grp8));
+
+        Settings.initFromStream(new ByteArrayInputStream((cfgText + "DtnmaRouter.staticQuota = 12\n").getBytes(StandardCharsets.UTF_8)));
+        Settings grp12 = new Settings("Group");
         DTNHost h12 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
-                "h12", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, p12);
+                "h12", Collections.<NetworkInterface>singletonList(ifc), new ModuleCommunicationBus(), mm, new DtnmaM0bStaticRouter(grp12));
 
         SimClock.getInstance().advance(2.0);
         h8.update(false);
@@ -939,7 +936,7 @@ public class DtnmaUnitTests {
                 && r8.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.STATIC_RULES
                 && r12.getIntelligenceMode() == DtnmaRouter.IntelligenceMode.STATIC_RULES;
         check(ok,
-                "Test17: Static oracle presets DtnmaStaticAckL8Router & DtnmaStaticAckL12Router load L=8,12 cleanly",
+                "Test17: DtnmaConfig runtime staticQuota overrides L=8,12 load cleanly on M0b",
                 String.format("L8=%d L12=%d", r8.getCurrentSprayQuota(), r12.getCurrentSprayQuota()));
     }
 
@@ -1549,6 +1546,218 @@ public class DtnmaUnitTests {
         }
     }
 
+    private static void test23FirstClassMobilityEdds() {
+        String cfg =
+                "Scenario.endTime = 1000\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "bt.transmitSpeed = 250000\n" +
+                "bt.transmitRange = 100\n" +
+                "Group.bufferSize = 500000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 3\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "Group.initialEnergy = 100\n" +
+                "Group.scanEnergy = 0\n" +
+                "Group.scanResponseEnergy = 0\n" +
+                "Group.transmitEnergy = 0\n" +
+                "Group.router = DtnmaM2MobRouter\n" +
+                "Group.nrofInterfaces = 1\n" +
+                "Group.interface1 = bt\n" +
+                "Scenario.nrofHostGroups = 1\n" +
+                "Group1.groupID = m\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp = new Settings("Group");
+        SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
+        ifc.setGroupSettings(grp);
+        MovementModel mm = new StationaryMovement(grp);
+        DtnmaM2MobRouter proto = new DtnmaM2MobRouter(grp);
+        List<NetworkInterface> ifaces = Collections.<NetworkInterface>singletonList(ifc);
+
+        DTNHost h0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "p", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DtnmaM2MobRouter r0 = (DtnmaM2MobRouter) h0.getRouter();
+        SimClock.getInstance().setTime(1.0);
+        r0.update();
+        EddTelemetrySampler s0 = r0.getDtnmaAgent().getEddSampler();
+
+        SimClock.getInstance().setTime(10.0);
+        s0.recordContact(h1);
+        SimClock.getInstance().setTime(16.0);
+        s0.recordContactEnd(h1);
+        double dur1 = s0.getEddValue(EddTelemetrySampler.EDD_CONTACT_DURATION_MEAN);
+
+        SimClock.getInstance().setTime(106.0);
+        s0.recordContact(h1);
+        s0.sampleNow();
+        double ictVal = s0.getEddValue(EddTelemetrySampler.EDD_INTER_CONTACT_TIME);
+        double encRate = s0.getEddValue(EddTelemetrySampler.EDD_ENCOUNTER_RATE);
+
+        h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 40.0);
+        SimClock.getInstance().setTime(126.0);
+        s0.sampleNow();
+        double ttdRatio = s0.getEddValue(EddTelemetrySampler.EDD_ENERGY_TTD_RATIO);
+        long stateBytes = r0.getDtnmaAgent().estimateAgentStateBytes();
+
+        boolean ok = Math.abs(dur1 - 6.0) < 1e-4
+                && Math.abs(ictVal - 90.0) < 1e-4
+                && encRate > 0.0
+                && ttdRatio < 1.0 && ttdRatio > 0.0
+                && stateBytes > 512L;
+        check(ok,
+                "Test23: First-class mobility EDDs (duration, ICT, encounter rate, energy TTD, stateBytes)",
+                String.format("dur1=%.2f ict=%.2f enc=%.3f ttd=%.3f bytes=%d",
+                        dur1, ictVal, encRate, ttdRatio, stateBytes));
+    }
+
+    private static void test24MobilityAwareControllerAndAblations() {
+        String cfg =
+                "Scenario.endTime = 1000\n" +
+                "MovementModel.worldSize = 100, 100\n" +
+                "bt.transmitSpeed = 250000\n" +
+                "bt.transmitRange = 100\n" +
+                "Group.bufferSize = 500000\n" +
+                "Group.msgTtl = 300\n" +
+                "Group.nrofHosts = 3\n" +
+                "Group.speed = 1.0, 1.0\n" +
+                "Group.waitTime = 0, 0\n" +
+                "Group.nodeLocation = 0, 0\n" +
+                "Group.initialEnergy = 100\n" +
+                "Group.scanEnergy = 0\n" +
+                "Group.scanResponseEnergy = 0\n" +
+                "Group.transmitEnergy = 0\n" +
+                "DtnmaRouter.mobHorizonSec = 600\n";
+        Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+        SimClock.reset();
+        Settings grp = new Settings("Group");
+        SimpleBroadcastInterface ifc = new SimpleBroadcastInterface(new Settings("bt"));
+        ifc.setGroupSettings(grp);
+        MovementModel mm = new StationaryMovement(grp);
+        List<NetworkInterface> ifaces = Collections.<NetworkInterface>singletonList(ifc);
+
+        DtnmaM2MobRouter proto = new DtnmaM2MobRouter(grp);
+        DTNHost h0 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "m", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DTNHost h1 = new DTNHost(new ArrayList<MessageListener>(), new ArrayList<MovementListener>(),
+                "p", ifaces, new ModuleCommunicationBus(), mm, proto);
+        DtnmaM2MobRouter r0 = (DtnmaM2MobRouter) h0.getRouter();
+        r0.getDtnmaAgent().ensureSubsystemsInitialized();
+
+        // 1. Healthy nominal -> P3 (L=6, accept all)
+        SimClock.getInstance().setTime(5.0);
+        r0.update();
+        boolean nomOk = r0.getCurrentSprayQuota() == 6
+                && r0.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_ACCEPT_ALL
+                && "ARI://DTNMA/MOB/NOMINAL_BALANCED".equals(r0.getDtnmaAgent().getActiveRuleAri());
+
+        // 2. Fast energy drain -> TTD warning throttles before 0.20 static floor (P1, ing=1)
+        h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 60.0);
+        SimClock.getInstance().setTime(25.0);
+        r0.update();
+        boolean energyThrottleOk = r0.getCurrentSprayQuota() == 2
+                && r0.getDtnmaAgent().getCurrentIngressMode() == DtnmaRouter.INGRESS_THROTTLE_BULK
+                && r0.getDtnmaAgent().getActiveRuleAri().startsWith("ARI://DTNMA/MOB/ENERGY");
+
+        // 3. Ablation REPLICA_ONLY ignores energy-horizon drain trigger when SoC >= shieldEnergyMin
+        r0.getDtnmaAgent().getConfig().mobAblationMode = "REPLICA_ONLY";
+        h0.getComBus().updateProperty(EnergyModel.ENERGY_VALUE_ID, 55.0);
+        SimClock.getInstance().setTime(35.0);
+        r0.update();
+        boolean repAblationOk = r0.getCurrentSprayQuota() == 6;
+
+        // 4. Short contact duration (<12s) + moderate queue triggers SHORT_CONTACT_CAP (L=4)
+        EddTelemetrySampler s0 = r0.getDtnmaAgent().getEddSampler();
+        SimClock.getInstance().setTime(40.0);
+        s0.recordContact(h1);
+        SimClock.getInstance().setTime(44.0);
+        s0.recordContactEnd(h1);
+        r0.createNewMessage(new Message(h0, h1, "BULK_DUR_TEST", 300000));
+        SimClock.getInstance().setTime(46.0);
+        r0.update();
+        boolean shortCapOk = r0.getCurrentSprayQuota() == 4
+                && "ARI://DTNMA/MOB/SHORT_CONTACT_CAP".equals(r0.getDtnmaAgent().getActiveRuleAri());
+
+        check(nomOk && energyThrottleOk && repAblationOk && shortCapOk,
+                "Test24: M2-Mob coordinates energy TTD, contact duration cap, and ablation switches",
+                String.format("nom=%s eThrot=%s repAbl=%s shortCap=%s(ari=%s,q=%d)",
+                        nomOk, energyThrottleOk, repAblationOk, shortCapOk,
+                        r0.getDtnmaAgent().getActiveRuleAri(), r0.getCurrentSprayQuota()));
+    }
+
+    private static void test25DeployabilityOverheadMetricsInReport() {
+        Path tmpDir = null;
+        try {
+            tmpDir = Files.createTempDirectory("dtnma_test25_");
+            String repDir = tmpDir.toAbsolutePath().toString().replace('\\', '/');
+            SimScenario.reset(); ConnectivityGrid.reset(); DTNHost.reset(); Message.reset();
+            NetworkInterface.reset(); MovementModel.reset();
+
+            String cfg =
+                    "Scenario.name = Test25Scenario\n" +
+                    "Scenario.simulateConnections = true\n" +
+                    "Scenario.updateInterval = 1.0\n" +
+                    "Scenario.endTime = 200\n" +
+                    "Scenario.nrofHostGroups = 1\n" +
+                    "MovementModel.worldSize = 100, 100\n" +
+                    "MovementModel.warmup = 0\n" +
+                    "MovementModel.rngSeed = 1\n" +
+                    "Events.nrof = 0\n" +
+                    "bt.type = SimpleBroadcastInterface\n" +
+                    "bt.transmitSpeed = 250000\n" +
+                    "bt.transmitRange = 100\n" +
+                    "Group.movementModel = StationaryMovement\n" +
+                    "Group.bufferSize = 500000\n" +
+                    "Group.msgTtl = 300\n" +
+                    "Group.speed = 1.0, 1.0\n" +
+                    "Group.waitTime = 0, 0\n" +
+                    "Group.nodeLocation = 0, 0\n" +
+                    "Group.nrofInterfaces = 1\n" +
+                    "Group.interface1 = bt\n" +
+                    "Group1.groupID = mob\n" +
+                    "Group1.nrofHosts = 2\n" +
+                    "Group1.router = DtnmaM2MobRouter\n" +
+                    "Report.warmup = 0\n" +
+                    "Report.reportDir = " + repDir + "\n";
+            Settings.initFromStream(new ByteArrayInputStream(cfg.getBytes(StandardCharsets.UTF_8)));
+            SimClock.reset();
+            SimScenario.getInstance();
+            DtnmaRlMetricsReport rep = new DtnmaRlMetricsReport();
+            SimClock.getInstance().setTime(10.0);
+            rep.done();
+
+            Path outFile = tmpDir.resolve("Test25Scenario_DtnmaRlMetricsReport.txt");
+            Map<String, Double> vals = new HashMap<String, Double>();
+            for (String line : Files.readAllLines(outFile, StandardCharsets.UTF_8)) {
+                int idx = line.indexOf(": ");
+                if (idx > 0) {
+                    try {
+                        vals.put(line.substring(0, idx).trim(), Double.parseDouble(line.substring(idx + 2).trim()));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            boolean hasKeys = vals.containsKey("agent_state_bytes_per_node")
+                    && vals.containsKey("ctrl_energy_share")
+                    && vals.containsKey("avg_contact_duration_s")
+                    && vals.containsKey("avg_ict_s")
+                    && vals.containsKey("avg_encounter_rate_per_min");
+            boolean ok = hasKeys && vals.get("agent_state_bytes_per_node") >= 512.0 && vals.get("ctrl_energy_share") >= 0.0;
+            check(ok,
+                    "Test25: DtnmaRlMetricsReport emits mobile deployability & mobility summary metrics",
+                    "keysOk=" + hasKeys + " stateBytes=" + vals.get("agent_state_bytes_per_node"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            check(false, "Test25: DtnmaRlMetricsReport emits mobile deployability metrics", "Exception: " + e.toString());
+        } finally {
+            SimScenario.reset(); ConnectivityGrid.reset(); DTNHost.reset(); Message.reset();
+            NetworkInterface.reset(); MovementModel.reset();
+            if (tmpDir != null) deleteRecursive(tmpDir.toFile());
+        }
+    }
+
     public static void main(String[] args) {
         System.out.println("=================================================================");
         System.out.println("ADTNM SINGLE-CRITIC / PHASE 2 JAVA UNIT TEST SUITE");
@@ -1574,6 +1783,9 @@ public class DtnmaUnitTests {
         test20NominalBackpressureAndAckEvictionSplit();
         test21EnergyOnlyGuardsAndGroupControlBroadcast();
         test22M2LocalOnlyIgnoresRemoteUpdates();
+        test23FirstClassMobilityEdds();
+        test24MobilityAwareControllerAndAblations();
+        test25DeployabilityOverheadMetricsInReport();
         System.out.println("=================================================================");
         System.out.println("Results: " + passed + " passed, " + failed + " failed.");
         System.out.println("=================================================================");
