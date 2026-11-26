@@ -172,7 +172,7 @@ Events8.tohosts = 0, 120
 Events8.time = 9000, 9130
 Events8.prefix = CTRL_UPDATE_NOMINAL_W1_
 
-MovementModel.rngSeed = [7103; 7109; 7121; 7127; 7129; 7151; 7159; 7177; 7187; 7193; 7207]
+MovementModel.rngSeed = [8101; 8111; 8117; 8123; 8147; 8161; 8167; 8171; 8179; 8191; 8209; 8219; 8221; 8231; 8233; 8237; 8243; 8263; 8269]
 MovementModel.worldSize = 4500, 3400
 MovementModel.warmup = 1000
 
