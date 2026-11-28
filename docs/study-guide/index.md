@@ -30,7 +30,7 @@
 ### Foundations & System Architecture
 1. [`01_executive_summary.md`](chapters/01_executive_summary.md) — Concise academic briefing covering architecture, key findings (`1,216` confirmatory + `176` exploratory runs), trade-offs, and scope.
 2. [`02_primer_for_newcomers.md`](chapters/02_primer_for_newcomers.md) — Zero-background introduction to DTNs, store-carry-forward routing, classical protocols, RFC 9675 & 7575, and The ONE discrete-event engine.
-3. [`03_architecture_overview.md`](chapters/03_architecture_overview.md) — Four-plane stack, three timescales, three intervention tiers, active modes (`M0_STATIC`, `M1_REMOTE_ONLY`, `M2_AUTONOMIC_SRL`, `M2_MOBILITY_AWARE`), and RFC boundaries.
+3. [`03_architecture_overview.md`](chapters/03_architecture_overview.md) — Layered management–substrate architecture, three timescales, three intervention tiers, active modes (`M0_STATIC`, `M1_REMOTE_ONLY`, `M2_AUTONOMIC_SRL`, `M2_MOBILITY_AWARE`), and RFC boundaries.
 
 ### Mechanism Encyclopedia
 4a. [`04a_mechanisms_telemetry_and_profiles.md`](chapters/04a_mechanisms_telemetry_and_profiles.md) — Agent–Manager split, `15` EDD indicators (including contact duration, ICT, encounter rate, and energy TTD), 4-tier forwarding & ACK-first eviction, byte reservation, ingress control, and `P0–P7` profiles.

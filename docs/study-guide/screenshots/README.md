@@ -1,8 +1,8 @@
-# ADTNM Real Screenshot Captures (`screenshots/`)
+# ADTNM Verification Screenshots (`screenshots/`)
 
 | File (`raw/` & `annotated/`) | Capture Method | Underlying Evidence |
 |---|---|---|
-| `01_the_one_gui.png` | `SWING_MAINWINDOW` via temporary `CaptureOneGuiScreenshot.java` compiled to temp dir | Helsinki urban DTN map (`DtnmaM2SrlRouter`) |
-| `02_compile_tests_smoke.png` | Subprocess stdout/stderr capture rendered on dark terminal canvas | `DtnmaUnitTests` + 1h `scenario_dtnma.txt` smoke outputs |
-| `03_audit_rl_excerpts.png` | Verbatim raw log excerpts | Autonomic `SRL` match, Shield `OVERRIDE` `11111100`, `Epidemic` Tier 1 vs Tier 2 |
-| `04_batch_dryrun_and_tags.png` | Live execution of `parallel_batch_runner.py --dry-run` | Safe batch dry-run & scenario sweep verification |
+| `01_the_one_gui.png` | Swing GUI map capture on Helsinki urban topology | Live mobility, connectivity links, and bundle relay trace |
+| `02_compile_tests_smoke.png` | Live subprocess stdout capture | `DtnmaUnitTests` (`21 passed, 0 failed`) + 1 h `scenario_dtnma.txt` smoke run |
+| `03_audit_mob_excerpts.png` | Live `DtnmaAuditReport` & `DtnmaMetricsReport` slices | `21`-col `ARI` trace, `unique_critical_lost: 0`, and `F4` cross-substrate gains |
+| `04_validate_and_campaign.png` | Live `validate_mobility_scenarios.py --smoke` & `run_mobility_campaign.py --dry-run` | `9/9` `[PASS]` scenario smoke check & confirmatory batch schedule |

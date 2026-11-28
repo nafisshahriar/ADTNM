@@ -12,7 +12,6 @@ All build scripts under `docs/study-guide/tools/` are deterministic, offline, an
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = '1'
 python "docs\study-guide\tools\extract_code_inventory.py"
-python "docs\study-guide\tools\generate_provenance.py"
 python "docs\study-guide\tools\generate_figures.py"
 python "docs\study-guide\tools\capture_screenshots.py"
 python "docs\study-guide\tools\build_study_guide.py"

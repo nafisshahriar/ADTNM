@@ -23,6 +23,6 @@ Strictly isolated from confirmatory Holm families:
 
 ## 3. Architectural Design Decisions & Scope
 
-1. **Deterministic Closed-Form Coordination (`M2_MOBILITY_AWARE`):** Replaces online reinforcement learning and model gossip with an auditable closed-form coordinator using first-class mobility EDDs (`EDD_CONTACT_DURATION_MEAN`, `EDD_INTER_CONTACT_TIME`, `EDD_ENCOUNTER_RATE`, `EDD_ENERGY_TTD_RATIO`) constrained by the hard `S1–S4` Safety Shield.
+1. **Deterministic Closed-Form Coordination (`M2_MOBILITY_AWARE`):** Uses an auditable closed-form coordinator driven by first-class mobility EDDs (`EDD_CONTACT_DURATION_MEAN`, `EDD_INTER_CONTACT_TIME`, `EDD_ENCOUNTER_RATE`, `EDD_ENERGY_TTD_RATIO`) constrained by the hard `S1–S4` Safety Shield.
 2. **Modular Cross-Substrate Adapters (`Managed*Router`):** `DtnmaAgent` is composed into stock `SprayAndWait`, `PRoPHETv2`, `MaxProp`, and `Epidemic` routers via `DtnmaManagedRouter`, preserving native routing tables and path metrics while enforcing critical buffer protection, `4 B` ACK pruning, and optional `16 B` beacon backpressure/quota governance.
-3. **Report Backward Compatibility:** Active simulation runs emit `*_DtnmaMetricsReport.txt` (`shield_decisions_total`); `analyze_mobility_campaign.py` and `build_publication_package.py` retain read compatibility for archived `*_DtnmaRlMetricsReport.txt` outputs.
+3. **Report Output Format:** Active simulation runs emit `*_DtnmaMetricsReport.txt` (`shield_decisions_total`); analysis scripts retain legacy filename read fallback for archived campaign outputs.

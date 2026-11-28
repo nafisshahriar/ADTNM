@@ -98,26 +98,26 @@ def make_diagram_canvas(title: str, subtitle: str = "", figsize=(11.5, 6.2)):
 
 MMD_SPECS: Dict[str, str] = {
     "fig01_architecture_overview": """flowchart TB
-  subgraph P4["4. Observability & Provenance Plane"]
+  subgraph L4["4. Observability & Audit Reporting"]
     R1["DtnmaAuditReport (21-col ARI TSV)"]
     R2["DtnmaMetricsReport (Cohorts / CDFs / Energy)"]
     R3["DtnmaRecoveryTimelineReport"]
   end
-  subgraph P3["3. Autonomic Decision & Policy Plane (DtnmaAgent)"]
+  subgraph L3["3. Local Autonomic Coordinator (DtnmaAgent)"]
     EDD["EddTelemetrySampler (15 EDDs)"]
     COORD["M2_MOBILITY_AWARE Coordinator / SRL Rules"]
     SHIELD["DtnmaSafetyShield (S1..S4 + Liveness P0)"]
     PROF["Active Control Profile (P0..P7)"]
     EDD --> COORD --> SHIELD --> PROF
   end
-  subgraph P2["2. Substrate Adaptation Plane"]
+  subgraph L2["2. Substrate Adapter Layer"]
     MR["DtnmaManagedRouter Hooks + 4-Tier Queue + ByteBudget"]
   end
-  subgraph P1["1. Managed Substrates (The ONE)"]
+  subgraph L1["1. Forwarding & Physical Substrates (The ONE)"]
     SUB["SprayAndWait | PRoPHETv2 | MaxProp | Epidemic | DtnmaRouter"]
   end
-  P1 <--> P2
-  P2 --> EDD
+  L1 <--> L2
+  L2 --> EDD
   PROF --> MR
   SHIELD --> R1
 """,
@@ -205,13 +205,13 @@ def build_all_diagrams() -> None:
     for k, mmd_txt in MMD_SPECS.items():
         (MMD_DIR / f"{k}.mmd").write_text(mmd_txt.strip() + "\n", encoding="utf-8")
 
-    # Fig 01: 4-Plane Architecture
+    # Fig 01: Layered Management-Substrate Architecture
     fig, ax = make_diagram_canvas(
-        "Figure 01: ADTNM Four-Plane Architecture (Managed Substrate Separation)",
+        "Figure 01: ADTNM Layered Autonomic Management Architecture",
         "IETF RFC 9675 & IRTF RFC 7575-inspired decoupling across 25 routing + 4 report Java classes",
     )
-    draw_box(ax, 0.06, 0.72, 0.88, 0.14, "4. OBSERVABILITY & PROVENANCE PLANE\nDtnmaAuditReport (21-col ARI TSV)  |  DtnmaMetricsReport (Cohorts / CDFs / Energy)  |  DtnmaRecoveryTimelineReport", fc="#F5F3FF", ec=OI["purple"], bold=True)
-    draw_box(ax, 0.06, 0.45, 0.88, 0.21, "3. AUTONOMIC DECISION & POLICY PLANE (DtnmaAgent)", fc="#EFF6FF", ec=OI["blue"], bold=False)
+    draw_box(ax, 0.06, 0.72, 0.88, 0.14, "4. OBSERVABILITY & AUDIT REPORTING\nDtnmaAuditReport (21-col ARI)  |  DtnmaMetricsReport (Cohorts / CDFs)  |  DtnmaRecoveryTimelineReport", fc="#F5F3FF", ec=OI["purple"], bold=True)
+    draw_box(ax, 0.06, 0.45, 0.88, 0.21, "3. LOCAL AUTONOMIC COORDINATOR (DtnmaAgent)", fc="#EFF6FF", ec=OI["blue"], bold=False)
     ax.texts[-1].set_position((0.5, 0.625))
     ax.texts[-1].set_fontweight("bold")
     draw_box(ax, 0.09, 0.48, 0.19, 0.11, "15 EDDs Sampler\n(Mob + Buf + Eng)", fc="#FFFFFF", ec=OI["sky"], fontsize=8.5)
@@ -221,8 +221,8 @@ def build_all_diagrams() -> None:
     draw_arrow(ax, 0.28, 0.535, 0.32, 0.535)
     draw_arrow(ax, 0.51, 0.535, 0.55, 0.535)
     draw_arrow(ax, 0.74, 0.535, 0.77, 0.535)
-    draw_box(ax, 0.06, 0.25, 0.88, 0.14, "2. SUBSTRATE ADAPTATION PLANE\nDtnmaManagedRouter Contract  |  Managed*Router (mean 245.8 non-comment LOC)  |  4-Tier Queue + ACK Prune", fc="#ECFDF5", ec=OI["green"], bold=True)
-    draw_box(ax, 0.06, 0.06, 0.88, 0.13, "1. FORWARDING & PHYSICAL SUBSTRATE PLANE (The ONE)\nSprayAndWait  |  PRoPHETv2 (RFC 6693)  |  MaxProp  |  Epidemic  |  DTNHost Energy/Radio", fc="#FFF7ED", ec=OI["vermillion"], bold=True)
+    draw_box(ax, 0.06, 0.25, 0.88, 0.14, "2. SUBSTRATE ADAPTER LAYER\nDtnmaManagedRouter Contract  |  Managed*Router (mean 245.8 non-comment LOC)  |  4-Tier Queue + ACK Prune", fc="#ECFDF5", ec=OI["green"], bold=True)
+    draw_box(ax, 0.06, 0.06, 0.88, 0.13, "1. FORWARDING & PHYSICAL SUBSTRATE (The ONE)\nSprayAndWait  |  PRoPHETv2 (RFC 6693)  |  MaxProp  |  Epidemic  |  DTNHost Energy/Radio", fc="#FFF7ED", ec=OI["vermillion"], bold=True)
     draw_arrow(ax, 0.30, 0.19, 0.30, 0.25, "Hooks")
     draw_arrow(ax, 0.18, 0.39, 0.18, 0.48, "15 EDDs")
     draw_arrow(ax, 0.84, 0.48, 0.84, 0.39, "L, bp, ing")

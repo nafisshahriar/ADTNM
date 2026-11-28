@@ -413,7 +413,7 @@ def verify_sha256_manifest(manifest_path, confirmatory_dir):
 
 
 def scan_and_parse_campaign(base_dir, expected_counts, expected_seeds, label):
-    """Audits completeness, zero-size files, duplicates, seeds, and extracts RL + MS KPIs."""
+    """Audits completeness, zero-size files, duplicates, seeds, and extracts DTNMA + MS KPIs."""
     rl_set = set(RL_METRICS)
     ms_set = set(MS_METRICS)
     stages = sorted(expected_counts.keys())

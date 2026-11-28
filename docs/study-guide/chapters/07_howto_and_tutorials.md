@@ -145,4 +145,4 @@ python "$ADTNM\tools\plot_mobility_figures.py" --summary-json "$env:TEMP\mob_ana
 
 ![Unit Tests and 1h Smoke Verification](../screenshots/annotated/02_compile_tests_smoke_annotated.png)
 
-![Batch Runner Dry-Run Verification](../screenshots/annotated/04_batch_dryrun_and_tags_annotated.png)
+![Scenario Smoke Validation and Campaign Dry-Run](../screenshots/annotated/04_validate_and_campaign_annotated.png)

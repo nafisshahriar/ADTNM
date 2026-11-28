@@ -13,7 +13,7 @@
 - Existing DTN protocols (**Spray-and-Wait**, **PRoPHETv2**, **MaxProp**, and **Epidemic**) operate unchanged as **managed substrates** via thin adapters implementing `DtnmaManagedRouter`.
 - A shared local engine (`DtnmaAgent`) executes an onboard closed loop combining **15 Externally Defined Data (`EDD`)** telemetry indicators (queue occupancy/drift, battery state of charge and time-to-depletion, node density/speed, neighbor queue gradients, contact duration, inter-contact time, and encounter rate), a closed-form **Mobility-Aware Distributed Resource Coordinator (`M2_MOBILITY_AWARE`)**, declarative **State-Based Rules (`SRL`)**, discrete **`P0–P7` Control Profiles**, a deterministic **Safety Shield (`S1–S4`)**, compact `16 B` peer contact beacons, `4 B` delayed delivery `ACK` copy pruning, and deterministic **Application Resource Identifier (`ARI`)** audit traces.
 
-![ADTNM Four-Plane Architecture](docs/study-guide/figures/svg/fig01_architecture_overview.svg)
+![ADTNM Layered Autonomic Management Architecture](docs/study-guide/figures/svg/fig01_architecture_overview.svg)
 
 ---
 

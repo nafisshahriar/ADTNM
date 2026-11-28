@@ -4,32 +4,32 @@
 
 ---
 
-## 1. Four-Plane Architectural Stack
+## 1. Layered Management–Substrate Architecture
 
-ADTNM decomposes DTN operations into **four decoupled planes** inside `src/routing/` and `src/report/`:
+ADTNM decomposes DTN operations into **decoupled management and forwarding layers** inside `src/routing/` and `src/report/`:
 
 ```
 +-----------------------------------------------------------------------------+
-| 4. OBSERVABILITY & PROVENANCE PLANE                                         |
+| 4. OBSERVABILITY & AUDIT REPORTING                                          |
 |    DtnmaAuditReport (21-col ARI trace) · DtnmaMetricsReport (Cohorts/CDF)   |
 |    DtnmaDecisionReport · DtnmaRecoveryTimelineReport                        |
 +-----------------------------------------------------------------------------+
                                       ^  Records every EDD, rule, shield, ARI
 +-----------------------------------------------------------------------------+
-| 3. AUTONOMIC DECISION & POLICY PLANE (DtnmaAgent)                           |
+| 3. LOCAL AUTONOMIC COORDINATOR (DtnmaAgent)                                 |
 |    M2_MOBILITY_AWARE Closed-Form Coordinator · SRL Rule Parser              |
 |    DtnmaSafetyShield (S1..S4 + Liveness) -> Active Control Profile (P0..P7) |
 |    Remote Overlay Slot (upserts Manager DOWNLINK rule, priority 110)        |
 +-----------------------------------------------------------------------------+
         ^  15 EDDs (dt = 1.0 s)                       v  Actuates L, bp, ing
 +-----------------------------------------------------------------------------+
-| 2. SUBSTRATE ADAPTATION PLANE (DtnmaManagedRouter + Managed*Router)         |
+| 2. SUBSTRATE ADAPTER LAYER (DtnmaManagedRouter + Managed*Router)            |
 |    Thin adapters for SnW, PRoPHETv2, MaxProp, Epidemic;                     |
 |    Priority Reserve + ACK-first eviction + ByteBudget Guard                 |
 +-----------------------------------------------------------------------------+
                                       ^  Native routing heuristics
 +-----------------------------------------------------------------------------+
-| 1. FORWARDING & PHYSICAL SUBSTRATE PLANE (The ONE Engine + Routers)         |
+| 1. FORWARDING & PHYSICAL SUBSTRATE (The ONE Engine + Routers)               |
 |    DTNHost · EnergyModel · MovementModel · ActiveRouter · SprayAndWait,     |
 |    ProphetV2, MaxProp, Epidemic, DtnmaRouter                                |
 +-----------------------------------------------------------------------------+
@@ -96,7 +96,7 @@ See [Chapter 4a](04a_mechanisms_telemetry_and_profiles.md) through [Chapter 4d](
 
 ## Architectural Diagrams (`Figures 01–03`)
 
-![ADTNM Four-Plane Architecture](../figures/svg/fig01_architecture_overview.svg)
+![ADTNM Layered Autonomic Management Architecture](../figures/svg/fig01_architecture_overview.svg)
 
 ![Three Coupled Control Timescales](../figures/svg/fig02_three_timescales.svg)
 

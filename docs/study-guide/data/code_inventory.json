@@ -1,7 +1,7 @@
 {
-  "documented_commit": "18b8dad4138acc71b9f60ec4824624ad7bf6fb79",
-  "documented_commit_short": "18b8dad",
-  "branch": "feature/mobility-aware-control",
+  "documented_commit": "4a9941720ae977ed6385f995d58310c128e243fe",
+  "documented_commit_short": "4a99417",
+  "branch": "main",
   "campaign_id": "mobility_suite_1216_plus_sensitivity_176",
   "doc_date": "2026-11-28",
   "file_count": 74,
@@ -33,7 +33,7 @@
     {
       "path": "CLAIMS_LEDGER.md",
       "ext": ".md",
-      "size_bytes": 3293,
+      "size_bytes": 3202,
       "total_lines": 28,
       "noncomment_loc": 17,
       "meta": {}
@@ -229,7 +229,7 @@
     {
       "path": "README.md",
       "ext": ".md",
-      "size_bytes": 9935,
+      "size_bytes": 10098,
       "total_lines": 145,
       "noncomment_loc": 83,
       "meta": {}
@@ -237,7 +237,7 @@
     {
       "path": "scenarios/dtnma_params_default.txt",
       "ext": ".txt",
-      "size_bytes": 1606,
+      "size_bytes": 1653,
       "total_lines": 47,
       "noncomment_loc": 26,
       "meta": {}
@@ -1379,16 +1379,16 @@
     {
       "path": "SEED_ROLES.md",
       "ext": ".md",
-      "size_bytes": 2033,
-      "total_lines": 15,
-      "noncomment_loc": 7,
+      "size_bytes": 1791,
+      "total_lines": 14,
+      "noncomment_loc": 6,
       "meta": {}
     },
     {
       "path": "src/report/DtnmaAuditReport.java",
       "ext": ".java",
-      "size_bytes": 6354,
-      "total_lines": 135,
+      "size_bytes": 6308,
+      "total_lines": 134,
       "noncomment_loc": 111,
       "meta": {
         "imports": [
@@ -1412,8 +1412,8 @@
             "name": "DtnmaAuditReport",
             "extends": "Report",
             "implements": "UpdateListener",
-            "start_line": 26,
-            "end_line": 135
+            "start_line": 25,
+            "end_line": 134
           }
         ],
         "methods": [
@@ -1421,43 +1421,43 @@
             "name": "DtnmaAuditReport",
             "return_type": "<ctor>",
             "params": "",
-            "start_line": 37,
-            "end_line": 45
+            "start_line": 36,
+            "end_line": 44
           },
           {
             "name": "init",
             "return_type": "void",
             "params": "",
-            "start_line": 48,
-            "end_line": 56
+            "start_line": 47,
+            "end_line": 55
           },
           {
             "name": "writeLineTracked",
             "return_type": "void",
             "params": "String line",
-            "start_line": 58,
-            "end_line": 61
+            "start_line": 57,
+            "end_line": 60
           },
           {
             "name": "formatMaskBits",
             "return_type": "String",
             "params": "int maskBits",
-            "start_line": 63,
-            "end_line": 69
+            "start_line": 62,
+            "end_line": 68
           },
           {
             "name": "updated",
             "return_type": "void",
             "params": "List<DTNHost> hosts",
-            "start_line": 72,
-            "end_line": 118
+            "start_line": 71,
+            "end_line": 117
           },
           {
             "name": "done",
             "return_type": "void",
             "params": "",
-            "start_line": 121,
-            "end_line": 134
+            "start_line": 120,
+            "end_line": 133
           }
         ]
       }
@@ -1864,7 +1864,7 @@
     {
       "path": "src/routing/CongestionAwareSnWRouter.java",
       "ext": ".java",
-      "size_bytes": 5912,
+      "size_bytes": 6081,
       "total_lines": 169,
       "noncomment_loc": 135,
       "meta": {
@@ -2775,7 +2775,7 @@
     {
       "path": "src/routing/DtnmaConfig.java",
       "ext": ".java",
-      "size_bytes": 16052,
+      "size_bytes": 16386,
       "total_lines": 334,
       "noncomment_loc": 275,
       "meta": {
@@ -2997,7 +2997,7 @@
     {
       "path": "src/routing/DtnmaM0bStaticRouter.java",
       "ext": ".java",
-      "size_bytes": 736,
+      "size_bytes": 764,
       "total_lines": 28,
       "noncomment_loc": 17,
       "meta": {
@@ -3042,7 +3042,7 @@
     {
       "path": "src/routing/DtnmaM0eEnergy25Router.java",
       "ext": ".java",
-      "size_bytes": 1734,
+      "size_bytes": 1779,
       "total_lines": 45,
       "noncomment_loc": 32,
       "meta": {
@@ -3094,7 +3094,7 @@
     {
       "path": "src/routing/DtnmaM1RemoteRouter.java",
       "ext": ".java",
-      "size_bytes": 692,
+      "size_bytes": 719,
       "total_lines": 27,
       "noncomment_loc": 17,
       "meta": {
@@ -3139,7 +3139,7 @@
     {
       "path": "src/routing/DtnmaM2MobBufferOnlyRouter.java",
       "ext": ".java",
-      "size_bytes": 684,
+      "size_bytes": 710,
       "total_lines": 26,
       "noncomment_loc": 15,
       "meta": {
@@ -3184,7 +3184,7 @@
     {
       "path": "src/routing/DtnmaM2MobEnergyOnlyRouter.java",
       "ext": ".java",
-      "size_bytes": 687,
+      "size_bytes": 713,
       "total_lines": 26,
       "noncomment_loc": 15,
       "meta": {
@@ -3229,7 +3229,7 @@
     {
       "path": "src/routing/DtnmaM2MobReplicaOnlyRouter.java",
       "ext": ".java",
-      "size_bytes": 690,
+      "size_bytes": 716,
       "total_lines": 26,
       "noncomment_loc": 15,
       "meta": {
@@ -3274,7 +3274,7 @@
     {
       "path": "src/routing/DtnmaM2MobRouter.java",
       "ext": ".java",
-      "size_bytes": 751,
+      "size_bytes": 779,
       "total_lines": 28,
       "noncomment_loc": 17,
       "meta": {
@@ -3319,7 +3319,7 @@
     {
       "path": "src/routing/DtnmaM2SrlRouter.java",
       "ext": ".java",
-      "size_bytes": 652,
+      "size_bytes": 679,
       "total_lines": 27,
       "noncomment_loc": 17,
       "meta": {
@@ -3391,7 +3391,7 @@
     {
       "path": "src/routing/DtnmaPolicyProfile.java",
       "ext": ".java",
-      "size_bytes": 3586,
+      "size_bytes": 3580,
       "total_lines": 96,
       "noncomment_loc": 71,
       "meta": {
@@ -4069,7 +4069,7 @@
     {
       "path": "src/routing/DtnmaSafetyShield.java",
       "ext": ".java",
-      "size_bytes": 10963,
+      "size_bytes": 11219,
       "total_lines": 256,
       "noncomment_loc": 203,
       "meta": {
@@ -5472,7 +5472,7 @@
     {
       "path": "tools/analyze_mobility_campaign.py",
       "ext": ".py",
-      "size_bytes": 22316,
+      "size_bytes": 22933,
       "total_lines": 617,
       "noncomment_loc": 537,
       "meta": {
@@ -5539,7 +5539,7 @@
     {
       "path": "tools/build_publication_package.py",
       "ext": ".py",
-      "size_bytes": 105186,
+      "size_bytes": 107151,
       "total_lines": 1962,
       "noncomment_loc": 1764,
       "meta": {
@@ -5753,7 +5753,7 @@
     {
       "path": "tools/plot_mobility_figures.py",
       "ext": ".py",
-      "size_bytes": 17927,
+      "size_bytes": 18320,
       "total_lines": 393,
       "noncomment_loc": 331,
       "meta": {
@@ -5795,7 +5795,7 @@
     {
       "path": "tools/plot_publication_figures.py",
       "ext": ".py",
-      "size_bytes": 42175,
+      "size_bytes": 42955,
       "total_lines": 780,
       "noncomment_loc": 661,
       "meta": {
@@ -5872,7 +5872,7 @@
     {
       "path": "tools/README.md",
       "ext": ".md",
-      "size_bytes": 4425,
+      "size_bytes": 4496,
       "total_lines": 71,
       "noncomment_loc": 49,
       "meta": {}
@@ -5880,7 +5880,7 @@
     {
       "path": "tools/run_mobility_campaign.py",
       "ext": ".py",
-      "size_bytes": 7628,
+      "size_bytes": 7848,
       "total_lines": 220,
       "noncomment_loc": 193,
       "meta": {
@@ -5922,7 +5922,7 @@
     {
       "path": "tools/run_sensitivity_exploratory.py",
       "ext": ".py",
-      "size_bytes": 6639,
+      "size_bytes": 6824,
       "total_lines": 185,
       "noncomment_loc": 157,
       "meta": {
@@ -5964,7 +5964,7 @@
     {
       "path": "tools/validate_mobility_scenarios.py",
       "ext": ".py",
-      "size_bytes": 6833,
+      "size_bytes": 7016,
       "total_lines": 183,
       "noncomment_loc": 158,
       "meta": {

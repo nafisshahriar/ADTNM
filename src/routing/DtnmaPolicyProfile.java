@@ -1,6 +1,6 @@
 /*
  * DtnmaPolicyProfile.java
- * Structured autonomic operating profiles for the Shielded CMDP RL action space.
+ * Structured autonomic operating profiles for DTNMA resource coordination.
  * Maps 8 balanced macro-epoch action indices (0..7) to RFC 9675 control actuators
  * and forwarding thresholds.
  */

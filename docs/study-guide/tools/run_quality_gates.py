@@ -158,13 +158,28 @@ def gate6_visuals_and_pdfs() -> Tuple[bool, str]:
 
 
 def gate7_banned_words() -> Tuple[bool, str]:
+    stale_re = re.compile(
+        r"\b(gossip|cmdp|four-plane|four plane|4-plane|ShieldedCmdp|M3|q-learning|reinforcement learning|RL)\b",
+        re.I,
+    )
     hits = []
-    for p in collect_authored_md():
+    scan_paths = collect_authored_md() + [
+        ADTNM_ROOT / "CLAIMS_LEDGER.md",
+        ADTNM_ROOT / "SEED_ROLES.md",
+        *(sorted((GUIDE_DIR / "figures/mmd").glob("*.mmd"))),
+        *(sorted((GUIDE_DIR / "figures/svg").glob("*.svg"))),
+    ]
+    for p in scan_paths:
+        if not p.exists():
+            continue
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             m = BANNED_RE.search(line)
             if m:
-                hits.append(f"{p.relative_to(ADTNM_ROOT)}:{i}:{m.group(0)}")
-    return len(hits) == 0, f"banned hits={hits}"
+                hits.append(f"{p.relative_to(ADTNM_ROOT)}:{i}:BANNED:{m.group(0)}")
+            sm = stale_re.search(line)
+            if sm:
+                hits.append(f"{p.relative_to(ADTNM_ROOT)}:{i}:STALE:{sm.group(0)}")
+    return len(hits) == 0, f"banned/stale hits={hits[:10]}"
 
 
 def gate8_tidiness_and_safety() -> Tuple[bool, str]:

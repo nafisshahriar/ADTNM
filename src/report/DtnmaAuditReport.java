@@ -1,10 +1,9 @@
 /*
  * DtnmaAuditReport.java
  * Explainable AI / Forensic Audit Logger for Autonomic DTNMA (RFC 9675 / RFC 7575)
- * and Shielded CMDP Reinforcement Learning.
- * Logs exact decision-time EDD snapshots, SafeMask bitmask, RL fallback/proposed/executed
- * actions, Shield status, causal ARI rule, and log-bytes-per-node-hour summary for
- * 100% deterministic replay verification (RQ4).
+ * and Mobility-Aware Autonomic Resource Coordination.
+ * Logs exact decision-time EDD snapshots, SafeMask bitmask, fallback/proposed/executed
+ * actions, Shield status, causal ARI rule, and log-bytes-per-node-hour summary.
  */
 package report;
 

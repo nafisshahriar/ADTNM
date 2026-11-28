@@ -68,4 +68,4 @@ Wrapping completely distinct routing engines with the shared `DtnmaAgent` elimin
 
 ## Captured Trace Excerpts
 
-![Audit Trail and Protection Excerpts](../screenshots/annotated/03_audit_rl_excerpts_annotated.png)
+![Live Audit Provenance and Cross-Substrate Gains](../screenshots/annotated/03_audit_mob_excerpts_annotated.png)

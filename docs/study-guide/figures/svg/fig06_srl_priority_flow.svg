@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-11-28T19:18:32.758415</dc:date>
+    <dc:date>2026-11-28T19:35:49.882087</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -1324,7 +1324,7 @@ Q 61.7445 65.63376 61.7445 74.22696
 L 61.7445 106.88112 
 Q 61.7445 115.47432 77.787 115.47432 
 z
-" clip-path="url(#p7ba9a079bb)" style="fill: #fee2e2; stroke: #d55e00; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8bd22366f5)" style="fill: #fee2e2; stroke: #d55e00; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="patch_6">
     <path d="M 77.787 175.62672 
@@ -1337,7 +1337,7 @@ Q 61.7445 125.78616 61.7445 134.37936
 L 61.7445 167.03352 
 Q 61.7445 175.62672 77.787 175.62672 
 z
-" clip-path="url(#p7ba9a079bb)" style="fill: #ffedd5; stroke: #e69f00; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8bd22366f5)" style="fill: #ffedd5; stroke: #e69f00; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="patch_7">
     <path d="M 77.787 235.77912 
@@ -1350,7 +1350,7 @@ Q 61.7445 185.93856 61.7445 194.53176
 L 61.7445 227.18592 
 Q 61.7445 235.77912 77.787 235.77912 
 z
-" clip-path="url(#p7ba9a079bb)" style="fill: #eff6ff; stroke: #0072b2; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8bd22366f5)" style="fill: #eff6ff; stroke: #0072b2; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="patch_8">
     <path d="M 77.787 295.93152 
@@ -1363,7 +1363,7 @@ Q 61.7445 246.09096 61.7445 254.68416
 L 61.7445 287.33832 
 Q 61.7445 295.93152 77.787 295.93152 
 z
-" clip-path="url(#p7ba9a079bb)" style="fill: #dcfce7; stroke: #009e73; stroke-width: 1.6; stroke-linejoin: miter"/>
+" clip-path="url(#p8bd22366f5)" style="fill: #dcfce7; stroke: #009e73; stroke-width: 1.6; stroke-linejoin: miter"/>
    </g>
    <g id="text_3">
     <!-- PRIO 100 | VDTN_BUFFER_CRITICAL -->
@@ -2408,7 +2408,7 @@ z
   </g>
  </g>
  <defs>
-  <clipPath id="p7ba9a079bb">
+  <clipPath id="p8bd22366f5">
    <rect x="7.2" y="7.2" width="641.7" height="343.728"/>
   </clipPath>
  </defs>
