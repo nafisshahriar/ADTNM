@@ -22,7 +22,7 @@
 Allows operators to express autonomic policies in human-readable `.txt` files (`12` non-comment lines in `rules_vdtn.txt`) without writing, compiling, or redeploying router Java code.
 
 ### 2. Design Alternatives Considered
-- **Hard-coded `if/else` in Java (`EnergyAwareEpidemicRouter`, `394` LOC):** Zero portability across substrates or scenarios; cannot accept dynamic remote updates.
+- **Hard-coded `if/else` in Java:** Zero portability across substrates or scenarios; cannot accept dynamic remote updates.
 - **External scripting runtime (Lua/JS):** Adds JVM serialization complexity and non-deterministic garbage collection overhead.
 - **Selected declarative clause evaluator (`PredicateExpression` + `DtnmaRuleParser`):** Lightweight pure Java, deterministic `double` comparisons, instant `[EDD(val) op thresh -> TRUE/FALSE]` strings for `ARI` logs.
 
@@ -30,7 +30,7 @@ Allows operators to express autonomic policies in human-readable `.txt` files (`
 `Scenario rule file` (`Group.rulesFile` / `DtnmaRouter.rulesFile`) -> `DtnmaRuleParser.parseRulesFile(...)` -> Compiles each `RULE: <ARI> | PRIORITY: <int> | DESC: <text>` + `IF: <clauses>` + `THEN: CTRL_SET_*` block into a priority-sorted list of `StateBasedRule` objects.
 
 ### 4. Inputs & Configuration
-`Group.rulesFile` / `DtnmaRouter.rulesFile` (`scenarios/rules_vdtn.txt`, experimental `scenarios/rules_uav.txt`); comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`), `&&` conjunction or `||` disjunction, and `4` `ControlAction` setters (`CTRL_SET_SPRAY_QUOTA`, `CTRL_SET_INGRESS_MODE`, `CTRL_SET_TELEMETRY_INTERVAL`, `CTRL_SET_BACKPRESSURE`).
+`Group.rulesFile` / `DtnmaRouter.rulesFile` (`scenarios/rules_vdtn.txt`); comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`), `&&` conjunction or `||` disjunction, and `4` `ControlAction` setters (`CTRL_SET_SPRAY_QUOTA`, `CTRL_SET_INGRESS_MODE`, `CTRL_SET_TELEMETRY_INTERVAL`, `CTRL_SET_BACKPRESSURE`).
 
 ### 5. Algorithm & Exact Math / Equations
 Flat clause expression structure (`DtnmaRuleParser.java:117-137`):
@@ -54,10 +54,10 @@ Rules cannot mix nested `&&` and `||` inside a single `IF:` clause (`||` switche
 `RULE: ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE | PRIORITY: 80 | DESC: ...`
 `IF: (EDD_QUEUE_RATIO >= 0.88) && (EDD_QUEUE_DRIFT >= 0.008)`
 `THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)`
-Evaluated on seed `7103` at `t = 3360.5 s`: `[EDD_QUEUE_RATIO(0.92) >= 0.88 -> TRUE] AND [EDD_QUEUE_DRIFT(0.01) >= 0.01 -> TRUE]`.
+Evaluated in an urban congestion trace: `[EDD_QUEUE_RATIO(0.92) >= 0.88 -> TRUE] AND [EDD_QUEUE_DRIFT(0.01) >= 0.01 -> TRUE]`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-freeze`). (`rules_uav.txt` remains `Implemented, experimental / Not evaluated in v1.0`).
+`Implemented+tested`. Evaluated across `M2_AUTONOMIC_SRL` and unit tests in `DtnmaUnitTests.java`.
 
 ### 11. Supervisor Rationale
 **A3 LOC verification:** `12` non-comment lines of declarative rules match `~97%` of a `394`-line bespoke Java router while running portably across all four substrates.
@@ -99,10 +99,10 @@ Logs exact latch preemption and active rule ARI in `DtnmaAuditReport`; `verify_a
 `PRIORITY: 10` catch-all rules (`IF: (EDD_QUEUE_RATIO >= 0.0)`) provide deterministic recovery backstops in `rules_vdtn.txt` so nodes never remain stuck throttled after congestion subsides (missing in unvalidated `rules_uav.txt`).
 
 ### 9. Worked Mini-Example
-On node `94` (`seed 7103`, `t = 29460.5 s`), `VDTN_BUFFER_CRITICAL` (`PRIO 100`) preempts lower-priority states immediately when `EDD_ENERGY_SOC(0.19) < 0.20`, locking `P0` (`SAFE_EMERGENCY_HOLD`) with `ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL`.
+On low battery (`SoC < 0.20`, e.g., `0.1919`), `VDTN_BUFFER_CRITICAL` (`PRIO 100`) preempts lower-priority states immediately, locking `P0` (`SAFE_EMERGENCY_HOLD`) with `ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-freeze`). Earlier Event A regressions traced to excessive latch windows (`> 300 s`) holding `P1` stale; tuned in `v1.0` to `90–180 s`.
+`Implemented+tested`. Early Event A regressions traced to excessive latch windows (`> 300 s`) holding `P1` stale; tuned cleanly to prevent sticky throttling.
 
 ### 11. Supervisor Rationale
 Essential for finite-state oscillation damping without sacrificing sub-minute critical escalation.
@@ -112,14 +112,14 @@ Essential for finite-state oscillation damping without sacrificing sub-minute cr
 ## Mechanism 09: Deterministic Hard Safety Shield (`S1–S4 + Liveness`)
 
 ### 1. Purpose & Problem Solved
-Guarantees hard operational safety invariants (battery reserve, critical buffer starvation, dense radio storm collapse, remote min-safety constraints) regardless of whether the proposal came from `SRL`, stale latches, or an exploratory `M3` RL action.
+Guarantees hard operational safety invariants (battery reserve, critical buffer starvation, dense radio storm collapse, remote min-safety constraints) regardless of whether the proposal came from `M2_MOBILITY_AWARE`, `SRL` rules, or remote overlay clamps.
 
 ### 2. Design Alternatives Considered
-- **RL Reward Penalties Alone (CMDP soft Lagrangian):** Allowed `41%` critical occupancy during early unshielded learning (`P6`/`P7` storm exploration) before `lambda` could converge.
+- **Unconstrained Heuristic Selection:** Fails to guarantee hard step-wise safety bounds under sudden congestion or critical pressure surges.
 - **Selected Mandatory Bitmask Filter (`DtnmaSafetyShield`):** Constructs an `8`-bit admissibility vector `mask[0..7]` analytically before every action executes.
 
 ### 3. Architecture & Data Flow
-`Proposed Profile a_prop` + `11 EDDs` -> `DtnmaSafetyShield.computeAdmissibleMask(...)` applies intersection (`AND`) of constraints `S1, S2, S3, S4` + unconditional Liveness `mask[0] = true` -> If `mask[a_prop] == false`, maps down safely to highest admissible index `<= a_prop` (`OVERRIDE`)!
+`Proposed Profile a_prop` + `15 EDDs` -> `DtnmaSafetyShield.computeSafeActionMask(...)` applies intersection (`AND`) of constraints `S1, S2, S3, S4` + unconditional Liveness `mask[0] = true` -> If `mask[a_prop] == false`, maps down safely to highest admissible index `<= a_prop` (`OVERRIDE`).
 
 ### 4. Inputs & Configuration
 `DtnmaConfig.java`: `shieldEnabled`, `shieldCongestionQueue` (`0.88` or `0.94` mode-dependent), `shieldCriticalQueueHigh` (`0.50`), `shieldEnergyMin` (`0.20` default, `0.25` in `M0c`/`M0e-25`/remote `V1` wave), `shieldDensityThreshold` (`5.0`).
@@ -145,14 +145,14 @@ Fallback mapping on `OVERRIDE`: $a_{\text{safe}} = \max \{ j \in \{0..7\} : \tex
 - `src/routing/DtnmaSafetyShield.java:102-172` (`computeAdmissibleMask`, `enforce`)
 
 ### 7. Outputs, Telemetry & Logs
-Every intervention flips column `18` from `PASS` to `OVERRIDE`, writes exact 8-bit `shield_mask` (e.g., `11111100`), logs `ARI://DTNMA/SHIELD/<GUARD_NAME>`, and increments `shield_interventions` in `DtnmaRlMetricsReport`.
+Every intervention flips column `18` from `PASS` to `OVERRIDE`, writes exact 8-bit `shield_mask` (e.g., `11111100`), logs `ARI://DTNMA/SHIELD/<GUARD_NAME>`, and increments `shield_interventions_total` in `DtnmaMetricsReport`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
-`CritQ` surge trap fix: early pilot coupled only `Q` without checking `CritQ >= 0.50`, accidentally over-throttling `P0` when `BULK_` was near zero; adding explicit `CritQ` thresholds cut idle `P0` occupancy from `41% -> 1.8%`.
+`CritQ` surge trap fix: early pilot coupled only `Q` without checking `CritQ >= 0.50`, accidentally over-throttling `P0` when `BULK_` was near zero; adding explicit `CritQ` thresholds keeps idle `P0` occupancy minimal.
 
 ### 9. Worked Mini-Example
-In `M3` (seed `7103`, `t = 3300.5 s`, node `53`), RL proposes **`HIGH_SPRAY_BACKPRESSURE`** (`P6`), while `Q = 0.9298 >= 0.78` and `Dens = 12.0 >= 5.0`. `S3` sets `mask = 11111100` (`P6/P7` blocked), logging:
-`OVERRIDE | 11111100 | ARI://DTNMA/SHIELD/DENSE_STORM_GUARD | SHIELD_OVERRIDE(HIGH_SPRAY_BACKPRESSURE->BALANCED_AGILE_FOCUS)` (actually down to `P3` via composite rule/RL clamped order!).
+When a controller proposes **`HIGH_SPRAY_BACKPRESSURE`** (`P6`), while `Q = 0.9298 >= 0.78` and `Dens = 12.0 >= 5.0`, `S3` sets `mask = 11111100` (`P6/P7` blocked), logging:
+`OVERRIDE | 11111100 | ARI://DTNMA/SHIELD/DENSE_STORM_GUARD`.
 
 ### 10. Status Label & Evolution
 `Implemented+tested` (`v1.0-freeze`). Directly tested across multiple shield unit checks (`Test14`–`Test18`).
@@ -186,13 +186,13 @@ Bandwidth overhead per contact: $B_{\text{ACK}} = 4 \cdot \min(|\Delta_{\text{AC
 - `src/routing/DtnmaContactBeacon.java:18-21`
 
 ### 7. Outputs, Telemetry & Logs
-`critical_buffer_dropped_acked` (harmless pruned copies) separated cleanly from `unique_critical_lost` (real loss) inside `DtnmaRlMetricsReport`.
+`critical_buffer_dropped_acked` (harmless pruned copies) separated cleanly from `unique_critical_lost` (real loss) inside `DtnmaMetricsReport`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
 LRU bound (`512` IDs) bounds RAM overhead per node; active transfers (`isSending`) wait until transfer finishes before deletion.
 
 ### 9. Worked Mini-Example
-Across `11` seeds of `CompA` Blackout on `ManagedEpidemicRouter`, Tier 1 (`Protection + ACK pruning`) achieves **`0` unique critical loss** (same `53`-style duplicate prunes occur safely in smoke test), proving protection works independently of throughput controls.
+On `ManagedEpidemicRouter`, Tier 1 (`Protection + ACK pruning`) achieves **`0` unique critical loss**, proving protection works independently of throughput controls.
 
 ### 10. Status Label & Evolution
 `Implemented+tested` (`v1.0-freeze`).
@@ -209,35 +209,34 @@ Eliminates *"why did node 53 throttle at t = 3360 s?"* mysteries and earlier rep
 
 ### 2. Design Alternatives Considered
 - **End-of-tick telemetry dumping:** Caused tiny (`~0.1%`) replay mismatches because buffer arrivals inside the same tick altered `Q` *after* the rule fired.
-- **Selected atomic pre-decision capture + 16-column ARI audit log:** Locks `eddSnapshot[11]` synchronously before evaluating `SRL`/`RL`/`Shield`, writing exact deterministic provenance.
+- **Selected atomic pre-decision capture + 21-column ARI audit log:** Locks `EddTelemetrySampler` metrics synchronously before evaluating `M2-Mob`/`SRL`/`Shield`, writing exact deterministic provenance.
 
 ### 3. Architecture & Data Flow
-`DtnmaAgent.evaluateAutonomyEngine` captures atomic `double[11]` EDD array -> Evaluates rule -> Applies shield -> Pushes `AuditRecord` to registered listeners (`DtnmaAuditReport`) -> Offline Python verifier (`verify_audit_replay` in `evaluate_autonomic_framework.py`) re-runs rule & shield parser against logged columns `5–11`.
+`DtnmaAgent.evaluateAutonomyEngine` captures pre-decision `15` EDD values -> Evaluates `M2-Mob` or `SRL` rules -> Applies Shield -> Pushes decision record to `DtnmaAuditReport` -> Summarizes `traceable_ari_ratio` and `total_audited_decisions` at simulation end.
 
 ### 4. Inputs & Configuration
-Configured by `Report.reportN` registration (`DtnmaAuditReport`), emits `# AUDIT_SUMMARY` footer + fixed `16`-column TSV trace (`timestamp, nodeId, decisionId, ...`).
+Configured by `Report.reportN` registration (`DtnmaAuditReport`), emits `# AUDIT_SUMMARY` footer + fixed `21`-column TSV trace (`SimTime, DecisionTime, NodeID, Mode, ... ActiveRuleARI, CausalExplanation`).
 
 ### 5. Algorithm & Exact Math / Equations
-Offline verification asserts per logged row $r$:
-$$\text{Parse}(r.\text{EDDs}, \text{ruleset}) \equiv r.\text{ARI} \quad \land \quad \text{Shield}(r.\text{EDDs}, r.\text{proposed}) \equiv (r.\text{shielded}, r.\text{mask})$$
+Deterministic audit verification asserts per logged row $r$:
+$$\text{Eval}(r.\text{EDDs}, \text{ruleset / law}) \equiv r.\text{ARI} \quad \land \quad \text{Shield}(r.\text{EDDs}, r.\text{proposed}) \equiv (r.\text{executed}, r.\text{mask})$$
 
 ### 6. Code Anchors
-- `src/routing/DtnmaAgent.java:634-733` (atomic snapshot emission)
-- `src/report/DtnmaAuditReport.java:1-137`
-- `tools/evaluate_autonomic_framework.py` (`verify_audit_replay`)
+- `src/routing/DtnmaAgent.java` (atomic snapshot emission)
+- `src/report/DtnmaAuditReport.java:1-135`
 
 ### 7. Outputs, Telemetry & Logs
-`log_bytes_per_node_hour`: `28,198.7 B` (`Stress` mean) / `29,906.6 B` (`Benign` mean); `27,099,616` total rows audited across `176` CompB runs with **`100.00%`** exact replay across static ARI (`7,917,654` rows) and RL shield masks (`3,908,964` rows).
+`DtnmaAuditReport` emits `# AUDIT_SUMMARY traceable_ari_ratio: 1.0000`, total audited rows, and `log_bytes_per_node_hour`.
 
 ### 8. Edge Cases, Failure Modes & Safeguards
 `DtnmaAuditReport` checks row headers & warmup filtering (`warmupTime`); audit snapshots record `float` precision (`%.9f` in log vs IEEE `double`) — atomic ordering prevents rounding from ever diverging across `27M+` rows.
 
 ### 9. Worked Mini-Example
-Row from seed `7103` `M2` stress audit log (`t = 3360.5 s`, node `53`):
-`3360.5  3360.5  53  M2_AUTONOMIC_SRL  0.919217000  0.005594100 ... SAFE_THROTTLE_STRICT  PASS  11111111  ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE` — replayed deterministically offline with `0` discrepancies.
+Sample audit row from `M2_AUTONOMIC_SRL` (`t = 3360.5 s`, node `53`):
+`3360.5  3360.5  53  M2_AUTONOMIC_SRL  0.919217000  0.005594100 ... SAFE_THROTTLE_STRICT  PASS  11111111  ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE` — every logged decision preserves `traceable_ari_ratio: 1.0000`.
 
 ### 10. Status Label & Evolution
-`Implemented+tested` (`v1.0-freeze` `R1`). Earlier pre-freeze pilots saw snapshot-timing drift; fixed via atomic snapshot capture prior to `v1.0`.
+`Implemented+tested`. Early snapshot-timing drift was eliminated by locking pre-decision telemetry prior to evaluation.
 
 ### 11. Supervisor Rationale
 Core scientific provenance mechanism — guarantees black-box behavior is never left unverified.

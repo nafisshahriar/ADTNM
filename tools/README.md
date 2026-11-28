@@ -17,7 +17,7 @@ This directory contains standalone, read-only reproducibility scripts for analyz
 ```text
 <reports-dir>/
   env1_vdtn_stress/
-    Env1_Stress_<RouterClass>_<Seed>_DtnmaRlMetricsReport.txt
+    Env1_Stress_<RouterClass>_<Seed>_DtnmaMetricsReport.txt
     Env1_Stress_<RouterClass>_<Seed>_MessageStatsReport.txt
   env1_vdtn_benign/
   env2_workingday/
@@ -30,7 +30,7 @@ This directory contains standalone, read-only reproducibility scripts for analyz
   campaign.log   # Optional: used only to extract per-run wall-clock runtimes
 ```
 
-Each report file uses key-value `metric_name: numeric_value` formatting emitted by `src/report/DtnmaRlMetricsReport.java` and stock `MessageStatsReport`.
+Each report file uses key-value `metric_name: numeric_value` formatting emitted by `src/report/DtnmaMetricsReport.java` (with backward-compatible support for legacy `_DtnmaRlMetricsReport.txt` archives) and stock `MessageStatsReport`.
 
 ## 3. Predeclared Multiple-Testing Families
 

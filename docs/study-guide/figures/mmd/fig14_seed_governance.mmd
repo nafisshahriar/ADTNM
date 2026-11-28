@@ -1,4 +1,2 @@
 flowchart LR
-  CAL["Calibration (M0 Only): 4001..4003"] --> FREEZE["Tag v1.0-freeze (ca5d9ac)"]
-  FREEZE --> CONF["Confirmatory (627 VDTN runs): 7103..7207 (Holm m=4)"]
-  CONF -. Disjoint Fresh Seeds .-> EXP["Exploratory (176 runs): 7211..7307 (p_unadj)"]
+  CONF["Confirmatory Suite (1,216 runs): 19 primes 8101..8269 (mob_*.txt, 8 Holm Families)"] -. Matched Disjoint Scope .-> EXP["Exploratory Sensitivity (176 runs): 11 primes 8101..8209 (sens_*.txt, Non-Holm)"]

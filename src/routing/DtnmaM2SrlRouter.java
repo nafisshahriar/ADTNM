@@ -1,7 +1,7 @@
 /*
  * DtnmaM2SrlRouter.java
- * Comparison B M2 preset: Autonomic local declarative SRL engine + Safety Shield
- * + manager-pushed remote policy overlays (no local RL or gossip).
+ * M2-SRL baseline: Autonomic local declarative SRL engine + Safety Shield
+ * + manager-pushed remote policy overlays.
  */
 package routing;
 
@@ -12,8 +12,6 @@ public class DtnmaM2SrlRouter extends DtnmaRouter {
     public DtnmaM2SrlRouter(Settings s) {
         super(s);
         this.config.managementMode = DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL;
-        this.intelligenceMode = IntelligenceMode.STATIC_RULES;
-        this.gossipEnabled = false;
         this.ackFeedbackEnabled = true;
         applyBaselinePresetKnobs();
     }

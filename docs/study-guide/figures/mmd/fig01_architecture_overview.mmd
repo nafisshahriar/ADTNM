@@ -1,21 +1,18 @@
 flowchart TB
   subgraph P4["4. Observability & Provenance Plane"]
-    R1["DtnmaAuditReport (16-col ARI TSV)"]
-    R2["DtnmaRlMetricsReport (Cohorts / CDFs / Energy)"]
+    R1["DtnmaAuditReport (21-col ARI TSV)"]
+    R2["DtnmaMetricsReport (Cohorts / CDFs / Energy)"]
     R3["DtnmaRecoveryTimelineReport"]
   end
   subgraph P3["3. Autonomic Decision & Policy Plane (DtnmaAgent)"]
-    EDD["EddTelemetrySampler (11 EDDs)"]
-    SRL["DtnmaRuleParser (SRL Rules)"]
-    RL["ShieldedCmdpRlAgent [EXPERIMENTAL]"]
+    EDD["EddTelemetrySampler (15 EDDs)"]
+    COORD["M2_MOBILITY_AWARE Coordinator / SRL Rules"]
     SHIELD["DtnmaSafetyShield (S1..S4 + Liveness P0)"]
     PROF["Active Control Profile (P0..P7)"]
-    EDD --> SRL --> SHIELD
-    EDD --> RL -.-> SHIELD
-    SHIELD --> PROF
+    EDD --> COORD --> SHIELD --> PROF
   end
   subgraph P2["2. Substrate Adaptation Plane"]
-    MR["DtnmaManagedRouter Hooks + 5-Tier Queue + ByteBudget"]
+    MR["DtnmaManagedRouter Hooks + 4-Tier Queue + ByteBudget"]
   end
   subgraph P1["1. Managed Substrates (The ONE)"]
     SUB["SprayAndWait | PRoPHETv2 | MaxProp | Epidemic | DtnmaRouter"]

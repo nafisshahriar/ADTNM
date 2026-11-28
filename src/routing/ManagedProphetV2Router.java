@@ -2,7 +2,7 @@
  * ManagedProphetV2Router.java
  * Stock ONE ProphetV2Router wrapped with DtnmaAgent by composition.
  * Preserves PRoPHETv2 encounter/transitive/aging predictability while adding
- * critical admission/eviction protection, rule/RL forwarding selectivity,
+ * critical admission/eviction protection, rule/mobility-aware forwarding selectivity,
  * critical-first scheduling, and delayed ACK pruning.
  */
 package routing;
@@ -201,8 +201,7 @@ public class ManagedProphetV2Router extends ProphetV2Router implements DtnmaMana
 
         for (Message m : msgCollection) {
             if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
-            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
-            boolean isCritOrCtrl = epiCtrl || DtnmaRouter.isCriticalMessage(m);
+            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m);
             if (!isCritOrCtrl && critOnly) continue;
 
             double myPred = -1.0;
@@ -210,21 +209,16 @@ public class ManagedProphetV2Router extends ProphetV2Router implements DtnmaMana
                 if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
                 if (othRouters[i].hasMessage(m.getId())) continue;
 
-                if (epiCtrl) {
-                    if (critTuples == null) critTuples = new ArrayList<Tuple<Message, Connection>>();
-                    critTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
-                } else {
-                    if (myPred < 0.0) myPred = getPredFor(m.getTo());
-                    double peerPred = othRouters[i].getPredFor(m.getTo());
-                    if (peerPred >= myPred) {
-                        if (isCritOrCtrl) {
-                            if (critTuples == null) critTuples = new ArrayList<Tuple<Message, Connection>>();
-                            critTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
-                        } else if (this.agent.allowNonDirectBulkForward(
-                                m, myQ, peerQ[i], peerSoc[i], peerManaged[i], myPred, peerPred)) {
-                            if (bulkTuples == null) bulkTuples = new ArrayList<Tuple<Message, Connection>>();
-                            bulkTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
-                        }
+                if (myPred < 0.0) myPred = getPredFor(m.getTo());
+                double peerPred = othRouters[i].getPredFor(m.getTo());
+                if (peerPred >= myPred) {
+                    if (isCritOrCtrl) {
+                        if (critTuples == null) critTuples = new ArrayList<Tuple<Message, Connection>>();
+                        critTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
+                    } else if (this.agent.allowNonDirectBulkForward(
+                            m, myQ, peerQ[i], peerSoc[i], peerManaged[i], myPred, peerPred)) {
+                        if (bulkTuples == null) bulkTuples = new ArrayList<Tuple<Message, Connection>>();
+                        bulkTuples.add(new Tuple<Message, Connection>(m, readyCons.get(i)));
                     }
                 }
             }

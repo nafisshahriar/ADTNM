@@ -1,7 +1,7 @@
 flowchart TB
   INTF["DtnmaManagedRouter Interface"]
-  A1["ManagedSprayAndWaitRouter"] --> INTF
-  A2["ManagedProphetV2Router"] --> INTF
-  A3["ManagedMaxPropRouter"] --> INTF
-  A4["ManagedEpidemicRouter"] --> INTF
-  INTF <--> AG["Shared DtnmaAgent Core (2,095 non-comment LOC)"]
+  A1["ManagedSprayAndWaitRouter (233 LOC)"] --> INTF
+  A2["ManagedProphetV2Router (244 LOC)"] --> INTF
+  A3["ManagedMaxPropRouter (305 LOC)"] --> INTF
+  A4["ManagedEpidemicRouter (201 LOC)"] --> INTF
+  INTF <--> AG["Shared DtnmaAgent Engine (956 non-comment LOC)"]

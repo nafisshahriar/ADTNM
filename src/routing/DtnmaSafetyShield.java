@@ -1,13 +1,12 @@
 /*
  * DtnmaSafetyShield.java
- * Formal RFC 9675 Safety Shield wrapping the RL intelligence engine.
+ * Formal RFC 9675 Safety Shield enforcing deterministic buffer, energy,
+ * storm-guard, and critical-rule invariants.
  * Combines Pre-Action Safety Masking, Post-Action Override Fallback,
- * Rule Sanitization, and Conditional Safety Internalization Auditing.
- * All threshold bounds are configurable via DtnmaConfig.
+ * and Declarative Rule Sanitization. All bounds are configurable via DtnmaConfig.
  */
 package routing;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -42,10 +41,6 @@ public class DtnmaSafetyShield {
     private final DtnmaConfig cfg;
     private long totalDecisions = 0;
     private long totalInterventions = 0;
-    private final List<Boolean> constrainedInterventionHistory = new ArrayList<Boolean>();
-    private long totalGreedyConstrainedDecisions = 0;
-    private long totalGreedyInterventions = 0;
-    private final List<Boolean> constrainedGreedyInterventionHistory = new ArrayList<Boolean>();
 
     public DtnmaSafetyShield() {
         this(new DtnmaConfig());
@@ -98,7 +93,6 @@ public class DtnmaSafetyShield {
         boolean constrained = false;
 
         // Invariant S1: Buffer Criticality & Active Surge Protection
-        // Distinguishes genuine critical saturation or active buffer surge from steady-state evictable bulk caches
         if (critQ >= cfg.shieldCriticalCritQueue || (q >= cfg.shieldCriticalQueue && drift >= cfg.shieldSurgeDrift)) {
             restrictToMaxIndex(mask, 0); // Only {0}
             primaryAri = "ARI://DTNMA/SHIELD/BUF_CRITICAL_94";
@@ -182,13 +176,7 @@ public class DtnmaSafetyShield {
 
     public ShieldDecision enforce(int proposedAction, int preferredSafeAction,
                                   EddTelemetrySampler sampler, List<StateBasedRule> rules) {
-        return enforce(proposedAction, proposedAction, preferredSafeAction, sampler, rules);
-    }
-
-    public ShieldDecision enforce(int proposedAction, int greedyAction, int preferredSafeAction,
-                                  EddTelemetrySampler sampler, List<StateBasedRule> rules) {
         int clampedProposal = Math.max(0, Math.min(DtnmaPolicyProfile.NUM_ACTIONS - 1, proposedAction));
-        int clampedGreedy = Math.max(0, Math.min(DtnmaPolicyProfile.NUM_ACTIONS - 1, greedyAction));
         StringBuilder reasonBuf = new StringBuilder();
         boolean[] safeMask = computeSafeActionMask(sampler, rules, reasonBuf);
 
@@ -207,8 +195,10 @@ public class DtnmaSafetyShield {
             }
         }
 
-        boolean greedyIntervened = !safeMask[clampedGreedy];
-        recordAuditStats(intervened, greedyIntervened, isConstrained(safeMask));
+        totalDecisions++;
+        if (intervened) {
+            totalInterventions++;
+        }
 
         String expl = intervened
                 ? "SHIELD_OVERRIDE(" + DtnmaPolicyProfile.get(clampedProposal).getName()
@@ -216,21 +206,6 @@ public class DtnmaSafetyShield {
                 : "SHIELD_PASS(" + DtnmaPolicyProfile.get(executed).getName() + ")";
 
         return new ShieldDecision(clampedProposal, executed, intervened, triggerAri, expl, safeMask);
-    }
-
-    private void recordAuditStats(boolean intervened, boolean greedyIntervened, boolean regimeConstrained) {
-        totalDecisions++;
-        if (intervened) {
-            totalInterventions++;
-        }
-        if (regimeConstrained) {
-            constrainedInterventionHistory.add(intervened);
-            totalGreedyConstrainedDecisions++;
-            if (greedyIntervened) {
-                totalGreedyInterventions++;
-            }
-            constrainedGreedyInterventionHistory.add(greedyIntervened);
-        }
     }
 
     private int selectMonotonicSafeFallback(int proposed, boolean[] safeMask) {
@@ -277,41 +252,5 @@ public class DtnmaSafetyShield {
 
     public double getInterventionRate() {
         return totalDecisions > 0 ? (double) totalInterventions / totalDecisions : 0.0;
-    }
-
-    public double getEarlyInterventionRate() {
-        return computeWindowRate(constrainedInterventionHistory, true);
-    }
-
-    public double getLateInterventionRate() {
-        return computeWindowRate(constrainedInterventionHistory, false);
-    }
-
-    public double getGreedyInterventionRate() {
-        return totalGreedyConstrainedDecisions > 0
-                ? (double) totalGreedyInterventions / totalGreedyConstrainedDecisions : 0.0;
-    }
-
-    public double getGreedyEarlyInterventionRate() {
-        return computeWindowRate(constrainedGreedyInterventionHistory, true);
-    }
-
-    public double getGreedyLateInterventionRate() {
-        return computeWindowRate(constrainedGreedyInterventionHistory, false);
-    }
-
-    private static double computeWindowRate(List<Boolean> history, boolean earlyWindow) {
-        int n = history.size();
-        if (n < 2) {
-            return n == 1 && history.get(0) ? 1.0 : 0.0;
-        }
-        int start = earlyWindow ? 0 : Math.min(n - 1, (int) Math.floor(0.60 * n));
-        int end = earlyWindow ? Math.max(1, (int) Math.floor(0.40 * n)) : n;
-        int count = end - start;
-        int hits = 0;
-        for (int i = start; i < end; i++) {
-            if (history.get(i)) hits++;
-        }
-        return count > 0 ? (double) hits / count : 0.0;
     }
 }

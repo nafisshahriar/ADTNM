@@ -12,12 +12,9 @@ public class DtnmaContactBeacon {
      * - Beacon (16 B): uint16 hostId [2B] + float32 timestamp [4B] + uint16 qRatio [2B]
      *   + int16 qDrift [2B] + uint16 energySoc [2B] + uint16 speed [2B]
      *   + uint8 mobilityClass [1B] + uint8 activeDegree [1B] = 16 bytes.
-     * - Gossip (648 B): single reward critic (8 actions x 20 fp32 weights = 160 floats = 640 B) + 8 B epoch/class header.
      * - ACK ID (4 B): uint32 message digest per acknowledged bundle ID.
      */
     public static final int BEACON_SIZE_BYTES = 16;
-    public static final int GOSSIP_PAYLOAD_BYTES =
-            (DtnmaPolicyProfile.NUM_ACTIONS * ShieldedCmdpRlAgent.NUM_FEATURES) * 4 + 8; // 648 B
     public static final int ACK_ID_BYTES = 4;
 
     private final int hostAddress;

@@ -2,7 +2,7 @@ sequenceDiagram
   participant Src as Source Node
   participant Rel as Relay Node
   participant Dst as Destination
-  Src->>Rel: CRITICAL_FAULT_12 (Tier 4 Protected)
+  Src->>Rel: CRITICAL_FAULT_12 (Protected Replica)
   Rel->>Dst: Deliver CRITICAL_FAULT_12
   Dst-->>Rel: 4B ACK ID on Next Contact (<=32 IDs)
-  Rel->>Rel: Move Copy Tier 4 -> Tier 1 (Reclaimable)
+  Rel->>Rel: Promote Replicas -> First-Evictable deliveredAckSet

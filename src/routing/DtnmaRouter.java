@@ -22,13 +22,6 @@ import util.Tuple;
 
 public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
 
-    public enum IntelligenceMode {
-        STATIC_RULES,
-        UNSHIELDED_RL,
-        SHIELDED_RL_PASSIVE,
-        SHIELDED_CMDP_RL
-    }
-
     public static final String DTNMA_NS = "DtnmaRouter";
     public static final String MSG_COPIES_PROPERTY = "Dtnma_Copies";
     public static final String MSG_SPLIT_PROPERTY = "Dtnma_PendingSplit";
@@ -50,18 +43,11 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
 
     // Settings Identifiers
     public static final String RULES_FILE_SETTING = "rulesFile";
-    public static final String INTELLIGENCE_MODE_SETTING = "intelligenceMode";
-    public static final String GOSSIP_ENABLED_SETTING = "gossipEnabled";
     public static final String ACK_FEEDBACK_SETTING = "ackFeedbackEnabled";
-    public static final String RL_EPOCH_INTERVAL_SETTING = "rlEpochInterval";
 
     // Preset compatibility fields (synchronized with DtnmaAgent)
     protected DtnmaConfig config;
-    protected IntelligenceMode intelligenceMode = IntelligenceMode.SHIELDED_CMDP_RL;
-    protected boolean gossipEnabled = true;
     protected boolean ackFeedbackEnabled = true;
-    protected double rlEpochInterval = 15.0;
-    protected long scenarioRngSeed = 0L;
 
     // Composed Autonomic Management Plane Agent
     private final DtnmaAgent agent;
@@ -73,11 +59,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         super(s);
         this.agent = new DtnmaAgent(this, s);
         this.config = this.agent.config;
-        this.intelligenceMode = this.agent.intelligenceMode;
-        this.gossipEnabled = this.agent.gossipEnabled;
         this.ackFeedbackEnabled = this.agent.ackFeedbackEnabled;
-        this.rlEpochInterval = this.agent.rlEpochInterval;
-        this.scenarioRngSeed = this.agent.scenarioRngSeed;
     }
 
     protected DtnmaRouter(DtnmaRouter r) {
@@ -85,11 +67,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         r.syncPrototypeToAgent();
         this.agent = new DtnmaAgent(this, r.agent);
         this.config = this.agent.config;
-        this.intelligenceMode = this.agent.intelligenceMode;
-        this.gossipEnabled = this.agent.gossipEnabled;
         this.ackFeedbackEnabled = this.agent.ackFeedbackEnabled;
-        this.rlEpochInterval = this.agent.rlEpochInterval;
-        this.scenarioRngSeed = this.agent.scenarioRngSeed;
 
         if (this.energy != null && this.energy.getEnergy() > 0.0) {
             this.initialEnergy = this.energy.getEnergy();
@@ -99,15 +77,8 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
     }
 
     private void syncPrototypeToAgent() {
-        this.agent.intelligenceMode = this.intelligenceMode;
-        this.agent.gossipEnabled = this.gossipEnabled;
         this.agent.ackFeedbackEnabled = this.ackFeedbackEnabled;
-        this.agent.rlEpochInterval = this.rlEpochInterval;
-        this.agent.scenarioRngSeed = this.scenarioRngSeed;
-        this.agent.config.intelligenceMode = this.intelligenceMode;
-        this.agent.config.gossipEnabled = this.gossipEnabled;
         this.agent.config.ackFeedbackEnabled = this.ackFeedbackEnabled;
-        this.agent.config.rlEpochInterval = this.rlEpochInterval;
     }
 
     protected final void applyBaselinePresetKnobs() {
@@ -163,31 +134,6 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
     @Override
     public double getBeaconNeighborQueueRatio(DTNHost peer) {
         return this.agent.getBeaconNeighborQueueRatio(peer);
-    }
-
-    @Override
-    protected List<Tuple<Message, Connection>> getMessagesForConnected() {
-        List<Tuple<Message, Connection>> tuples = super.getMessagesForConnected();
-        if (tuples == null || tuples.isEmpty()) {
-            return tuples;
-        }
-        boolean hasGrp = false;
-        for (Tuple<Message, Connection> t : tuples) {
-            if (isGroupControlMessage(t.getKey())) {
-                hasGrp = true;
-                break;
-            }
-        }
-        if (!hasGrp) {
-            return tuples;
-        }
-        List<Tuple<Message, Connection>> filtered = new ArrayList<Tuple<Message, Connection>>(tuples.size());
-        for (Tuple<Message, Connection> t : tuples) {
-            if (!isGroupControlMessage(t.getKey())) {
-                filtered.add(t);
-            }
-        }
-        return filtered;
     }
 
     @Override
@@ -271,19 +217,18 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         int activeQuota = this.agent.getCurrentSprayQuota();
         boolean critOnly = (this.agent.getCurrentIngressMode() == INGRESS_CRITICAL_ONLY);
 
-        // Linear O(N) 5-tier bucketing: avoids double-sorting all messages every tick
-        // Buckets: 0=epidemicCtrl, 1=crit(L>1), 2=crit(L<=1), 3=bulk(L>1), 4=bulk(L<=1)
+        // Linear O(N) 4-tier bucketing: avoids double-sorting all messages every tick
+        // Buckets: 0=crit(L>1), 1=crit(L<=1), 2=bulk(L>1), 3=bulk(L<=1)
         @SuppressWarnings("unchecked")
-        List<Message>[] buckets = (List<Message>[]) new List<?>[5];
+        List<Message>[] buckets = (List<Message>[]) new List<?>[4];
         for (Message m : msgColl) {
             if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
-            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
-            boolean isCrit = epiCtrl || isCriticalMessage(m);
+            boolean isCrit = isCriticalMessage(m);
             if (!isCrit && critOnly) continue;
 
             Integer copiesObj = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
             int copies = (copiesObj != null) ? copiesObj.intValue() : (isCrit ? DEFAULT_CRITICAL_QUOTA : activeQuota);
-            int b = epiCtrl ? 0 : (isCrit ? (copies > 1 ? 1 : 2) : (copies > 1 ? 3 : 4));
+            int b = isCrit ? (copies > 1 ? 0 : 1) : (copies > 1 ? 2 : 3);
             if (buckets[b] == null) {
                 buckets[b] = new ArrayList<Message>();
             }
@@ -296,7 +241,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         double focusMinPred = this.agent.getCurrentFocusMinPred();
         double focusMargin = this.agent.getCurrentFocusMargin();
 
-        for (int b = 0; b < 5; b++) {
+        for (int b = 0; b < 4; b++) {
             List<Message> bucket = buckets[b];
             if (bucket == null || bucket.isEmpty()) continue;
             if (bucket.size() > 1) {
@@ -305,7 +250,6 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
 
             for (Message m : bucket) {
                 boolean isCritical = isCriticalMessage(m);
-                boolean epidemicCtrl = (b == 0);
                 Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
                 if (copies == null) {
                     copies = isCritical ? DEFAULT_CRITICAL_QUOTA : activeQuota;
@@ -320,28 +264,12 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
                     DTNHost other = peerHosts[i];
                     if (other == null) continue;
 
-                    // 1. Direct delivery to final recipient always executes immediately (except shared group control broadcasts)
-                    if (dest == other && !isGroupControlMessage(m)) {
+                    // 1. Direct delivery to final recipient always executes immediately
+                    if (dest == other) {
                         m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                         if (startTransfer(m, con) == RCV_OK) {
                             return;
                         }
-                        continue;
-                    }
-
-                    // 1b. Optional Epidemic Control Flooding for M1/M2/M3 convergence upper bound
-                    if (epidemicCtrl) {
-                        if (isGroupControlMessage(m) && dest == other) {
-                            continue;
-                        }
-                        if (other.getRouter() != null && other.getRouter().hasMessage(m.getId())) {
-                            continue;
-                        }
-                        m.updateProperty(MSG_SPLIT_PROPERTY, -1);
-                        if (startTransfer(m, con) == RCV_OK) {
-                            return;
-                        }
-                        m.updateProperty(MSG_SPLIT_PROPERTY, 0);
                         continue;
                     }
 
@@ -356,10 +284,6 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
                         }
 
                         int toSend = computeRelaySplit(copies, activeQuota, isCritical);
-                        int naturalSplit = Math.max(1, (int) Math.floor(copies / 2.0));
-                        if (!isCritical) {
-                            this.agent.recordStarvationCheck(peerQueue, toSend, naturalSplit);
-                        }
                         if (toSend <= 0) {
                             continue;
                         }
@@ -510,9 +434,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
         Integer splitProp = (Integer) m.getProperty(MSG_SPLIT_PROPERTY);
         int actualSent = 0;
-        if (splitProp != null && splitProp == -1) {
-            actualSent = 1;
-        } else if (copies != null && copies > 1) {
+        if (copies != null && copies > 1) {
             actualSent = (splitProp != null && splitProp > 0)
                     ? Math.max(1, Math.min(copies - 1, splitProp))
                     : Math.max(1, (int) Math.floor(copies / 2.0));
@@ -532,9 +454,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
             this.agent.onMessageTransferred(m, from, MSG_COPIES_PROPERTY);
             Integer copies = (Integer) m.getProperty(MSG_COPIES_PROPERTY);
             Integer splitProp = (Integer) m.getProperty(MSG_SPLIT_PROPERTY);
-            if (splitProp != null && splitProp == -1) {
-                m.updateProperty(MSG_COPIES_PROPERTY, DEFAULT_CRITICAL_QUOTA);
-            } else if (copies != null && copies > 1) {
+            if (copies != null && copies > 1) {
                 int peerCopies = (splitProp != null && splitProp > 0)
                         ? Math.max(1, Math.min(copies - 1, splitProp))
                         : Math.max(1, (int) Math.floor(copies / 2.0));
@@ -613,10 +533,6 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         return m != null && isCriticalMessage(m.getId());
     }
 
-    public static boolean isGroupControlMessage(Message m) {
-        return m != null && m.getId() != null && m.getId().startsWith("CTRL_GROUP_");
-    }
-
     public static boolean isCriticalMessage(String id) {
         if (id == null || id.isEmpty()) return false;
         char c = id.charAt(0);
@@ -627,22 +543,19 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
             || id.startsWith("FAULT")
             || id.startsWith("CRIT")
             || id.startsWith("CTRL_UPDATE")
-            || id.startsWith("CTRL_GROUP_")
             || id.startsWith("ALARM")
             || id.startsWith("TELEM_CRIT");
     }
 
     public static boolean isDownlinkControlMessage(Message m) {
         if (m == null || m.getId() == null) return false;
-        String id = m.getId();
-        return id.startsWith("CTRL_UPDATE") || id.startsWith("CTRL_GROUP_");
+        return m.getId().startsWith("CTRL_UPDATE");
     }
 
     public static boolean isTelemetryOrAlarmMessage(Message m) {
         if (m == null || m.getId() == null) return false;
         String id = m.getId();
         return !id.startsWith("CTRL_UPDATE")
-            && !id.startsWith("CTRL_GROUP_")
             && (id.startsWith("TELEM_") || id.startsWith("ALARM") || isCriticalMessage(id));
     }
 
@@ -676,24 +589,19 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
         return (double) critBytes / bSize;
     }
 
-    // Delegated Getters (full backwards compatibility for tests & reports)
+    // Delegated Getters (for tests & reports)
     public int getLastActionIndex() { return this.agent.getLastActionIndex(); }
     public String getActionDescription(int action) { return this.agent.getActionDescription(action); }
     public String getActiveRuleAri() { return this.agent.getActiveRuleAri(); }
     public String getLastExplanation() { return this.agent.getLastExplanation(); }
     public EddTelemetrySampler getEddSampler() { return this.agent.getEddSampler(); }
-    public IntelligenceMode getIntelligenceMode() { syncPrototypeToAgent(); return this.agent.getIntelligenceMode(); }
-    public boolean isGossipEnabled() { syncPrototypeToAgent(); return this.agent.isGossipEnabled(); }
     public boolean isAckFeedbackEnabled() { syncPrototypeToAgent(); return this.agent.isAckFeedbackEnabled(); }
     public int getLastProposedProfile() { return this.agent.getLastProposedProfile(); }
     public int getLastExecutedProfile() { return this.agent.getLastExecutedProfile(); }
     public boolean isLastShieldIntervened() { return this.agent.isLastShieldIntervened(); }
     public String getShieldTriggerAri() { return this.agent.getShieldTriggerAri(); }
     public DtnmaSafetyShield getSafetyShield() { return this.agent.getSafetyShield(); }
-    public ShieldedCmdpRlAgent getRlAgent() { return this.agent.getRlAgent(); }
     public long getBeaconOverheadBytes() { return this.agent.getBeaconOverheadBytes(); }
-    public long getGossipExchanges() { return this.agent.getGossipExchanges(); }
-    public long getGossipOverheadBytes() { return this.agent.getGossipOverheadBytes(); }
     public long getAckExchanges() { return this.agent.getAckExchanges(); }
     public long getAckOverheadBytes() { return this.agent.getAckOverheadBytes(); }
     public double getMaxBufferOccupancy() { return this.agent.getMaxBufferOccupancy(); }
@@ -703,7 +611,7 @@ public class DtnmaRouter extends ActiveRouter implements DtnmaManagedRouter {
     public long[] getProfileExecCounts() { return this.agent.getProfileExecCounts(); }
     public int getCurrentSprayQuota() { return this.agent.getCurrentSprayQuota(); }
     public List<StateBasedRule> getRuleDatabase() { return this.agent.getRuleDatabase(); }
-    public int getLastRlFallbackProfile() { return this.agent.getLastRlFallbackProfile(); }
+    public int getLastFallbackProfile() { return this.agent.getLastFallbackProfile(); }
     public int getLastSafeMaskBits() { return this.agent.getLastSafeMaskBits(); }
     public int getAppliedControlVersion() { return this.agent.getAppliedControlVersion(); }
     public double getLastControlAdoptTime() { return this.agent.getLastControlAdoptTime(); }

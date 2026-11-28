@@ -1,7 +1,7 @@
 # ====================================================================
-# ADTNM USER-TUNABLE INTELLIGENCE, GOSSIP, ACK & SHIELD PARAMETERS
-# Default Profile: Single-Critic Shielded Counterfactual Expected SARSA +
-#                  Same-Mobility-Class Peer Gossip (648 B) + Delayed ACK
+# ADTNM USER-TUNABLE MANAGEMENT, BEACON, ACK, MOBILITY & SHIELD PARAMETERS
+# Default Profile: Mobility-Aware Distributed Resource Coordination
+#                  (M2_MOBILITY_AWARE) + Hard Safety Shield + Contact Beacons + Delayed ACK
 #
 # Usage in scenario file:
 #   DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
@@ -11,46 +11,23 @@
 #   Group<N>.<paramName> = <value>
 # ====================================================================
 
-# --- 1. Intelligence & Control-Plane Toggles ---
-# Modes: STATIC_RULES | UNSHIELDED_RL | SHIELDED_RL_PASSIVE | SHIELDED_CMDP_RL
-intelligenceMode = SHIELDED_CMDP_RL
-gossipEnabled = true
+# --- 1. Management & Control-Plane Toggles ---
+# Modes: M0_STATIC | M1_REMOTE_ONLY | M2_AUTONOMIC_SRL | M2_MOBILITY_AWARE
+managementMode = M2_MOBILITY_AWARE
+interventionTier = TIER3_FULL_WITH_REPLICA_CAPS
 ackFeedbackEnabled = true
-rlEpochInterval = 15.0
+enablePriorityProtection = true
+staticQuota = 6
+staticIngressMode = 0
+staticBackpressure = false
 
-# --- 2. Single-Critic Expected SARSA Hyperparameters ---
-# Note: rlLambdaInit & rlEtaLambda are retired (0.0) in single-critic mode
-rlAlpha = 0.15
-rlGamma = 0.90
-rlWeightDecay = 0.0001
-rlEpsilonStart = 0.15
-rlEpsilonMin = 0.01
-rlEpsilonDecay = 900.0
-rlLambdaInit = 0.0
-rlEtaLambda = 0.0
-rlTargetCost = 0.30
-rlLambdaMax = 5.0
-rlOptimisticInit = 0.0
-
-# --- 3. Local-Only Reward & Cost Weights ---
-rewardDirectDelivery = 2.5
-rewardAckDelivery = 1.5
-rewardPredProgress = 1.5
-rewardCoverageGain = 1.0
-penaltyBulkDrop = 0.35
-penaltyRelayCost = 0.02
-
-# --- 4. Gossip, Contact Beacon & Delayed ACK Control Plane ---
-gossipCooldown = 120.0
-gossipWeightMin = 0.05
-gossipWeightMax = 0.25
-gossipSameClassOnly = true
-gossipMinEpochs = 8
+# --- 2. Contact Beacon & Delayed ACK Control Plane ---
 beaconRefreshInterval = 5.0
+densityAdaptiveBeacons = true
 ackCacheSize = 512
 ackMaxPerContact = 32
 
-# --- 5. RFC 9675 Formal Safety Shield Thresholds ---
+# --- 3. RFC 9675 Formal Safety Shield Thresholds ---
 shieldCriticalQueue = 0.94
 shieldCongestionQueue = 0.90
 shieldSurgeQueue = 0.82
@@ -58,3 +35,13 @@ shieldSurgeDrift = 0.015
 shieldStormQueue = 0.78
 shieldStormDensity = 5.0
 shieldEnergyMin = 0.20
+shieldCriticalCritQueue = 0.50
+shieldWarnCritQueue = 0.35
+
+# --- 4. Mobility-Aware Coordination Parameters (M2_MOBILITY_AWARE) ---
+mobHorizonSec = 600.0
+mobTtdWarnRatio = 1.10
+mobTtdCritRatio = 0.60
+mobShortContactSec = 12.0
+mobLongIctSec = 180.0
+mobAblationMode = JOINT

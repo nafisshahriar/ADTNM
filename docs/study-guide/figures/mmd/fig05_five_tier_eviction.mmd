@@ -1,5 +1,0 @@
-flowchart TB
-  T0["Tier 0 (Evict First): BULK_ / SCIENCE_DATA_"] --> T1["Tier 1: Already-ACKed CRIT_ Copies"]
-  T1 --> T2["Tier 2: Stale / Other"]
-  T2 --> T3["Tier 3: Active CTRL_ Control Bundles"]
-  T3 --> T4["Tier 4 (Evict Last): Un-ACKed Live CRIT_ Bundles"]

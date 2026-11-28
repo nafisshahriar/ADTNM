@@ -138,10 +138,6 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
         boolean critOnly = this.agent.isCriticalOnlyBulkSheddingActive();
         for (Message m : getMessageCollection()) {
             if (this.agent.isAcked(m)) continue;
-            if (this.agent.isEpidemicControlPriority(m)) {
-                list.add(m);
-                continue;
-            }
             boolean isCrit = DtnmaRouter.isCriticalMessage(m);
             if (!isCrit && (quota <= 1 || critOnly)) continue;
             Integer nrofCopies = (Integer) m.getProperty(MSG_COUNT_PROPERTY);
@@ -152,20 +148,9 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
         return list;
     }
 
-    private boolean isBitForBitEquivalenceMode() {
-        return this.agent.getInterventionTier() == DtnmaConfig.InterventionTier.TIER1_PROTECTION_ONLY
-                && this.agent.getConfig() != null
-                && this.agent.getConfig().equivalenceConnOuterOrder
-                && !this.agent.isAckFeedbackEnabled()
-                && !this.agent.getConfig().epidemicControlFlooding;
-    }
-
     @Override
     protected Connection tryMessagesToConnections(
             List<Message> messages, List<Connection> connections) {
-        if (isBitForBitEquivalenceMode()) {
-            return super.tryMessagesToConnections(messages, connections);
-        }
         if (messages == null || messages.isEmpty() || connections == null || connections.isEmpty()) {
             return null;
         }
@@ -206,7 +191,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
 
         DtnmaRouter.sortCriticalFirst(messages);
         for (Message m : messages) {
-            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m) || this.agent.isEpidemicControlPriority(m);
+            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m);
             for (int i = 0; i < nReady; i++) {
                 if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
                 if (this.agent.allowNonDirectBulkForward(
@@ -223,10 +208,6 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
 
     @Override
     protected void transferDone(Connection con) {
-        if (isBitForBitEquivalenceMode()) {
-            super.transferDone(con);
-            return;
-        }
         Message msg = getMessage(con.getMessage().getId());
         if (msg == null) return;
         DTNHost recipient = con.getOtherNode(getHost());
@@ -237,11 +218,6 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
         int beforeCopies = 1;
         Integer cp = (Integer) msg.getProperty(MSG_COUNT_PROPERTY);
         if (cp != null) beforeCopies = cp.intValue();
-
-        if (this.agent.isEpidemicControlPriority(msg)) {
-            this.agent.onTransferDone(con, msg, MSG_COUNT_PROPERTY, 1);
-            return;
-        }
 
         if (beforeCopies > 1) {
             int afterCopies = isBinary
@@ -264,9 +240,7 @@ public class ManagedSprayAndWaitRouter extends SprayAndWaitRouter implements Dtn
     public Message messageTransferred(String id, DTNHost from) {
         Message m = super.messageTransferred(id, from);
         if (m != null) {
-            if (this.agent.isEpidemicControlPriority(m)) {
-                m.updateProperty(MSG_COUNT_PROPERTY, DtnmaRouter.DEFAULT_CRITICAL_QUOTA);
-            } else if (!DtnmaRouter.isCriticalMessage(m)) {
+            if (!DtnmaRouter.isCriticalMessage(m)) {
                 Integer cp = (Integer) m.getProperty(MSG_COUNT_PROPERTY);
                 int quota = Math.max(1, this.agent.getEffectiveBulkSprayQuota(this.initialNrofCopies));
                 if (cp != null && cp > quota) {

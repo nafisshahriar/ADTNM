@@ -3,10 +3,9 @@
  * Samples strongly-typed Externally Defined Data (EDD) across physical, link,
  * energy, and mobility subsystems conforming to RFC 9675 / RFC 7575.
  *
- * Hardened for Phase 1:
- * - EWMA smoothing for Queue Drift and Node Speed (eliminates burst spikes).
+ * Hardened telemetry sampler:
+ * - EWMA smoothing for Queue Drift, Node Speed, Energy Drain, and Mobility EDDs.
  * - Decentralized local-only & contact-handshake neighbor sensing via DtnmaContactBeacon.
- * - Normalized [0, 1] state vector export for Shielded CMDP RL.
  */
 package routing;
 
@@ -286,7 +285,7 @@ public class EddTelemetrySampler {
     }
 
     /**
-     * Classifies the node's mobility regime for peer-class Gossip consensus:
+     * Classifies the node's mobility regime for Contact Beacon telemetry:
      * 0 = Pedestrian / Slow (< 2.2 m/s)
      * 1 = Vehicle / Standard (2.2 to 9.5 m/s)
      * 2 = Tram / Fast Backbone (>= 9.5 m/s or multi-interface relay)
@@ -302,22 +301,6 @@ public class EddTelemetrySampler {
             return 0;
         }
         return 1;
-    }
-
-    /**
-     * Exports normalized 6-dimensional local state vector s_t in [0, 1]^6
-     * for the Shielded CMDP Reinforcement Learning Agent.
-     */
-    public double[] getNormalizedStateVector() {
-        double q = router != null ? clamp(router.getBufferOccupancyRatio(), 0.0, 1.0) : 0.0;
-        double dDrift = clamp(0.5 + 5.0 * this.queueDrift, 0.0, 1.0);
-        double dDens = clamp(getNodeDensity() / 15.0, 0.0, 1.0);
-        double dSpeed = clamp(this.nodeSpeed / 15.0, 0.0, 1.0);
-        double minNbrQ = getMinNeighborQueueRatio();
-        double dGrad = clamp(0.5 + 0.5 * (q - minNbrQ), 0.0, 1.0);
-        double dSoc = clamp((router != null) ? router.getEnergySoc() : 1.0, 0.0, 1.0);
-
-        return new double[] { q, dDrift, dDens, dSpeed, dGrad, dSoc };
     }
 
     /**

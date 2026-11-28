@@ -194,7 +194,7 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
         List<Message> msgs = new ArrayList<Message>(getNrofMessages());
         for (Message m : getMessageCollection()) {
             if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
-            if (critOnly && !DtnmaRouter.isCriticalMessage(m) && !this.agent.isEpidemicControlPriority(m)) {
+            if (critOnly && !DtnmaRouter.isCriticalMessage(m)) {
                 continue;
             }
             msgs.add(m);
@@ -206,12 +206,11 @@ public class ManagedEpidemicRouter extends EpidemicRouter implements DtnmaManage
         sortByQueueMode(msgs);
 
         for (Message m : msgs) {
-            boolean epiCtrl = this.agent.isEpidemicControlPriority(m);
-            boolean isCritOrCtrl = epiCtrl || DtnmaRouter.isCriticalMessage(m);
+            boolean isCrit = DtnmaRouter.isCriticalMessage(m);
             for (int i = 0; i < nReady; i++) {
-                if (!isCritOrCtrl && !peerCanTakeBulk[i]) continue;
+                if (!isCrit && !peerCanTakeBulk[i]) continue;
                 if (othRouters[i].hasMessage(m.getId())) continue;
-                if (epiCtrl || this.agent.allowNonDirectBulkForward(
+                if (this.agent.allowNonDirectBulkForward(
                         m, myQ, peerQ[i], peerSoc[i], peerManaged[i], -1.0, -1.0)) {
                     Connection con = readyCons.get(i);
                     if (startTransfer(m, con) == RCV_OK) {

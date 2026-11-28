@@ -1,8 +1,8 @@
 /*
  * DtnmaM0eEnergy25Router.java
- * Post-freeze exploratory control M0e-25: Operator-preinstalled energy-only
- * static guard at boot (SoC < 0.25, NO queue congestion throttle), immutable to
- * remote CTRL_UPDATE mutation.
+ * Energy-only static guard preset (M0e-25): Operator-preinstalled energy survival
+ * guard at boot (SoC < 0.25, no queue congestion throttle), immutable to remote
+ * CTRL_UPDATE mutation.
  */
 package routing;
 
@@ -21,10 +21,7 @@ public class DtnmaM0eEnergy25Router extends DtnmaRouter {
     public DtnmaM0eEnergy25Router(Settings s) {
         super(s);
         this.config.managementMode = DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL;
-        this.intelligenceMode = IntelligenceMode.STATIC_RULES;
-        this.gossipEnabled = false;
         this.ackFeedbackEnabled = true;
-        this.config.epidemicControlFlooding = false;
         this.config.shieldEnergyMin = 0.25;
         this.config.shieldCongestionQueue = 1.01;
         this.config.shieldWarnCritQueue = 1.01;

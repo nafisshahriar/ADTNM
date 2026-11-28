@@ -39,7 +39,7 @@ jobs:
         run: |
           python install.py --one-dir ../the-one
 
-      - name: Compile & Run ADTNM Phase 1 Java Unit Tests
+      - name: Compile & Run ADTNM Java Unit Tests
         run: |
           javac -cp "../the-one/target:../the-one/lib/ECLA.jar:../the-one/lib/DTNConsoleConnection.jar" -d ../the-one/target tests/DtnmaUnitTests.java
           java -cp "../the-one/target:../the-one/lib/ECLA.jar:../the-one/lib/DTNConsoleConnection.jar" DtnmaUnitTests
@@ -48,4 +48,4 @@ jobs:
         run: |
           cd ../the-one
           bash one.sh -b 1 scenarios/scenario_dtnma.txt
-          python -c "from pathlib import Path; m=Path('reports/Dtnma_Benchmark_MessageStatsReport.txt').read_text(); a=Path('reports/Dtnma_Benchmark_DtnmaAuditReport.txt').read_text(); assert 'traceable_ari_ratio: 1.0000' in a, 'ARI audit trace failed'; print('Smoke benchmark & 100% ARI traceability verified.')"
+          python -c "from pathlib import Path; m=Path('reports/Dtnma_Benchmark_MessageStatsReport.txt').read_text(); d=Path('reports/Dtnma_Benchmark_DtnmaMetricsReport.txt').read_text(); a=Path('reports/Dtnma_Benchmark_DtnmaAuditReport.txt').read_text(); assert 'shield_decisions_total:' in d, 'DtnmaMetricsReport missing'; assert 'traceable_ari_ratio: 1.0000' in a, 'ARI audit trace failed'; print('Smoke benchmark, DtnmaMetricsReport & 100% ARI traceability verified.')"

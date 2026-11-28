@@ -1,7 +1,7 @@
 """
 Confirmatory Multi-Mobility Campaign Reproducibility Analyzer.
 
-Reads raw ONE Simulator report outputs (`*_DtnmaRlMetricsReport.txt` and
+Reads raw ONE Simulator report outputs (`*_DtnmaMetricsReport.txt` or legacy `*_DtnmaRlMetricsReport.txt`, and
 `*_MessageStatsReport.txt`) plus optional `campaign.log` execution logs and
 exports:
   - per_seed_metrics.csv : complete per-run table with critical lifecycle columns
@@ -81,7 +81,7 @@ MS_METRICS = [
     "buffertime_avg",
 ]
 
-FNAME_RL_RE = re.compile(r"^(.+?)_([A-Za-z0-9]+Router)_(\d+)_DtnmaRlMetricsReport\.txt$")
+FNAME_RL_RE = re.compile(r"^(.+?)_([A-Za-z0-9]+Router)_(\d+)_(?:DtnmaMetricsReport|DtnmaRlMetricsReport)\.txt$")
 
 # Fallback exact two-sided t(0.975, df=n-1) when scipy is unavailable
 T_CRIT_FALLBACK = {
@@ -462,7 +462,8 @@ def main():
     for stage in stages:
         sdir = os.path.join(reports_dir, stage)
         rl_paths = sorted(
-            f for f in os.listdir(sdir) if f.endswith("_DtnmaRlMetricsReport.txt")
+            f for f in os.listdir(sdir)
+            if f.endswith("_DtnmaMetricsReport.txt") or f.endswith("_DtnmaRlMetricsReport.txt")
         )
         for fname in rl_paths:
             m = FNAME_RL_RE.match(fname)
@@ -471,7 +472,10 @@ def main():
             router, seed = m.group(2), int(m.group(3))
             rl_path = os.path.join(sdir, fname)
             vals = parse_kv_file(rl_path, rl_set)
-            ms_path = rl_path.replace("_DtnmaRlMetricsReport.txt", "_MessageStatsReport.txt")
+            if fname.endswith("_DtnmaMetricsReport.txt"):
+                ms_path = rl_path[:-len("_DtnmaMetricsReport.txt")] + "_MessageStatsReport.txt"
+            else:
+                ms_path = rl_path[:-len("_DtnmaRlMetricsReport.txt")] + "_MessageStatsReport.txt"
             if os.path.isfile(ms_path):
                 ms_vals = parse_kv_file(ms_path, ms_set)
                 for mk, mv in ms_vals.items():

@@ -47,10 +47,10 @@ CHAPTER_ORDER: List[Tuple[str, str]] = [
     ("Ch 03: Architecture Overview", "chapters/03_architecture_overview.md"),
     ("Ch 04a: Mechanisms 01-06 (Telemetry & Profiles)", "chapters/04a_mechanisms_telemetry_and_profiles.md"),
     ("Ch 04b: Mechanisms 07-11 (SRL, Shield & Replay)", "chapters/04b_mechanisms_srl_and_shield.md"),
-    ("Ch 04c: Mechanisms 12-17 (Adapters & Remote)", "chapters/04c_mechanisms_adapters_and_remote.md"),
-    ("Ch 04d: Mechanisms 18-23 (RL, Controls & Reporting)", "chapters/04d_mechanisms_rl_and_reporting.md"),
+    ("Ch 04c: Mechanisms 12-16 (Adapters & Remote)", "chapters/04c_mechanisms_adapters_and_remote.md"),
+    ("Ch 04d: Mechanisms 17-22 (Mobility, Controls & Reporting)", "chapters/04d_mechanisms_mobility_and_reporting.md"),
     ("Ch 05: Codebase Tour & Developer Guide", "chapters/05_codebase_tour.md"),
-    ("Ch 06: Empirical Evaluation & Results", "chapters/06_evaluation_and_results.md"),
+    ("Ch 06: Configurations & Empirical Findings", "chapters/06_evaluation_and_results.md"),
     ("Ch 07: Hands-On Tutorials", "chapters/07_howto_and_tutorials.md"),
     ("Ch 08: History, Post-Mortems & ADRs", "chapters/08_history_and_decisions.md"),
     ("Worked Examples (1-6)", "worked_examples/worked_examples.md"),
@@ -221,8 +221,8 @@ def build_offline_html() -> Path:
 </aside>
 <main id="contentRoot">
   <div class="monograph-banner">
-    <strong>ADTNM Architectural Monograph</strong> — An RFC 9675 &amp; RFC 7575-inspired autonomic DTN management framework implemented atop The ONE simulator.
-    Released under the <strong>MIT License</strong> (active work in progress). Use the left sidebar to jump by chapter or subsection, or filter above.
+    <strong>ADTNM Architectural Monograph</strong> — An RFC 9675 &amp; RFC 7575-inspired mobility-aware autonomic DTN management framework implemented atop The ONE simulator.
+    Released under the <strong>MIT License</strong> (work in progress) by <strong>S. M. Nafis Shahriar, Pulok Akibuzzaman, Nusrat Rahman Aurna, Md Safin Rahman</strong>. Use the left sidebar to jump by chapter or subsection, or search above.
   </div>
   {''.join(sections)}
 </main>
@@ -452,16 +452,16 @@ def build_pdfs() -> None:
     # 1. Full Study Guide PDF with Outlines/Bookmarks
     full_pdf = BUILD_DIR / "ADTNM_Study_Guide.pdf"
     margin = 0.55 * inch
-    doc = BookmarkedDocTemplate(str(full_pdf), pagesize=letter, leftMargin=margin, rightMargin=margin, topMargin=margin, bottomMargin=margin, title="ADTNM Comprehensive Study Guide", author="ADTNM Architecture Team")
+    doc = BookmarkedDocTemplate(str(full_pdf), pagesize=letter, leftMargin=margin, rightMargin=margin, topMargin=margin, bottomMargin=margin, title="ADTNM Comprehensive Study Guide", author="S. M. Nafis Shahriar, Pulok Akibuzzaman, Nusrat Rahman Aurna, Md Safin Rahman")
     st_norm = make_rl_styles("normal")
     max_w = letter[0] - 2 * margin
     story: List[Any] = [
         Spacer(1, 1.3 * inch),
         Paragraph("ADTNM Comprehensive Study Guide", ParagraphStyle("CoverT", fontSize=24, leading=28, textColor=colors.HexColor("#0072B2"), fontName="Helvetica-Bold")),
         Spacer(1, 10),
-        Paragraph("Architectural Management Framework for Autonomic Delay/Disruption-Tolerant Networks (RFC 9675 &amp; RFC 7575-Inspired)", ParagraphStyle("CoverS", fontSize=12, leading=16, textColor=colors.HexColor("#334155"))),
+        Paragraph("Mobility-Aware Autonomic Management Framework for Delay/Disruption-Tolerant Networks (RFC 9675 &amp; RFC 7575-Inspired)", ParagraphStyle("CoverS", fontSize=12, leading=16, textColor=colors.HexColor("#334155"))),
         Spacer(1, 18),
-        Paragraph("<b>License:</b> MIT License &nbsp;|&nbsp; <b>Status:</b> Active Research (Work in Progress) &nbsp;|&nbsp; <b>Benchmarks:</b> v1.0-freeze &amp; v1.0-exp-controls", st_norm["Body"]),
+        Paragraph("<b>Authors:</b> S. M. Nafis Shahriar, Pulok Akibuzzaman, Nusrat Rahman Aurna, Md Safin Rahman<br/><b>License:</b> MIT License &nbsp;|&nbsp; <b>Status:</b> Active Research (Work in Progress) &nbsp;|&nbsp; <b>Campaigns:</b> 1,216 Confirmatory + 176 Exploratory Runs", st_norm["Body"]),
         PageBreak(),
     ]
     outlines: List[Tuple[str, str, int]] = []

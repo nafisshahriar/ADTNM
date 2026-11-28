@@ -1,7 +1,6 @@
 /*
  * DtnmaConfig.java
- * Centralized, user-tunable hyperparameter & policy configuration for Autonomic DTNMA.
- * Defaults to Gossip + Delayed ACK Shielded CMDP RL (DtnmaGossipAckRL behavior).
+ * Centralized, user-tunable configuration for Mobility-Aware Autonomic DTNMA.
  *
  * Loading precedence:
  *   1. Built-in defaults
@@ -25,12 +24,10 @@ public class DtnmaConfig {
     public static final String CONFIG_FILE_SETTING = "configFile";
 
     public enum ManagementMode {
-        AUTO,
         M0_STATIC,
         M1_REMOTE_ONLY,
         M2_AUTONOMIC_SRL,
-        M2_MOBILITY_AWARE,
-        M3_AUTONOMIC_RL
+        M2_MOBILITY_AWARE
     }
 
     public enum InterventionTier {
@@ -39,48 +36,17 @@ public class DtnmaConfig {
         TIER3_FULL_WITH_REPLICA_CAPS
     }
 
-    // Intelligence & Control-Plane Toggles (Default: Gossip + ACK Shielded CMDP RL)
-    public DtnmaRouter.IntelligenceMode intelligenceMode = DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL;
-    public ManagementMode managementMode = ManagementMode.AUTO;
+    // Management & Control-Plane Toggles
+    public ManagementMode managementMode = ManagementMode.M2_MOBILITY_AWARE;
     public InterventionTier interventionTier = InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS;
     public int staticQuota = 6;
     public int staticIngressMode = 0;
     public boolean staticBackpressure = true;
     public boolean enablePriorityProtection = true;
-    public boolean epidemicControlFlooding = false;
-    public boolean densityAdaptiveGossip = true;
-    public boolean openLoopAuditOnly = false;
-    public boolean gossipEnabled = true;
+    public boolean densityAdaptiveBeacons = true;
     public boolean ackFeedbackEnabled = true;
-    public double rlEpochInterval = 15.0;
 
-    // Single-Critic Expected SARSA RL Hyperparameters (rlLambdaInit/rlEtaLambda retained at 0.0 for config compatibility)
-    public double rlAlpha = 0.15;
-    public double rlGamma = 0.90;
-    public double rlWeightDecay = 1e-4;
-    public double rlEpsilonStart = 0.15;
-    public double rlEpsilonMin = 0.01;
-    public double rlEpsilonDecay = 900.0;
-    public double rlLambdaInit = 0.0;
-    public double rlEtaLambda = 0.0;
-    public double rlTargetCost = 0.30;
-    public double rlLambdaMax = 5.0;
-    public double rlOptimisticInit = 0.0;
-
-    // Local-Only Reward / Cost Weights
-    public double rewardDirectDelivery = 2.5;
-    public double rewardAckDelivery = 1.5;
-    public double rewardPredProgress = 1.5;
-    public double rewardCoverageGain = 1.0;
-    public double penaltyBulkDrop = 0.35;
-    public double penaltyRelayCost = 0.02;
-
-    // Gossip, Beacon & ACK Control Plane
-    public double gossipCooldown = 120.0;
-    public double gossipWeightMin = 0.05;
-    public double gossipWeightMax = 0.25;
-    public boolean gossipSameClassOnly = true;
-    public int gossipMinEpochs = 8;
+    // Contact Beacon & Delayed ACK Control Plane
     public double beaconRefreshInterval = 5.0;
     public int ackCacheSize = 512;
     public int ackMaxPerContact = 32;
@@ -95,7 +61,6 @@ public class DtnmaConfig {
     public double shieldStormQueue = 0.78;
     public double shieldStormDensity = 5.0;
     public double shieldEnergyMin = 0.20;
-    public boolean equivalenceConnOuterOrder = false;
 
     // Mobility-Aware Resource Controller Parameters (M2_MOBILITY_AWARE)
     public double mobHorizonSec = 0.0;
@@ -109,44 +74,15 @@ public class DtnmaConfig {
 
     public DtnmaConfig(DtnmaConfig o) {
         if (o == null) return;
-        this.intelligenceMode = o.intelligenceMode;
         this.managementMode = o.managementMode;
         this.interventionTier = o.interventionTier;
         this.staticQuota = o.staticQuota;
         this.staticIngressMode = o.staticIngressMode;
         this.staticBackpressure = o.staticBackpressure;
         this.enablePriorityProtection = o.enablePriorityProtection;
-        this.epidemicControlFlooding = o.epidemicControlFlooding;
-        this.densityAdaptiveGossip = o.densityAdaptiveGossip;
-        this.openLoopAuditOnly = o.openLoopAuditOnly;
-        this.gossipEnabled = o.gossipEnabled;
+        this.densityAdaptiveBeacons = o.densityAdaptiveBeacons;
         this.ackFeedbackEnabled = o.ackFeedbackEnabled;
-        this.rlEpochInterval = o.rlEpochInterval;
 
-        this.rlAlpha = o.rlAlpha;
-        this.rlGamma = o.rlGamma;
-        this.rlWeightDecay = o.rlWeightDecay;
-        this.rlEpsilonStart = o.rlEpsilonStart;
-        this.rlEpsilonMin = o.rlEpsilonMin;
-        this.rlEpsilonDecay = o.rlEpsilonDecay;
-        this.rlLambdaInit = o.rlLambdaInit;
-        this.rlEtaLambda = o.rlEtaLambda;
-        this.rlTargetCost = o.rlTargetCost;
-        this.rlLambdaMax = o.rlLambdaMax;
-        this.rlOptimisticInit = o.rlOptimisticInit;
-
-        this.rewardDirectDelivery = o.rewardDirectDelivery;
-        this.rewardAckDelivery = o.rewardAckDelivery;
-        this.rewardPredProgress = o.rewardPredProgress;
-        this.rewardCoverageGain = o.rewardCoverageGain;
-        this.penaltyBulkDrop = o.penaltyBulkDrop;
-        this.penaltyRelayCost = o.penaltyRelayCost;
-
-        this.gossipCooldown = o.gossipCooldown;
-        this.gossipWeightMin = o.gossipWeightMin;
-        this.gossipWeightMax = o.gossipWeightMax;
-        this.gossipSameClassOnly = o.gossipSameClassOnly;
-        this.gossipMinEpochs = o.gossipMinEpochs;
         this.beaconRefreshInterval = o.beaconRefreshInterval;
         this.ackCacheSize = o.ackCacheSize;
         this.ackMaxPerContact = o.ackMaxPerContact;
@@ -160,7 +96,6 @@ public class DtnmaConfig {
         this.shieldStormQueue = o.shieldStormQueue;
         this.shieldStormDensity = o.shieldStormDensity;
         this.shieldEnergyMin = o.shieldEnergyMin;
-        this.equivalenceConnOuterOrder = o.equivalenceConnOuterOrder;
 
         this.mobHorizonSec = o.mobHorizonSec;
         this.mobTtdWarnRatio = o.mobTtdWarnRatio;
@@ -245,9 +180,6 @@ public class DtnmaConfig {
     }
 
     private void applyStringMap(Map<String, String> params) {
-        if (params.containsKey("intelligenceMode")) {
-            intelligenceMode = parseIntelligenceMode(params.get("intelligenceMode"), intelligenceMode);
-        }
         if (params.containsKey("managementMode")) {
             managementMode = parseManagementMode(params.get("managementMode"), managementMode);
         }
@@ -258,37 +190,10 @@ public class DtnmaConfig {
         staticIngressMode = parseInt(params, "staticIngressMode", staticIngressMode);
         staticBackpressure = parseBool(params, "staticBackpressure", staticBackpressure);
         enablePriorityProtection = parseBool(params, "enablePriorityProtection", enablePriorityProtection);
-        epidemicControlFlooding = parseBool(params, "epidemicControlFlooding", epidemicControlFlooding);
-        densityAdaptiveGossip = parseBool(params, "densityAdaptiveGossip", densityAdaptiveGossip);
-        openLoopAuditOnly = parseBool(params, "openLoopAuditOnly", openLoopAuditOnly);
-        gossipEnabled = parseBool(params, "gossipEnabled", gossipEnabled);
+        densityAdaptiveBeacons = parseBool(params, "densityAdaptiveBeacons", densityAdaptiveBeacons);
+        densityAdaptiveBeacons = parseBool(params, "densityAdaptiveGossip", densityAdaptiveBeacons);
         ackFeedbackEnabled = parseBool(params, "ackFeedbackEnabled", ackFeedbackEnabled);
-        rlEpochInterval = parseDouble(params, "rlEpochInterval", rlEpochInterval);
 
-        rlAlpha = parseDouble(params, "rlAlpha", rlAlpha);
-        rlGamma = parseDouble(params, "rlGamma", rlGamma);
-        rlWeightDecay = parseDouble(params, "rlWeightDecay", rlWeightDecay);
-        rlEpsilonStart = parseDouble(params, "rlEpsilonStart", rlEpsilonStart);
-        rlEpsilonMin = parseDouble(params, "rlEpsilonMin", rlEpsilonMin);
-        rlEpsilonDecay = parseDouble(params, "rlEpsilonDecay", rlEpsilonDecay);
-        rlLambdaInit = parseDouble(params, "rlLambdaInit", rlLambdaInit);
-        rlEtaLambda = parseDouble(params, "rlEtaLambda", rlEtaLambda);
-        rlTargetCost = parseDouble(params, "rlTargetCost", rlTargetCost);
-        rlLambdaMax = parseDouble(params, "rlLambdaMax", rlLambdaMax);
-        rlOptimisticInit = parseDouble(params, "rlOptimisticInit", rlOptimisticInit);
-
-        rewardDirectDelivery = parseDouble(params, "rewardDirectDelivery", rewardDirectDelivery);
-        rewardAckDelivery = parseDouble(params, "rewardAckDelivery", rewardAckDelivery);
-        rewardPredProgress = parseDouble(params, "rewardPredProgress", rewardPredProgress);
-        rewardCoverageGain = parseDouble(params, "rewardCoverageGain", rewardCoverageGain);
-        penaltyBulkDrop = parseDouble(params, "penaltyBulkDrop", penaltyBulkDrop);
-        penaltyRelayCost = parseDouble(params, "penaltyRelayCost", penaltyRelayCost);
-
-        gossipCooldown = parseDouble(params, "gossipCooldown", gossipCooldown);
-        gossipWeightMin = parseDouble(params, "gossipWeightMin", gossipWeightMin);
-        gossipWeightMax = parseDouble(params, "gossipWeightMax", gossipWeightMax);
-        gossipSameClassOnly = parseBool(params, "gossipSameClassOnly", gossipSameClassOnly);
-        gossipMinEpochs = parseInt(params, "gossipMinEpochs", gossipMinEpochs);
         beaconRefreshInterval = parseDouble(params, "beaconRefreshInterval", beaconRefreshInterval);
         ackCacheSize = parseInt(params, "ackCacheSize", ackCacheSize);
         ackMaxPerContact = parseInt(params, "ackMaxPerContact", ackMaxPerContact);
@@ -302,7 +207,6 @@ public class DtnmaConfig {
         shieldStormQueue = parseDouble(params, "shieldStormQueue", shieldStormQueue);
         shieldStormDensity = parseDouble(params, "shieldStormDensity", shieldStormDensity);
         shieldEnergyMin = parseDouble(params, "shieldEnergyMin", shieldEnergyMin);
-        equivalenceConnOuterOrder = parseBool(params, "equivalenceConnOuterOrder", equivalenceConnOuterOrder);
 
         mobHorizonSec = parseDouble(params, "mobHorizonSec", mobHorizonSec);
         mobTtdWarnRatio = parseDouble(params, "mobTtdWarnRatio", mobTtdWarnRatio);
@@ -315,9 +219,6 @@ public class DtnmaConfig {
     }
 
     private void applySettings(Settings s) {
-        if (s.contains("intelligenceMode")) {
-            intelligenceMode = parseIntelligenceMode(s.getSetting("intelligenceMode"), intelligenceMode);
-        }
         if (s.contains("managementMode")) {
             managementMode = parseManagementMode(s.getSetting("managementMode"), managementMode);
         }
@@ -328,37 +229,10 @@ public class DtnmaConfig {
         if (s.contains("staticIngressMode")) staticIngressMode = s.getInt("staticIngressMode");
         if (s.contains("staticBackpressure")) staticBackpressure = s.getBoolean("staticBackpressure");
         if (s.contains("enablePriorityProtection")) enablePriorityProtection = s.getBoolean("enablePriorityProtection");
-        if (s.contains("epidemicControlFlooding")) epidemicControlFlooding = s.getBoolean("epidemicControlFlooding");
-        if (s.contains("densityAdaptiveGossip")) densityAdaptiveGossip = s.getBoolean("densityAdaptiveGossip");
-        if (s.contains("openLoopAuditOnly")) openLoopAuditOnly = s.getBoolean("openLoopAuditOnly");
-        if (s.contains("gossipEnabled")) gossipEnabled = s.getBoolean("gossipEnabled");
+        if (s.contains("densityAdaptiveGossip")) densityAdaptiveBeacons = s.getBoolean("densityAdaptiveGossip");
+        if (s.contains("densityAdaptiveBeacons")) densityAdaptiveBeacons = s.getBoolean("densityAdaptiveBeacons");
         if (s.contains("ackFeedbackEnabled")) ackFeedbackEnabled = s.getBoolean("ackFeedbackEnabled");
-        if (s.contains("rlEpochInterval")) rlEpochInterval = s.getDouble("rlEpochInterval");
 
-        if (s.contains("rlAlpha")) rlAlpha = s.getDouble("rlAlpha");
-        if (s.contains("rlGamma")) rlGamma = s.getDouble("rlGamma");
-        if (s.contains("rlWeightDecay")) rlWeightDecay = s.getDouble("rlWeightDecay");
-        if (s.contains("rlEpsilonStart")) rlEpsilonStart = s.getDouble("rlEpsilonStart");
-        if (s.contains("rlEpsilonMin")) rlEpsilonMin = s.getDouble("rlEpsilonMin");
-        if (s.contains("rlEpsilonDecay")) rlEpsilonDecay = s.getDouble("rlEpsilonDecay");
-        if (s.contains("rlLambdaInit")) rlLambdaInit = s.getDouble("rlLambdaInit");
-        if (s.contains("rlEtaLambda")) rlEtaLambda = s.getDouble("rlEtaLambda");
-        if (s.contains("rlTargetCost")) rlTargetCost = s.getDouble("rlTargetCost");
-        if (s.contains("rlLambdaMax")) rlLambdaMax = s.getDouble("rlLambdaMax");
-        if (s.contains("rlOptimisticInit")) rlOptimisticInit = s.getDouble("rlOptimisticInit");
-
-        if (s.contains("rewardDirectDelivery")) rewardDirectDelivery = s.getDouble("rewardDirectDelivery");
-        if (s.contains("rewardAckDelivery")) rewardAckDelivery = s.getDouble("rewardAckDelivery");
-        if (s.contains("rewardPredProgress")) rewardPredProgress = s.getDouble("rewardPredProgress");
-        if (s.contains("rewardCoverageGain")) rewardCoverageGain = s.getDouble("rewardCoverageGain");
-        if (s.contains("penaltyBulkDrop")) penaltyBulkDrop = s.getDouble("penaltyBulkDrop");
-        if (s.contains("penaltyRelayCost")) penaltyRelayCost = s.getDouble("penaltyRelayCost");
-
-        if (s.contains("gossipCooldown")) gossipCooldown = s.getDouble("gossipCooldown");
-        if (s.contains("gossipWeightMin")) gossipWeightMin = s.getDouble("gossipWeightMin");
-        if (s.contains("gossipWeightMax")) gossipWeightMax = s.getDouble("gossipWeightMax");
-        if (s.contains("gossipSameClassOnly")) gossipSameClassOnly = s.getBoolean("gossipSameClassOnly");
-        if (s.contains("gossipMinEpochs")) gossipMinEpochs = s.getInt("gossipMinEpochs");
         if (s.contains("beaconRefreshInterval")) beaconRefreshInterval = s.getDouble("beaconRefreshInterval");
         if (s.contains("ackCacheSize")) ackCacheSize = s.getInt("ackCacheSize");
         if (s.contains("ackMaxPerContact")) ackMaxPerContact = s.getInt("ackMaxPerContact");
@@ -372,7 +246,6 @@ public class DtnmaConfig {
         if (s.contains("shieldStormQueue")) shieldStormQueue = s.getDouble("shieldStormQueue");
         if (s.contains("shieldStormDensity")) shieldStormDensity = s.getDouble("shieldStormDensity");
         if (s.contains("shieldEnergyMin")) shieldEnergyMin = s.getDouble("shieldEnergyMin");
-        if (s.contains("equivalenceConnOuterOrder")) equivalenceConnOuterOrder = s.getBoolean("equivalenceConnOuterOrder");
 
         if (s.contains("mobHorizonSec")) mobHorizonSec = s.getDouble("mobHorizonSec");
         if (s.contains("mobTtdWarnRatio")) mobTtdWarnRatio = s.getDouble("mobTtdWarnRatio");
@@ -385,29 +258,6 @@ public class DtnmaConfig {
     public void clampSafeBounds() {
         staticQuota = Math.max(1, Math.min(32, staticQuota));
         staticIngressMode = Math.max(0, Math.min(2, staticIngressMode));
-        rlEpochInterval = Math.max(1.0, Math.min(600.0, rlEpochInterval));
-        rlAlpha = Math.max(1e-4, Math.min(1.0, rlAlpha));
-        rlGamma = Math.max(0.0, Math.min(0.999, rlGamma));
-        rlWeightDecay = Math.max(0.0, Math.min(0.1, rlWeightDecay));
-        rlEpsilonStart = Math.max(0.0, Math.min(1.0, rlEpsilonStart));
-        rlEpsilonMin = Math.max(0.0, Math.min(rlEpsilonStart, rlEpsilonMin));
-        rlEpsilonDecay = Math.max(10.0, rlEpsilonDecay);
-        rlLambdaMax = Math.max(0.1, Math.min(100.0, rlLambdaMax));
-        rlLambdaInit = Math.max(0.0, Math.min(rlLambdaMax, rlLambdaInit));
-        rlEtaLambda = Math.max(0.0, Math.min(1.0, rlEtaLambda));
-        rlTargetCost = Math.max(0.0, Math.min(2.0, rlTargetCost));
-
-        rewardDirectDelivery = Math.max(0.0, rewardDirectDelivery);
-        rewardAckDelivery = Math.max(0.0, rewardAckDelivery);
-        rewardPredProgress = Math.max(0.0, rewardPredProgress);
-        rewardCoverageGain = Math.max(0.0, rewardCoverageGain);
-        penaltyBulkDrop = Math.max(0.0, penaltyBulkDrop);
-        penaltyRelayCost = Math.max(0.0, penaltyRelayCost);
-
-        gossipCooldown = Math.max(1.0, gossipCooldown);
-        gossipWeightMin = Math.max(0.0, Math.min(0.5, gossipWeightMin));
-        gossipWeightMax = Math.max(gossipWeightMin, Math.min(0.5, gossipWeightMax));
-        gossipMinEpochs = Math.max(1, Math.min(500, gossipMinEpochs));
         beaconRefreshInterval = Math.max(0.5, beaconRefreshInterval);
         ackCacheSize = Math.max(32, Math.min(10000, ackCacheSize));
         ackMaxPerContact = Math.max(1, Math.min(512, ackMaxPerContact));
@@ -435,18 +285,15 @@ public class DtnmaConfig {
     }
 
     public ManagementMode getEffectiveManagementMode() {
-        if (managementMode != null && managementMode != ManagementMode.AUTO) {
-            return managementMode;
-        }
-        return (intelligenceMode == DtnmaRouter.IntelligenceMode.STATIC_RULES)
-                ? ManagementMode.M2_AUTONOMIC_SRL
-                : ManagementMode.M3_AUTONOMIC_RL;
+        return (managementMode != null) ? managementMode : ManagementMode.M2_MOBILITY_AWARE;
     }
 
     private static ManagementMode parseManagementMode(String val, ManagementMode def) {
         if (val == null) return def;
+        String norm = val.trim().toUpperCase();
+        if ("AUTO".equals(norm)) return ManagementMode.M2_MOBILITY_AWARE;
         try {
-            return ManagementMode.valueOf(val.trim().toUpperCase());
+            return ManagementMode.valueOf(norm);
         } catch (IllegalArgumentException e) {
             return def;
         }
@@ -460,15 +307,6 @@ public class DtnmaConfig {
         if ("3".equals(norm) || "TIER3".equals(norm)) return InterventionTier.TIER3_FULL_WITH_REPLICA_CAPS;
         try {
             return InterventionTier.valueOf(norm);
-        } catch (IllegalArgumentException e) {
-            return def;
-        }
-    }
-
-    private static DtnmaRouter.IntelligenceMode parseIntelligenceMode(String val, DtnmaRouter.IntelligenceMode def) {
-        if (val == null) return def;
-        try {
-            return DtnmaRouter.IntelligenceMode.valueOf(val.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
             return def;
         }

@@ -46,6 +46,8 @@ Events2.interval = 12, 25
 Events2.hosts = 0, 19
 
 DtnmaRouter.rulesFile = scenarios/rules_vdtn.txt
+DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
+DtnmaRouter.managementMode = M2_MOBILITY_AWARE
 
 ## Movement Model
 MovementModel.rngSeed = 42
@@ -53,13 +55,14 @@ MovementModel.worldSize = 1000, 1000
 MovementModel.warmup = 0
 
 ## Reports
-Report.nrofReports = 4
+Report.nrofReports = 5
 Report.warmup = 0
 Report.reportDir = reports/
 Report.report1 = MessageStatsReport
 Report.report2 = BufferOccupancyReport
 Report.report3 = DtnmaDecisionReport
 Report.report4 = DtnmaAuditReport
+Report.report5 = DtnmaMetricsReport
 
 ## Optimization
 Optimization.cellSizeMult = 5

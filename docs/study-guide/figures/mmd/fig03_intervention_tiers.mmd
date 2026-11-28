@@ -1,4 +1,4 @@
 flowchart LR
-  T0["Unmanaged Stock Router"] --> T1["Tier 1: Protection Only (5-Tier Queue + ByteGuard + 4B ACKs)"]
-  T1 --> T2["Tier 2: + Ingress Throttling & Energy Shield (S1..S4 + SRL)"]
+  T0["Unmanaged Stock Router"] --> T1["Tier 1: Protection Only (Crit Reserve + ByteGuard + 4B ACKs)"]
+  T1 --> T2["Tier 2: + Ingress Throttling & Energy Shield (S1..S4 + M2-Mob/SRL)"]
   T2 --> T3["Tier 3: + Dynamic Replica Caps (L=1..12) in Adapter"]
