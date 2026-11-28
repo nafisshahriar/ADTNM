@@ -1,4 +1,4 @@
 flowchart LR
-  SNAP["Atomic Lock: eddSnapshot[11]"] --> DEC["Evaluate SRL / RL / Shield"]
-  DEC --> LOG["Write 16-Col DtnmaAuditReport"]
-  LOG --> REPLAY["Offline verify_audit_replay (Python): 100.00% Match"]
+  SNAP["Atomic Lock: Pre-Decision Telemetry Snapshot"] --> DEC["Evaluate M2-Mob / SRL & Shield"]
+  DEC --> LOG["Write 21-Col DtnmaAuditReport"]
+  LOG --> REPLAY["Verify ARI Traceability: 100.00% Match"]

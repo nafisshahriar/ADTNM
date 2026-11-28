@@ -1,57 +1,104 @@
 # ADTNM — Autonomic Delay/Disruption-Tolerant Network Management
 
-[![Status](https://img.shields.io/badge/status-work%20in%20progress-amber)](#project-status--license)
+[![Status: Work in Progress](https://img.shields.io/badge/status-work%20in%20progress-orange)](#project-status--license)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Simulator](https://img.shields.io/badge/simulator-The%20ONE%20(Java%2017%2B)-green)](#quick-start)
+[![Simulator](https://img.shields.io/badge/simulator-The%20ONE%20(Java%2017%2B)-green)](#prerequisites)
 [![Standards](https://img.shields.io/badge/design-RFC%209675%20%26%207575--inspired-informational)](#documentation--study-guide)
 
-> [!NOTE] Active Research — Work in Progress
-> **ADTNM** is an active research framework released under the **[MIT License](LICENSE)**. APIs, scenario configurations, and optional learning modules are still evolving as evaluation continues.
+> [!NOTE] Work in Progress
+> **ADTNM** is an active **work-in-progress** research framework released under the **[MIT License](LICENSE)** by **S. M. Nafis Shahriar, Pulok Akibuzzaman, Nusrat Rahman Aurna, and Md Safin Rahman**.
 
-**ADTNM** is an architectural management layer for Delay/Disruption-Tolerant Networks (DTNs) built on top of **The ONE** (*Opportunistic Network Environment*) simulator. Inspired by **IETF RFC 9675** (*DTN Management Architecture*, Nov 2024) and **IRTF RFC 7575** (*Autonomic Networking*, June 2015), it cleanly separates *network management* from *bundle forwarding*:
+**ADTNM** (*Autonomic Delay/Disruption-Tolerant Network Management*) is an architectural management layer built atop **The ONE** (*Opportunistic Network Environment*) simulator. Inspired by **IETF RFC 9675** (*DTN Management Architecture*, Nov 2024) and **IRTF RFC 7575** (*Autonomic Networking*, June 2015), it cleanly decouples *network management* from *bundle forwarding*:
 
-- Existing DTN protocols (**Spray-and-Wait**, **PRoPHETv2**, **MaxProp**, and **Epidemic**) operate unchanged as **managed substrates** via lightweight adapters implementing `DtnmaManagedRouter`.
-- A shared local engine (`DtnmaAgent`) executes an onboard closed loop combining **11 Externally Defined Data (`EDD`)** telemetry indicators, declarative **State-Based Rules (`SRL`)**, discrete **`P0–P7` Control Profiles**, a deterministic **Safety Shield (`S1–S4`)**, delayed delivery `ACK` copy pruning, and **Application Resource Identifier (`ARI`)** audit traces.
-- An optional Constrained MDP (`CMDP`) reinforcement learning module (`ShieldedCmdpRlAgent`) is included as an **experimental baseline**; in current evaluations, compact declarative rules remain the stronger and recommended controller.
+- Existing DTN protocols (**Spray-and-Wait**, **PRoPHETv2**, **MaxProp**, and **Epidemic**) operate unchanged as **managed substrates** via thin adapters implementing `DtnmaManagedRouter`.
+- A shared local engine (`DtnmaAgent`) executes an onboard closed loop combining **15 Externally Defined Data (`EDD`)** telemetry indicators (queue occupancy/drift, battery state of charge and time-to-depletion, node density/speed, neighbor queue gradients, contact duration, inter-contact time, and encounter rate), a closed-form **Mobility-Aware Distributed Resource Coordinator (`M2_MOBILITY_AWARE`)**, declarative **State-Based Rules (`SRL`)**, discrete **`P0–P7` Control Profiles**, a deterministic **Safety Shield (`S1–S4`)**, compact `16 B` peer contact beacons, `4 B` delayed delivery `ACK` copy pruning, and deterministic **Application Resource Identifier (`ARI`)** audit traces.
 
 ![ADTNM Four-Plane Architecture](docs/study-guide/figures/svg/fig01_architecture_overview.svg)
 
 ---
 
-## Why Separate Management from Routing?
+## Prerequisites
 
-In sparse vehicular and emergency mobile DTNs, centralized Manager commands arrive orders of magnitude too slowly (`minutes to hours`) to contain sudden `5`-minute traffic bursts, while unconstrained flooding exhausts node batteries. Rather than inventing yet another routing heuristic, ADTNM wraps diverse routers with uniform, auditable resource governance:
-
-- **Tier 1 (Critical Protection & ACK Pruning):** Five-tier $O(N)$ priority queue protection and compact `4 B` delivery acknowledgments preserve critical bundles without changing underlying forwarding paths.
-- **Tier 2 (Ingress & Energy Autonomy):** Node-local `SRL` rules and hard safety limits (`S1–S4`) shed non-critical load during congestion surges and energy depletion before cascading blackouts occur.
-- **Full Auditability:** Every local decision captures an atomic telemetry snapshot and emits a deterministic `ARI` audit record suitable for post-hoc verification.
+- **Java JDK `17+`** (`javac`, `java`)
+- **Python `3.10+`** (with `numpy`, `scipy`, `matplotlib` for analysis/plotting; add `markdown`, `pygments`, `reportlab`, `PyMuPDF`, `Pillow` only if rebuilding the Study Guide HTML/PDFs)
+- **Git** and a sibling copy of **The ONE Simulator** (`https://github.com/akeranen/the-one.git`)
 
 ---
 
-## Quick Start
+## Installation & Setup
 
-Requires **Java JDK `17+`**, **Python `3.10+`**, and a sibling copy of **The ONE** (`../the-one`).
+ADTNM lives beside a standard `the-one` directory and deploys its sources, scenarios, and analysis tools cleanly via `install.py` (or `install.bat` on Windows / `install.sh` on Linux & macOS):
 
 ```powershell
-# 1. Sync ADTNM sources/scenarios into The ONE and compile (adds ADTNM classes to ../the-one/target)
+# 1. Clone ADTNM and The ONE as sibling directories
+git clone https://github.com/nafisshahriar/ADTNM.git
+git clone https://github.com/akeranen/the-one.git the-one
+
+# 2. Deploy ADTNM into The ONE and compile all Java sources + adapters
+cd ADTNM
+$env:PYTHONDONTWRITEBYTECODE = '1'   # Optional on Windows: avoid __pycache__ folders
 python install.py --one-dir ..\the-one
+```
 
-# 2. Run the Java unit test suite (from The ONE or with target on classpath)
+Useful installer options:
+- `python install.py --one-dir ..\the-one --dry-run` — preview what would be copied without modifying files.
+- `python install.py --one-dir ..\the-one --status` — check file synchronization status between `ADTNM` and `the-one`.
+- `python install.py --one-dir ..\the-one --no-compile` — copy files without invoking `javac`.
+
+*(On Windows you may also run `install.bat --one-dir ..\the-one`; on Linux/macOS run `bash install.sh --one-dir ../the-one`.)*
+
+---
+
+## Usage & Verification Workflow
+
+### 1. Run the Java Unit Test Suite
+
+```powershell
+javac -cp "..\the-one\target;..\the-one\lib\*" -d ..\the-one\target tests\DtnmaUnitTests.java
 java -cp "..\the-one\target;..\the-one\lib\*" DtnmaUnitTests
+```
 
-# 3. Run the 1-hour smoke scenario headless
+Expected summary: `Results: 21 passed, 0 failed.` (covering Safety Shield `S1–S4` invariants, `16 B` beacons, binary token conservation, zero buffer overshoot, `Managed*` protection, first-class mobility EDDs, `M2_MOBILITY_AWARE` & ablations, and `DtnmaMetricsReport`).
+
+### 2. Run the 1-Hour Benchmark Scenario (`scenario_dtnma.txt`)
+
+```powershell
 Push-Location ..\the-one
 java -Xmx512m -cp "target;lib\*" core.DTNSim -b 1 scenarios\scenario_dtnma.txt
 Pop-Location
 ```
 
-*(Set `$env:PYTHONDONTWRITEBYTECODE = '1'` on Windows PowerShell if you want to prevent Python `__pycache__` folders.)*
+*(To launch The ONE Swing GUI instead of headless batch mode, omit `-b 1`.)*
+
+Inspect generated outputs under `..\the-one\reports\`:
+- `Dtnma_Benchmark_MessageStatsReport.txt` — standard bundle delivery, latency, and overhead summary.
+- `Dtnma_Benchmark_DtnmaMetricsReport.txt` — critical vs. bulk delivery, survival, battery energy, mobility contact stats, control overhead (`beacon_overhead_bytes`, `ack_overhead_bytes`), CPU (`decision_cpu_us_mean`), and profile shares (`profile_0_frac`..`profile_7_frac`).
+- `Dtnma_Benchmark_DtnmaAuditReport.txt` — per-decision 21-column `ARI` provenance trace ending with `traceable_ari_ratio: 1.0000`.
+- `Dtnma_Benchmark_DtnmaRecoveryTimelineReport.txt` — unsmoothed `300 s`-binned fleet survival, battery SoC, and rolling delivery trajectories.
+
+### 3. Validate & Run Multi-Mobility Campaigns
+
+```powershell
+# Pre-run structural check + 10s smoke validation across all mob_*.txt scenarios
+python tools\validate_mobility_scenarios.py --one-dir ..\the-one --smoke
+
+# Run the confirmatory multi-mobility suite (use --dry-run first to inspect commands)
+python tools\run_mobility_campaign.py --one-dir ..\the-one --dry-run
+python tools\run_mobility_campaign.py --one-dir ..\the-one
+
+# Run the strictly isolated exploratory sensitivity sweeps (range 20/55m, energy 0.75x/1.35x)
+python tools\run_sensitivity_exploratory.py --one-dir ..\the-one
+
+# Aggregate results with Holm-Bonferroni statistics and generate figures/tables
+python tools\analyze_mobility_campaign.py --reports-dir ..\the-one\reports\mobility_suite --out-dir .\analysis_out
+python tools\plot_mobility_figures.py --summary-json .\analysis_out\summary_stats.json --out-dir .\repro_figures
+```
 
 ---
 
-## Declarative Policy Example (`SRL`)
+## Declarative Policy Configuration (`SRL` & Parameters)
 
-Operators customize congestion and energy responses in plain `.txt` rule files (`scenarios/rules_vdtn.txt`) without recompiling Java:
+In `M2_AUTONOMIC_SRL` mode (`scenarios/rules_vdtn.txt`), operators customize congestion and battery responses without recompiling Java:
 
 ```text
 RULE: ARI://DTNMA/SRL/VDTN_BUFFER_CRITICAL | PRIORITY: 100 | DESC: Emergency hold on low battery or critical pressure
@@ -67,49 +114,32 @@ IF: (EDD_QUEUE_RATIO >= 0.0)
 THEN: CTRL_SET_SPRAY_QUOTA(6); CTRL_SET_INGRESS_MODE(0); CTRL_SET_TELEMETRY_INTERVAL(60); CTRL_SET_BACKPRESSURE(true)
 ```
 
+Global controller defaults, Shield limits, and mobility horizons (`mobHorizonSec`, `mobTtdWarnRatio`, `mobTtdCritRatio`, `mobShortContactSec`, `mobLongIctSec`) are configured in [`scenarios/dtnma_params_default.txt`](scenarios/dtnma_params_default.txt) and [`DtnmaConfig.java`](src/routing/DtnmaConfig.java).
+
 ---
 
-## Research Takeaways at a Glance
+## Repository Structure
 
-- **Cross-Router Critical Preservation:** Across held-out evaluations spanning urban overload, energy blackout, and benign vehicular operation, all four managed substrates (`SprayAndWait`, `PRoPHETv2`, `MaxProp`, and `Epidemic`) achieved zero lost unique critical bundles.
-- **Policy Over Routing Churn:** Tier decomposition shows that survival improvements stem chiefly from ingress and energy governance (`Tier 2`), leaving native forwarding logic untouched.
-- **Local Reactivity vs. Remote Delay:** Sub-minute local rules eliminate post-burst stale throttling caused by delayed Manager downlinks during short surges while sustaining benign throughput; however, trade-offs remain between aggressive remote throttling and unconstrained stress survival, and the experimental RL planner lags behind deterministic rules.
-- **Deterministic Traceability:** Decision-time atomic snapshots deliver `100%` deterministic offline audit replay across full multi-seed campaigns.
+| Path | Contents |
+|---|---|
+| [`src/routing/`](src/routing/) | Core engine (`DtnmaAgent`, `DtnmaConfig`, `EddTelemetrySampler`, `DtnmaSafetyShield`, `DtnmaRuleParser`, `PredicateExpression`, `ControlAction`, `StateBasedRule`, `DtnmaContactBeacon`, `DtnmaPolicyProfile`), controllers (`DtnmaM2MobRouter` + `EnergyOnly`/`BufferOnly`/`ReplicaOnly` ablations, `DtnmaM2SrlRouter`, `DtnmaM1RemoteRouter`, `DtnmaM0eEnergy25Router`, `DtnmaM0bStaticRouter`), cross-substrate adapters (`DtnmaManagedRouter`, `Managed{SprayAndWait,ProphetV2,MaxProp,Epidemic}Router`), and `CongestionAwareSnWRouter` baseline |
+| [`src/report/`](src/report/) | `DtnmaMetricsReport`, `DtnmaAuditReport`, `DtnmaRecoveryTimelineReport`, `DtnmaDecisionReport` |
+| [`scenarios/`](scenarios/) | Smoke (`scenario_dtnma.txt`), defaults (`dtnma_params_default.txt`), rules (`rules_vdtn.txt`), confirmatory multi-mobility (`mob_*.txt`), and sensitivity (`sens_*.txt`) scenarios |
+| [`tests/`](tests/) | Self-contained Java verification suite ([`DtnmaUnitTests.java`](tests/DtnmaUnitTests.java)) |
+| [`tools/`](tools/) | Pre-run validation, campaign runners, Holm-Bonferroni analyzers, and figure/table builders ([`tools/README.md`](tools/README.md)) |
+| [`figures/`](figures/) | Rendered empirical comparison, ablation, cross-substrate, scalability, and sensitivity figures |
+| [`docs/study-guide/`](docs/study-guide/) | Complete newcomer-to-researcher study guide (Markdown chapters, diagrams, offline HTML, and PDFs) |
 
 ---
 
 ## Documentation & Study Guide
 
-For a gentle zero-background introduction, full mechanism specifications, scenario setup details, evaluation methodology, and reproducible tutorials, start with the Study Guide:
-
-| Resource | Audience | Location |
-|---|---|---|
-| **Interactive HTML Study Guide** | Everyone (Offline Reader + Search) | [`docs/study-guide/build/ADTNM_Study_Guide.html`](docs/study-guide/build/ADTNM_Study_Guide.html) |
-| **Markdown Study Guide Hub** | Readers & Developers | [`docs/study-guide/index.md`](docs/study-guide/index.md) |
-| **Complete Handbook (PDF)** | Deep Technical Reference | [`docs/study-guide/build/ADTNM_Study_Guide.pdf`](docs/study-guide/build/ADTNM_Study_Guide.pdf) |
-| **Executive Summary (2-Page PDF)** | Supervisors & Reviewers | [`docs/study-guide/build/ADTNM_Executive_Summary.pdf`](docs/study-guide/build/ADTNM_Executive_Summary.pdf) |
-| **One-Page Cheat Sheet (PDF)** | Day-to-Day Development | [`docs/study-guide/build/ADTNM_One_Page_Cheatsheet.pdf`](docs/study-guide/build/ADTNM_One_Page_Cheatsheet.pdf) |
-
-### Repository Layout
-
-- `src/routing/` — Core management engine (`DtnmaAgent`, `EddTelemetrySampler`, `DtnmaSafetyShield`, `DtnmaRuleParser`, `ShieldedCmdpRlAgent`) and thin `Managed*Router` substrate adapters
-- `src/report/` — Metrics, audit logging (`ARI`), health timelines, and decision summary reporters
-- `scenarios/` — Smoke, multi-timescale stress/benign, cross-router Comparison A, and declarative rule files
-- `tools/` — Parallel batch runner, audit replay verifier, and statistical analysis scripts
-- `tests/` — Standalone Java unit test suite (`DtnmaUnitTests.java`)
-- `docs/study-guide/` — Academic Study Guide, figures, tutorials, worked examples, HTML/PDF builds
+- **[Comprehensive Study Guide (Index)](docs/study-guide/index.md)** — Zero-background DTN primer, full mechanism encyclopedia (`04a`–`04d`), codebase tour & validation details, complete empirical findings (`06_evaluation_and_results.md`), tutorials, worked examples, RFC alignment, glossary, and reference tables.
+- **Prebuilt Offline Readers:** [`ADTNM_Study_Guide.html`](docs/study-guide/build/ADTNM_Study_Guide.html) | [`ADTNM_Study_Guide.pdf`](docs/study-guide/build/ADTNM_Study_Guide.pdf) | [`ADTNM_Executive_Summary.pdf`](docs/study-guide/build/ADTNM_Executive_Summary.pdf) | [`ADTNM_One_Page_Cheatsheet.pdf`](docs/study-guide/build/ADTNM_One_Page_Cheatsheet.pdf).
+- **[Claims Ledger](CLAIMS_LEDGER.md)** & **[Seed Governance](SEED_ROLES.md)** — Predeclared Holm-Bonferroni hypothesis families and seed isolation protocol.
 
 ---
 
 ## Project Status & License
 
-This codebase is **work in progress** provided under the **[MIT License](LICENSE)** (`Copyright (c) 2026 Nafis Shahriar`). Upstream simulator components in `the-one` remain subject to their original GPLv3 license.
-
-```bibtex
-@misc{shahriar2026adtnm,
-  author = {Nafis Shahriar},
-  title  = {ADTNM: Autonomic Management Architecture for Delay/Disruption-Tolerant Networks},
-  year   = {2026},
-  note   = {Work in progress; MIT License; RFC 9675 and RFC 7575-inspired framework in The ONE}
-}
-```
+This codebase is an active **work in progress**. Released under the **[MIT License](LICENSE)** — Copyright (c) 2026 **S. M. Nafis Shahriar, Pulok Akibuzzaman, Nusrat Rahman Aurna, Md Safin Rahman**.

@@ -220,8 +220,8 @@ def get_tracked_file_pairs(repo_dir: Path, one_dir: Path):
     for f in (repo_dir / "scenarios").glob("*.txt"):
         pairs.append((Path("scenarios") / f.name, f, one_dir / "scenarios" / f.name))
 
-    # Runner & Evaluation scripts
-    for name in ["parallel_batch_runner.py", "evaluate_autonomic_framework.py"]:
+    # Runner & Validation scripts
+    for name in ["parallel_batch_runner.py", "validate_mobility_scenarios.py", "run_mobility_campaign.py"]:
         rf = repo_dir / "tools" / name
         if rf.is_file():
             pairs.append((Path(name), rf, one_dir / name))
@@ -467,9 +467,9 @@ def main():
     log_success(f"Deployed {c_scenarios} scenario and rule configuration files.")
 
     # 4. Deploy Tools
-    log_info("Deploying runner and evaluation scripts...")
+    log_info("Deploying runner and validation scripts...")
     tools_src = repo_dir / "tools"
-    for tool_name in ["parallel_batch_runner.py", "evaluate_autonomic_framework.py"]:
+    for tool_name in ["parallel_batch_runner.py", "validate_mobility_scenarios.py", "run_mobility_campaign.py"]:
         tf = tools_src / tool_name
         if tf.is_file():
             link_or_copy(tf, target_dir / tool_name, mode=args.mode)
@@ -493,7 +493,7 @@ def main():
     print("  - Check sync status:     python install.py --status")
     print("  - Pull edits to repo:    python install.py --sync-back")
     print("  - Run simulation:        ./one.bat -b 1 scenarios/scenario_dtnma.txt")
-    print("  - Evaluate framework:    python evaluate_autonomic_framework.py --one-dir .")
+    print("  - Validate scenarios:    python tools/validate_mobility_scenarios.py --one-dir . --smoke")
     print("=" * 72 + "\n")
 
 if __name__ == "__main__":

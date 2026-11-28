@@ -1,0 +1,221 @@
+# ====================================================================
+# ENVIRONMENT 3 (POST-DISASTER RELIEF — ZERO-SHOT TRANSFER):
+# 4 partitioned shelter camps (ClusterMovement) + 18 EMT responder
+# patrols (RandomWaypoint) + 6 supply convoys (MapRouteMovement on
+# data/cluster/ferryroute.wkt) + 6 command managers under scarce
+# batteries (2000-3000 J) and elevated critical triage traffic.
+# ====================================================================
+
+Scenario.name = Env3_Disaster_%%Group.router%%_%%MovementModel.rngSeed%%
+Scenario.simulateConnections = true
+Scenario.updateInterval = 0.5
+Scenario.endTime = 28800
+Scenario.nrofHostGroups = 7
+
+btInterface.type = SimpleBroadcastInterface
+btInterface.transmitSpeed = 250k
+btInterface.transmitRange = 45
+
+convoyInterface.type = SimpleBroadcastInterface
+convoyInterface.transmitSpeed = 2M
+convoyInterface.transmitRange = 120
+
+Group.movementModel = ClusterMovement
+Group.router = [SprayAndWaitRouter; CongestionAwareSnWRouter; DtnmaM0bStaticRouter; DtnmaM0eEnergy25Router; DtnmaM1RemoteRouter; DtnmaM2SrlRouter; DtnmaM2MobEnergyOnlyRouter; DtnmaM2MobBufferOnlyRouter; DtnmaM2MobReplicaOnlyRouter; DtnmaM2MobRouter]
+Group.bufferSize = 10M
+Group.waitTime = 10, 60
+Group.nrofInterfaces = 1
+Group.interface1 = btInterface
+Group.speed = 0.5, 1.5
+Group.msgTtl = 300
+Group.rulesFile = scenarios/rules_vdtn.txt
+
+Group.initialEnergy = 2000, 3000
+Group.scanEnergy = 0.05
+Group.scanResponseEnergy = 0.02
+Group.transmitEnergy = 0.90
+Group.energyWarmup = 0
+
+DtnmaRouter.configFile = scenarios/dtnma_params_default.txt
+DtnmaRouter.staticQuota = 6
+DtnmaRouter.staticIngressMode = 0
+DtnmaRouter.staticBackpressure = true
+DtnmaRouter.densityAdaptiveBeacons = true
+DtnmaRouter.ackFeedbackEnabled = true
+DtnmaRouter.rulesFile = scenarios/rules_vdtn.txt
+
+SprayAndWaitRouter.nrofCopies = 6
+SprayAndWaitRouter.binaryMode = true
+ProphetRouter.secondsInTimeUnit = 30
+
+# Rescue Camps 1..4 (96 hosts: 0..95)
+Group1.groupID = camp1_
+Group1.nrofHosts = 24
+Group1.clusterCenter = 100, 100
+Group1.clusterRange = 90
+
+Group2.groupID = camp2_
+Group2.nrofHosts = 24
+Group2.clusterCenter = 600, 100
+Group2.clusterRange = 90
+
+Group3.groupID = camp3_
+Group3.nrofHosts = 24
+Group3.clusterCenter = 350, 533
+Group3.clusterRange = 90
+
+Group4.groupID = camp4_
+Group4.nrofHosts = 24
+Group4.movementModel = ClusterMovement
+Group4.bufferSize = 10M
+Group4.speed = 0.5, 1.5
+Group4.waitTime = 10, 60
+Group4.nrofInterfaces = 1
+Group4.interface1 = btInterface
+Group4.clusterCenter = 820, 480
+Group4.clusterRange = 90
+
+# Mobile EMT Patrols (18 hosts: 96..113)
+Group5.groupID = emt_
+Group5.nrofHosts = 18
+Group5.movementModel = RandomWaypoint
+Group5.bufferSize = 10M
+Group5.nrofInterfaces = 1
+Group5.interface1 = btInterface
+Group5.speed = 2.0, 6.0
+Group5.waitTime = 15, 45
+
+# Relief Supply Convoys (6 hosts: 114..119)
+Group6.groupID = convoy_
+Group6.nrofHosts = 6
+Group6.bufferSize = 30M
+Group6.movementModel = MapRouteMovement
+Group6.routeFile = data/cluster/ferryroute.wkt
+Group6.routeType = 1
+Group6.waitTime = 30, 90
+Group6.speed = 5.0, 9.0
+Group6.nrofInterfaces = 2
+Group6.interface1 = btInterface
+Group6.interface2 = convoyInterface
+
+# Incident Command Managers (6 hosts: 120..125)
+Group7.groupID = mgr_
+Group7.nrofHosts = 6
+Group7.bufferSize = 100M
+Group7.clusterCenter = 350, 280
+Group7.clusterRange = 60
+Group7.waitTime = 120, 300
+Group7.speed = 0.5, 1.0
+Group7.initialEnergy = 500000
+Group7.scanEnergy = 0.0
+Group7.scanResponseEnergy = 0.0
+Group7.transmitEnergy = 0.0
+
+Events.nrof = 10
+
+# Background Shelter Media/Coordination Traffic
+Events1.class = MessageEventGenerator
+Events1.interval = 14, 20
+Events1.size = 400k, 700k
+Events1.hosts = 0, 120
+Events1.tohosts = 0, 120
+Events1.prefix = BULK_
+
+# Uplink Routine Status Telemetry
+Events2.class = MessageEventGenerator
+Events2.interval = 25, 40
+Events2.size = 32k, 64k
+Events2.hosts = 0, 120
+Events2.tohosts = 120, 126
+Events2.prefix = TELEM_NORM_
+
+# Elevated Critical Triage Alerts
+Events3.class = MessageEventGenerator
+Events3.interval = 45, 70
+Events3.size = 16k, 32k
+Events3.hosts = 0, 120
+Events3.tohosts = 120, 126
+Events3.prefix = CRITICAL_FAULT_
+
+# Event A: Acute triage wave 1 (t = 3600..4200)
+Events4.class = MessageEventGenerator
+Events4.interval = 2, 3
+Events4.size = 500k, 900k
+Events4.hosts = 0, 120
+Events4.tohosts = 0, 120
+Events4.time = 3600, 4200
+Events4.prefix = BULK_TRIAGE1_
+
+# Event B: Mid-run convoy bottleneck burst (t = 7200..9000)
+Events5.class = MessageEventGenerator
+Events5.interval = 2, 4
+Events5.size = 500k, 900k
+Events5.hosts = 0, 120
+Events5.tohosts = 0, 120
+Events5.time = 7200, 9000
+Events5.prefix = BULK_SHOCK_
+
+# Event C: Sustained aftershock relief shift (t = 14400..18000)
+Events6.class = MessageEventGenerator
+Events6.interval = 4, 6
+Events6.size = 500k, 800k
+Events6.hosts = 0, 120
+Events6.tohosts = 0, 120
+Events6.time = 14400, 18000
+Events6.prefix = BULK_AFTERSHOCK_
+
+# Remote Manager Downlink Waves
+Events7.class = OneToEachMessageGenerator
+Events7.interval = 1, 1
+Events7.size = 4k, 4k
+Events7.hosts = 120, 121
+Events7.tohosts = 0, 120
+Events7.time = 3600, 3730
+Events7.prefix = CTRL_UPDATE_THROTTLE_W1_
+
+Events8.class = OneToEachMessageGenerator
+Events8.interval = 1, 1
+Events8.size = 4k, 4k
+Events8.hosts = 120, 121
+Events8.tohosts = 0, 120
+Events8.time = 4200, 4330
+Events8.prefix = CTRL_UPDATE_NOMINAL_W1_
+
+Events9.class = OneToEachMessageGenerator
+Events9.interval = 1, 1
+Events9.size = 4k, 4k
+Events9.hosts = 120, 121
+Events9.tohosts = 0, 120
+Events9.time = 14400, 14530
+Events9.prefix = CTRL_UPDATE_THROTTLE_W2_
+
+Events10.class = OneToEachMessageGenerator
+Events10.interval = 1, 1
+Events10.size = 4k, 4k
+Events10.hosts = 120, 121
+Events10.tohosts = 0, 120
+Events10.time = 18000, 18130
+Events10.prefix = CTRL_UPDATE_NOMINAL_W2_
+
+MovementModel.rngSeed = [8101; 8111; 8117; 8123; 8147; 8161; 8167; 8171; 8179; 8191; 8209; 8219; 8221; 8231; 8233; 8237; 8243; 8263; 8269]
+MovementModel.worldSize = 1000, 1000
+MovementModel.warmup = 600
+
+MapBasedMovement.nrofMapFiles = 2
+MapBasedMovement.mapFile1 = data/cluster/ferryroute.wkt
+MapBasedMovement.mapFile2 = data/cluster/origin.wkt
+
+Optimization.cellSizeMult = 5
+Optimization.randomizeUpdateOrder = true
+
+Report.nrofReports = 4
+Report.warmup = 0
+Report.reportDir = reports/mobility_suite/env3_disaster_relief
+Report.report1 = DtnmaMetricsReport
+Report.report2 = DtnmaRecoveryTimelineReport
+Report.report3 = DtnmaAuditReport
+Report.report4 = MessageStatsReport
+DtnmaMetricsReport.eventA = 3600, 4200
+DtnmaMetricsReport.eventB = 7200, 9000
+DtnmaMetricsReport.eventC = 14400, 18000
+DtnmaMetricsReport.eventHorizon = 3600

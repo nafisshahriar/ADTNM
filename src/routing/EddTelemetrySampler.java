@@ -3,22 +3,26 @@
  * Samples strongly-typed Externally Defined Data (EDD) across physical, link,
  * energy, and mobility subsystems conforming to RFC 9675 / RFC 7575.
  *
- * Hardened for Phase 1:
- * - EWMA smoothing for Queue Drift and Node Speed (eliminates burst spikes).
+ * Hardened telemetry sampler:
+ * - EWMA smoothing for Queue Drift, Node Speed, Energy Drain, and Mobility EDDs.
  * - Decentralized local-only & contact-handshake neighbor sensing via DtnmaContactBeacon.
- * - Normalized [0, 1] state vector export for Shielded CMDP RL.
  */
 package routing;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import core.Connection;
 import core.Coord;
 import core.DTNHost;
+import core.Settings;
 import core.SimClock;
+import core.SimScenario;
 
 public class EddTelemetrySampler {
 
@@ -34,10 +38,16 @@ public class EddTelemetrySampler {
     public static final String EDD_NEIGHBOR_MIN_QUEUE = "EDD_NEIGHBOR_MIN_QUEUE";
     public static final String EDD_NEIGHBOR_QUEUE_GRAD = "EDD_NEIGHBOR_QUEUE_GRAD";
     public static final String EDD_DEST_PROB = "EDD_DEST_PROB";
+    public static final String EDD_ENCOUNTER_RATE = "EDD_ENCOUNTER_RATE";
+    public static final String EDD_CONTACT_DURATION_MEAN = "EDD_CONTACT_DURATION_MEAN";
+    public static final String EDD_INTER_CONTACT_TIME = "EDD_INTER_CONTACT_TIME";
+    public static final String EDD_ENERGY_TTD_RATIO = "EDD_ENERGY_TTD_RATIO";
 
     // EWMA Smoothing Constants
     private static final double ALPHA_DRIFT = 0.30;
     private static final double ALPHA_SPEED = 0.25;
+    private static final double ALPHA_DRAIN = 0.20;
+    private static final double ALPHA_MOBILITY = 0.30;
 
     // PRoPHET Predictability Constants (RFC 6693)
     public static final double P_INIT = 0.75;
@@ -61,9 +71,18 @@ public class EddTelemetrySampler {
     private double lastEnergySoc = 1.0;
     private double energyDrainRate = 0.0;
 
-    // Contact Density Sliding Window Tracking
+    // Contact Density & First-Class Mobility Lifecycle Tracking
     private static final double DENSITY_WINDOW_SEC = 300.0; // 5-minute sliding window
     private Map<Integer, Double> contactTimestamps;
+    private Map<Integer, Double> activeContactStarts;
+    private List<Double> recentEncounterStarts;
+    private double encounterRatePerMin = 0.0;
+    private double contactDurationMeanSec = 20.0;
+    private double interContactTimeSec = 60.0;
+    private double lastAnyContactTime = 0.0;
+    private boolean hadCompletedContact = false;
+    private boolean hadInterContactGap = false;
+    private double cachedScenarioEndTime = -1.0;
 
     // PRoPHET Delivery Predictability Table
     private Map<DTNHost, Double> preds;
@@ -73,6 +92,8 @@ public class EddTelemetrySampler {
         this.host = host;
         this.router = router;
         this.contactTimestamps = new HashMap<Integer, Double>();
+        this.activeContactStarts = new HashMap<Integer, Double>();
+        this.recentEncounterStarts = new ArrayList<Double>();
         this.preds = new HashMap<DTNHost, Double>();
         this.lastAgeUpdate = SimClock.getTime();
         if (host != null && host.getLocation() != null) {
@@ -91,14 +112,50 @@ public class EddTelemetrySampler {
     }
 
     /**
-     * Records a contact encounter for sliding-window density computation and PRoPHET updates.
+     * Records a contact encounter for sliding-window density, ICT/encounter-rate estimation, and PRoPHET updates.
      */
     public void recordContact(DTNHost peer) {
         if (peer != null) {
-            contactTimestamps.put(peer.getAddress(), SimClock.getTime());
+            double now = SimClock.getTime();
+            int addr = peer.getAddress();
+            contactTimestamps.put(addr, now);
+            boolean wasDisconnected = activeContactStarts.isEmpty();
+            if (!activeContactStarts.containsKey(addr)) {
+                activeContactStarts.put(addr, now);
+                recentEncounterStarts.add(now);
+            }
+            if (wasDisconnected && lastAnyContactTime > 0.0 && (now - lastAnyContactTime) > 0.5) {
+                double rawIct = now - lastAnyContactTime;
+                if (!hadInterContactGap) {
+                    this.interContactTimeSec = rawIct;
+                    this.hadInterContactGap = true;
+                } else {
+                    this.interContactTimeSec = ALPHA_MOBILITY * rawIct + (1.0 - ALPHA_MOBILITY) * this.interContactTimeSec;
+                }
+            }
+            this.lastAnyContactTime = now;
             updateDeliveryPredFor(peer);
             updateTransitivePreds(peer);
         }
+    }
+
+    /**
+     * Records link teardown to maintain EWMA contact duration and silent gap timing.
+     */
+    public void recordContactEnd(DTNHost peer) {
+        if (peer == null) return;
+        double now = SimClock.getTime();
+        Double started = activeContactStarts.remove(peer.getAddress());
+        if (started != null) {
+            double dur = Math.max(0.5, now - started.doubleValue());
+            if (!hadCompletedContact) {
+                this.contactDurationMeanSec = dur;
+                this.hadCompletedContact = true;
+            } else {
+                this.contactDurationMeanSec = ALPHA_MOBILITY * dur + (1.0 - ALPHA_MOBILITY) * this.contactDurationMeanSec;
+            }
+        }
+        this.lastAnyContactTime = now;
     }
 
     /**
@@ -199,10 +256,26 @@ public class EddTelemetrySampler {
                 }
             }
 
-            // 3. Normalized Energy SoC [0, 1] & Drain Rate
+            // 3. Normalized Energy SoC [0, 1] & EWMA-smoothed Drain Rate
             double curEnergySoc = (router != null) ? router.getEnergySoc() : 1.0;
-            this.energyDrainRate = Math.max(0.0, (lastEnergySoc - curEnergySoc) / dt);
+            double rawDrain = Math.max(0.0, (lastEnergySoc - curEnergySoc) / dt);
+            this.energyDrainRate = (this.energyDrainRate <= 0.0)
+                    ? rawDrain
+                    : (ALPHA_DRAIN * rawDrain + (1.0 - ALPHA_DRAIN) * this.energyDrainRate);
             this.lastEnergySoc = curEnergySoc;
+
+            // 4. Sliding-window encounter arrival rate (contacts/min over DENSITY_WINDOW_SEC)
+            double cutoff = now - DENSITY_WINDOW_SEC;
+            Iterator<Double> it = recentEncounterStarts.iterator();
+            while (it.hasNext()) {
+                if (it.next().doubleValue() < cutoff) {
+                    it.remove();
+                } else {
+                    break;
+                }
+            }
+            double instEncRate = recentEncounterStarts.size() / (DENSITY_WINDOW_SEC / 60.0);
+            this.encounterRatePerMin = ALPHA_MOBILITY * instEncRate + (1.0 - ALPHA_MOBILITY) * this.encounterRatePerMin;
 
             this.lastSampleTime = now;
         }
@@ -212,7 +285,7 @@ public class EddTelemetrySampler {
     }
 
     /**
-     * Classifies the node's mobility regime for peer-class Gossip consensus:
+     * Classifies the node's mobility regime for Contact Beacon telemetry:
      * 0 = Pedestrian / Slow (< 2.2 m/s)
      * 1 = Vehicle / Standard (2.2 to 9.5 m/s)
      * 2 = Tram / Fast Backbone (>= 9.5 m/s or multi-interface relay)
@@ -228,22 +301,6 @@ public class EddTelemetrySampler {
             return 0;
         }
         return 1;
-    }
-
-    /**
-     * Exports normalized 6-dimensional local state vector s_t in [0, 1]^6
-     * for the Shielded CMDP Reinforcement Learning Agent.
-     */
-    public double[] getNormalizedStateVector() {
-        double q = router != null ? clamp(router.getBufferOccupancyRatio(), 0.0, 1.0) : 0.0;
-        double dDrift = clamp(0.5 + 5.0 * this.queueDrift, 0.0, 1.0);
-        double dDens = clamp(getNodeDensity() / 15.0, 0.0, 1.0);
-        double dSpeed = clamp(this.nodeSpeed / 15.0, 0.0, 1.0);
-        double minNbrQ = getMinNeighborQueueRatio();
-        double dGrad = clamp(0.5 + 0.5 * (q - minNbrQ), 0.0, 1.0);
-        double dSoc = clamp((router != null) ? router.getEnergySoc() : 1.0, 0.0, 1.0);
-
-        return new double[] { q, dDrift, dDens, dSpeed, dGrad, dSoc };
     }
 
     /**
@@ -280,6 +337,14 @@ public class EddTelemetrySampler {
                 if (p > maxP) maxP = p;
             }
             return maxP;
+        } else if (EDD_ENCOUNTER_RATE.equals(eddName)) {
+            return getEncounterRatePerMin();
+        } else if (EDD_CONTACT_DURATION_MEAN.equals(eddName)) {
+            return getContactDurationMeanSec();
+        } else if (EDD_INTER_CONTACT_TIME.equals(eddName)) {
+            return getEffectiveInterContactTimeSec();
+        } else if (EDD_ENERGY_TTD_RATIO.equals(eddName)) {
+            return getEnergyTtdRatio(0.0);
         }
         return 0.0;
     }
@@ -332,6 +397,64 @@ public class EddTelemetrySampler {
 
     public double getQueueDrift() {
         return queueDrift;
+    }
+
+    public double getEncounterRatePerMin() {
+        return encounterRatePerMin;
+    }
+
+    public double getContactDurationMeanSec() {
+        return contactDurationMeanSec;
+    }
+
+    public double getEffectiveInterContactTimeSec() {
+        double now = SimClock.getTime();
+        if (activeContactStarts.isEmpty() && lastAnyContactTime > 0.0) {
+            return Math.max(interContactTimeSec, now - lastAnyContactTime);
+        }
+        return interContactTimeSec;
+    }
+
+    public double getEnergyDrainRate() {
+        return energyDrainRate;
+    }
+
+    private double resolveScenarioEndTime() {
+        if (cachedScenarioEndTime > 0.0) return cachedScenarioEndTime;
+        try {
+            Settings s = new Settings(SimScenario.SCENARIO_NS);
+            if (s.contains(SimScenario.END_TIME_S)) {
+                cachedScenarioEndTime = s.getDouble(SimScenario.END_TIME_S);
+                return cachedScenarioEndTime;
+            }
+        } catch (Exception ignored) {
+        }
+        cachedScenarioEndTime = 43200.0;
+        return cachedScenarioEndTime;
+    }
+
+    public double getEnergyTtdRatio(double configuredHorizonSec) {
+        double soc = (router != null) ? clamp(router.getEnergySoc(), 0.0, 1.0) : 1.0;
+        double remHorizon;
+        if (configuredHorizonSec > 0.0) {
+            remHorizon = configuredHorizonSec;
+        } else {
+            double endT = resolveScenarioEndTime();
+            remHorizon = Math.max(600.0, endT - SimClock.getTime());
+        }
+        if (this.energyDrainRate <= 1e-8) {
+            return 2.0;
+        }
+        double ttdSec = soc / this.energyDrainRate;
+        return clamp(ttdSec / Math.max(1.0, remHorizon), 0.0, 2.0);
+    }
+
+    public long estimateStateBytes() {
+        return 240L
+                + 32L * (contactTimestamps != null ? contactTimestamps.size() : 0)
+                + 24L * (activeContactStarts != null ? activeContactStarts.size() : 0)
+                + 16L * (recentEncounterStarts != null ? recentEncounterStarts.size() : 0)
+                + 40L * (preds != null ? preds.size() : 0);
     }
 
     private static double clamp(double val, double min, double max) {

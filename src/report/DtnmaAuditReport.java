@@ -38,10 +38,10 @@ public class DtnmaAuditReport extends Report implements UpdateListener {
         super();
         init();
         writeLineTracked("# ====================================================================");
-        writeLineTracked("# RFC 9675 DTNMA + SHIELDED CMDP RL EXPLAINABILITY AUDIT LOG");
+        writeLineTracked("# RFC 9675 DTNMA + MOBILITY-AWARE AUTONOMIC EXPLAINABILITY AUDIT LOG");
         writeLineTracked("# Decision-time EDD state snapshot + SafeMask + Causal ARI for Replay");
         writeLineTracked("# ====================================================================");
-        writeLineTracked("# SimTime\tDecisionTime\tNodeID\tMode\tQ\tCritQ\tdQ\tDensity\tSpeed\tSoC\tActiveConn\tCtrlVer\tShieldEnergyMin\tShieldWarnCritQ\tProposedAct\tRlFallbackAct\tExecutedAct\tShieldStatus\tSafeMask\tActiveRuleARI\tCausalExplanation");
+        writeLineTracked("# SimTime\tDecisionTime\tNodeID\tMode\tQ\tCritQ\tdQ\tDensity\tSpeed\tSoC\tActiveConn\tCtrlVer\tShieldEnergyMin\tShieldWarnCritQ\tProposedAct\tFallbackAct\tExecutedAct\tShieldStatus\tSafeMask\tActiveRuleARI\tCausalExplanation");
     }
 
     @Override
@@ -87,11 +87,9 @@ public class DtnmaAuditReport extends Report implements UpdateListener {
                 }
                 this.auditedHosts.add(host.getAddress());
 
-                String mode = (router.getEffectiveManagementMode() == DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL)
-                        ? router.getIntelligenceMode().name()
-                        : router.getEffectiveManagementMode().name();
+                String mode = router.getEffectiveManagementMode().name();
                 String propAct = DtnmaPolicyProfile.get(router.getLastProposedProfile()).getName();
-                String fbAct = DtnmaPolicyProfile.get(router.getLastRlFallbackProfile()).getName();
+                String fbAct = DtnmaPolicyProfile.get(router.getLastFallbackProfile()).getName();
                 String execAct = DtnmaPolicyProfile.get(router.getLastExecutedProfile()).getName();
                 String shieldStatus = router.isLastShieldIntervened() ? "OVERRIDE" : "PASS";
                 String maskStr = formatMaskBits(router.getLastSafeMaskBits());

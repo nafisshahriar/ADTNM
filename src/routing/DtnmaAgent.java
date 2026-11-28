@@ -4,8 +4,8 @@
  *
  * Extracted from monolithic DtnmaRouter so any stock DTN router (Spray-and-Wait,
  * PRoPHETv2, MaxProp, Epidemic) can own an identical management plane by
- * composition and run unmodified declarative SRL rule files, Safety Shield
- * invariants, Shielded CMDP RL, Delayed ACK pruning, and Density-Adaptive Gossip.
+ * composition and run declarative SRL rule files, hard Safety Shield
+ * invariants, Mobility-Aware distributed coordination, and Delayed ACK pruning.
  */
 package routing;
 
@@ -26,44 +26,23 @@ import core.SimClock;
 
 public class DtnmaAgent {
 
-    private static final int MAX_FWD_CREDIT_CACHE = 256;
-
-    private static final class ForwardedCreditRecord {
-        final double[] stateVec;
-        final int actionIndex;
-        final double forwardTime;
-
-        ForwardedCreditRecord(double[] stateVec, int actionIndex, double forwardTime) {
-            this.stateVec = stateVec;
-            this.actionIndex = actionIndex;
-            this.forwardTime = forwardTime;
-        }
-    }
-
     // Owning router contract
     private final DtnmaManagedRouter owner;
 
     // Configuration & Modes
     protected DtnmaConfig config;
-    protected DtnmaRouter.IntelligenceMode intelligenceMode = DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL;
-    protected boolean gossipEnabled = true;
     protected boolean ackFeedbackEnabled = true;
-    protected double rlEpochInterval = 15.0;
-    protected long scenarioRngSeed = 0L;
 
     // DTNMA Subsystems (per-host isolated)
     private EddTelemetrySampler eddSampler;
     private List<StateBasedRule> ruleDatabase;
     private DtnmaSafetyShield safetyShield;
-    private ShieldedCmdpRlAgent rlAgent;
 
-    // Decentralized Contact Beacons & Gossip State
+    // Decentralized Contact Beacons
     private Map<Integer, DtnmaContactBeacon> neighborBeacons;
-    private Map<Integer, Double> gossipLastExchange;
 
-    // Optional Delayed Delivery Receipt (ACK) Caches (LRU bounded)
+    // Optional Delayed Delivery Receipt (ACK) Cache (LRU bounded)
     private Map<String, Boolean> deliveredAckSet;
-    private Map<String, ForwardedCreditRecord> forwardedCreditMap;
 
     // Audit & Explainability State
     private String activeRuleAri = "ARI://DTNMA/SRL/BOOTSTRAP";
@@ -71,7 +50,7 @@ public class DtnmaAgent {
     private int activeRegime = DtnmaRouter.REGIME_SPARSE_NOMINAL;
     private int lastProposedProfile = 4;
     private int lastExecutedProfile = 4;
-    private int lastRlFallbackProfile = 4;
+    private int lastFallbackProfile = 4;
     private int lastSafeMaskBits = 0xFF;
     private boolean lastShieldIntervened = false;
     private String shieldTriggerAri = "ARI://DTNMA/SHIELD/PASS";
@@ -101,7 +80,7 @@ public class DtnmaAgent {
     private double lastDecisionShieldEnergyMin = 0.20;
     private double lastDecisionShieldWarnCritQ = 0.35;
 
-    // Dynamic Policy Knobs (actuated by SRL / Shield / RL / Downlink)
+    // Dynamic Policy Knobs (actuated by SRL / Shield / Mobility-Aware / Downlink)
     private int currentSprayQuota = DtnmaRouter.DEFAULT_SPARSE_QUOTA;
     private int currentIngressMode = DtnmaRouter.INGRESS_ACCEPT_ALL;
     private double routineTelemetryInterval = 60.0;
@@ -114,29 +93,12 @@ public class DtnmaAgent {
     private double cachedCritOcc = 0.0;
     private boolean critOccDirty = true;
 
-    // Autonomy & RL Epoch Timing
+    // Autonomy Evaluation Timing
     private double lastAutonomyEvalTime = -1.0;
     private double autonomyEvalInterval = 1.0;
-    private double lastRlEpochTime = -1.0;
-    private double[] prevEpochState = null;
-    private int prevExecutedAction = -1;
-
-    // Local Epoch Telemetry Accumulators
-    private int epochDirectDeliveries = 0;
-    private int epochAckDeliveries = 0;
-    private double epochPredProgressSum = 0.0;
-    private double epochCoverageGain = 0.0;
-    private int epochRedundantForwards = 0;
-    private int epochRelayTransfers = 0;
-    private int epochBulkDrops = 0;
-    private int epochCritDrops = 0;
-    private int epochStarvationCount = 0;
-    private int epochActivityCount = 0;
 
     // Protocol Control Overhead Breakdown
     private long beaconOverheadBytes = 0;
-    private long gossipExchanges = 0;
-    private long gossipOverheadBytes = 0;
     private long ackExchanges = 0;
     private long ackOverheadBytes = 0;
 
@@ -158,21 +120,9 @@ public class DtnmaAgent {
         loadRulesFromFile(rFile);
 
         this.config = DtnmaConfig.load(s, dtnmaSettings);
-        this.intelligenceMode = this.config.intelligenceMode;
-        this.gossipEnabled = this.config.gossipEnabled;
         this.ackFeedbackEnabled = this.config.ackFeedbackEnabled;
-        this.rlEpochInterval = this.config.rlEpochInterval;
 
         applyConfiguredBaselineKnobs();
-
-        Settings mmSettings = new Settings("MovementModel");
-        if (mmSettings.contains("rngSeed")) {
-            try {
-                this.scenarioRngSeed = mmSettings.getInt("rngSeed");
-            } catch (Exception ignored) {
-                this.scenarioRngSeed = 0L;
-            }
-        }
     }
 
     /**
@@ -182,11 +132,7 @@ public class DtnmaAgent {
         this.owner = owner;
         this.ruleDatabase = new ArrayList<StateBasedRule>(proto.ruleDatabase);
         this.config = new DtnmaConfig(proto.config);
-        this.intelligenceMode = proto.intelligenceMode;
-        this.gossipEnabled = proto.gossipEnabled;
         this.ackFeedbackEnabled = proto.ackFeedbackEnabled;
-        this.rlEpochInterval = proto.rlEpochInterval;
-        this.scenarioRngSeed = proto.scenarioRngSeed;
 
         this.currentSprayQuota = proto.currentSprayQuota;
         this.currentIngressMode = proto.currentIngressMode;
@@ -201,14 +147,12 @@ public class DtnmaAgent {
         this.lastExplanation = proto.lastExplanation;
 
         this.neighborBeacons = new HashMap<Integer, DtnmaContactBeacon>();
-        this.gossipLastExchange = new HashMap<Integer, Double>();
         this.deliveredAckSet = createLruMap(this.config.ackCacheSize);
-        this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
         this.profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
         this.maxBufferOccupancy = 0.0;
         this.criticalCreationRejected = 0L;
         this.bulkCreationRejected = 0L;
-        this.lastRlFallbackProfile = 4;
+        this.lastFallbackProfile = 4;
         this.lastSafeMaskBits = 0xFF;
         this.appliedControlVersion = 0;
         this.lastControlAdoptTime = -1.0;
@@ -222,8 +166,7 @@ public class DtnmaAgent {
         if (this.config == null) return;
         DtnmaConfig.ManagementMode eff = this.config.getEffectiveManagementMode();
         if (eff == DtnmaConfig.ManagementMode.M0_STATIC
-                || eff == DtnmaConfig.ManagementMode.M1_REMOTE_ONLY
-                || this.config.openLoopAuditOnly) {
+                || eff == DtnmaConfig.ManagementMode.M1_REMOTE_ONLY) {
             this.currentSprayQuota = this.config.staticQuota;
             this.currentIngressMode = this.config.staticIngressMode;
             this.backpressureEnabled = this.config.staticBackpressure;
@@ -231,7 +174,7 @@ public class DtnmaAgent {
                     this.currentSprayQuota, this.currentIngressMode, this.backpressureEnabled);
             this.lastProposedProfile = mapped;
             this.lastExecutedProfile = mapped;
-            this.lastRlFallbackProfile = mapped;
+            this.lastFallbackProfile = mapped;
         }
     }
 
@@ -250,9 +193,7 @@ public class DtnmaAgent {
         if (host == null) return;
         if (this.config == null) this.config = new DtnmaConfig();
         if (this.neighborBeacons == null) this.neighborBeacons = new HashMap<Integer, DtnmaContactBeacon>();
-        if (this.gossipLastExchange == null) this.gossipLastExchange = new HashMap<Integer, Double>();
         if (this.deliveredAckSet == null) this.deliveredAckSet = createLruMap(this.config.ackCacheSize);
-        if (this.forwardedCreditMap == null) this.forwardedCreditMap = createLruMap(MAX_FWD_CREDIT_CACHE);
         if (this.profileExecCounts == null) this.profileExecCounts = new long[DtnmaPolicyProfile.NUM_ACTIONS];
 
         if (this.eddSampler == null) {
@@ -260,9 +201,6 @@ public class DtnmaAgent {
         }
         if (this.safetyShield == null) {
             this.safetyShield = new DtnmaSafetyShield(this.config);
-        }
-        if (this.rlAgent == null) {
-            this.rlAgent = new ShieldedCmdpRlAgent(this.scenarioRngSeed, host.getAddress(), this.config);
         }
     }
 
@@ -344,7 +282,7 @@ public class DtnmaAgent {
     }
 
     public DtnmaConfig.ManagementMode getEffectiveManagementMode() {
-        return config != null ? config.getEffectiveManagementMode() : DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL;
+        return config != null ? config.getEffectiveManagementMode() : DtnmaConfig.ManagementMode.M2_MOBILITY_AWARE;
     }
 
     public DtnmaConfig.InterventionTier getInterventionTier() {
@@ -363,35 +301,22 @@ public class DtnmaAgent {
     }
 
     public boolean isSafetyLockEnforced() {
-        boolean modeProtects = (intelligenceMode != DtnmaRouter.IntelligenceMode.UNSHIELDED_RL);
-        return modeProtects && (config == null || config.enablePriorityProtection);
+        return config == null || config.enablePriorityProtection;
     }
 
     public boolean isAutonomicControlActive() {
         DtnmaConfig.ManagementMode eff = getEffectiveManagementMode();
-        return (eff == DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL
-                || eff == DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL)
-                && (config == null || !config.openLoopAuditOnly);
-    }
-
-    public boolean isEpidemicControlPriority(Message m) {
-        return config != null && config.epidemicControlFlooding && DtnmaRouter.isDownlinkControlMessage(m);
+        return eff == DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL
+                || eff == DtnmaConfig.ManagementMode.M2_MOBILITY_AWARE;
     }
 
     public boolean isAcked(Message m) {
         return ackFeedbackEnabled && deliveredAckSet != null && m != null && deliveredAckSet.containsKey(m.getId());
     }
 
-    public double getEffectiveGossipCooldown() {
-        if (config == null) return 120.0;
-        if (!config.densityAdaptiveGossip) return config.gossipCooldown;
-        double dens = (eddSampler != null) ? eddSampler.getNodeDensity() : 0.0;
-        return config.gossipCooldown * Math.max(1.0, dens / 4.0);
-    }
-
     public double getEffectiveBeaconRefreshInterval() {
         if (config == null) return 5.0;
-        if (!config.densityAdaptiveGossip) return config.beaconRefreshInterval;
+        if (!config.densityAdaptiveBeacons) return config.beaconRefreshInterval;
         double dens = (eddSampler != null) ? eddSampler.getNodeDensity() : 0.0;
         return config.beaconRefreshInterval * Math.max(1.0, dens / 5.0);
     }
@@ -401,12 +326,17 @@ public class DtnmaAgent {
     // ------------------------------------------------------------------
 
     public void onChangedConnection(Connection con) {
-        if (con == null || !con.isUp()) return;
-        ensureSubsystemsInitialized();
+        if (con == null) return;
         DTNHost host = owner.getManagedHost();
         if (host == null) return;
-
         DTNHost other = con.getOtherNode(host);
+        if (!con.isUp()) {
+            if (this.eddSampler != null && other != null) {
+                this.eddSampler.recordContactEnd(other);
+            }
+            return;
+        }
+        ensureSubsystemsInitialized();
         if (other == null) return;
 
         if (this.eddSampler != null) {
@@ -428,49 +358,11 @@ public class DtnmaAgent {
                 this.beaconOverheadBytes += DtnmaContactBeacon.BEACON_SIZE_BYTES;
             }
 
-            // 2. Density-adaptive Same-Mobility-Class Symmetric Gossip (M3 RL only)
-            DtnmaConfig.ManagementMode myMode = getEffectiveManagementMode();
-            DtnmaConfig.ManagementMode peerMode = peer.getEffectiveManagementMode();
-            if (this.gossipEnabled && this.intelligenceMode != DtnmaRouter.IntelligenceMode.STATIC_RULES
-                    && myMode == DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL
-                    && peer.gossipEnabled && peer.intelligenceMode != DtnmaRouter.IntelligenceMode.STATIC_RULES
-                    && peerMode == DtnmaConfig.ManagementMode.M3_AUTONOMIC_RL
-                    && host.getAddress() < other.getAddress()) {
-                int myAddr = host.getAddress();
-                int peerAddr = other.getAddress();
-                double myCooldown = getEffectiveGossipCooldown();
-                double peerCooldown = peer.getEffectiveGossipCooldown();
-                Double lastSelf = this.gossipLastExchange.get(peerAddr);
-                Double lastPeer = peer.gossipLastExchange.get(myAddr);
-                boolean readySelf = (lastSelf == null || (now - lastSelf) >= myCooldown);
-                boolean readyPeer = (lastPeer == null || (now - lastPeer) >= peerCooldown);
-                if (readySelf && readyPeer && this.rlAgent != null && peer.rlAgent != null
-                        && this.eddSampler != null && peer.eddSampler != null) {
-                    int myClass = this.eddSampler.getMobilityClass();
-                    int peerClass = peer.eddSampler.getMobilityClass();
-                    if (ShieldedCmdpRlAgent.gossipMergeSymmetric(
-                            this.rlAgent, peer.rlAgent, myClass, peerClass)) {
-                        this.gossipLastExchange.put(peerAddr, now);
-                        this.gossipExchanges++;
-                        this.gossipOverheadBytes += DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES;
-                        peer.recordSymGossipExchange(myAddr, now);
-                    }
-                }
-            }
-
-            // 3. Delayed Delivery Receipt (ACK) Exchange
+            // 2. Delayed Delivery Receipt (ACK) Exchange
             if (this.ackFeedbackEnabled) {
                 exchangeDeliveryAcks(peer);
             }
         }
-    }
-
-    private void recordSymGossipExchange(int peerAddr, double now) {
-        if (this.gossipLastExchange != null) {
-            this.gossipLastExchange.put(peerAddr, now);
-        }
-        this.gossipExchanges++;
-        this.gossipOverheadBytes += DtnmaContactBeacon.GOSSIP_PAYLOAD_BYTES;
     }
 
     public DtnmaContactBeacon getBeaconSnapshot(double now) {
@@ -524,17 +416,6 @@ public class DtnmaAgent {
             if (!this.deliveredAckSet.containsKey(msgId)) {
                 this.deliveredAckSet.put(msgId, Boolean.TRUE);
                 learned++;
-                if (this.forwardedCreditMap != null) {
-                    ForwardedCreditRecord rec = this.forwardedCreditMap.remove(msgId);
-                    if (rec != null) {
-                        this.epochAckDeliveries++;
-                        this.epochActivityCount++;
-                        if (this.rlAgent != null && this.intelligenceMode != DtnmaRouter.IntelligenceMode.STATIC_RULES) {
-                            this.rlAgent.applyDelayedAckCredit(
-                                    rec.stateVec, rec.actionIndex, this.config.rewardAckDelivery);
-                        }
-                    }
-                }
                 if (owner.hasManagedMessage(msgId) && !owner.isManagedSending(msgId)) {
                     owner.deleteManagedMessage(msgId, false);
                 }
@@ -550,7 +431,7 @@ public class DtnmaAgent {
     }
 
     /**
-     * Evaluates autonomic control loop (SRL / Shield / RL) with nanosecond CPU timing.
+     * Evaluates autonomic control loop (SRL / Shield / Mobility-Aware) with nanosecond CPU timing.
      */
     public void onBeforeUpdate(double now) {
         ensureSubsystemsInitialized();
@@ -584,13 +465,13 @@ public class DtnmaAgent {
 
         DtnmaConfig.ManagementMode effMode = getEffectiveManagementMode();
 
-        // M0: Static configuration only (no SRL or RL evaluation)
+        // M0: Static configuration only (no SRL or mobility-aware evaluation)
         if (effMode == DtnmaConfig.ManagementMode.M0_STATIC) {
             int mapped = mapQuotaToProfileIndex(
                     this.currentSprayQuota, this.currentIngressMode, this.backpressureEnabled);
             this.lastProposedProfile = mapped;
             this.lastExecutedProfile = mapped;
-            this.lastRlFallbackProfile = mapped;
+            this.lastFallbackProfile = mapped;
             this.lastSafeMaskBits = 0xFF;
             this.lastShieldIntervened = false;
             this.activeRuleAri = "ARI://DTNMA/M0/STATIC";
@@ -602,13 +483,13 @@ public class DtnmaAgent {
             return;
         }
 
-        // M1: Remote-only control hold (no local SRL reflex or RL)
+        // M1: Remote-only control hold (no local SRL reflex)
         if (effMode == DtnmaConfig.ManagementMode.M1_REMOTE_ONLY) {
             int mapped = mapQuotaToProfileIndex(
                     this.currentSprayQuota, this.currentIngressMode, this.backpressureEnabled);
             this.lastProposedProfile = mapped;
             this.lastExecutedProfile = mapped;
-            this.lastRlFallbackProfile = mapped;
+            this.lastFallbackProfile = mapped;
             this.lastSafeMaskBits = 0xFF;
             this.lastShieldIntervened = false;
             this.activeRuleAri = "NONE".equals(lastControlAri) ? "ARI://DTNMA/M1/REMOTE_INIT" : lastControlAri;
@@ -621,115 +502,14 @@ public class DtnmaAgent {
             return;
         }
 
-        // M2: Autonomic Local SRLs (+ optional Remote Rules)
-        if (effMode == DtnmaConfig.ManagementMode.M2_AUTONOMIC_SRL
-                || intelligenceMode == DtnmaRouter.IntelligenceMode.STATIC_RULES) {
-            evaluateStaticRulesOnly();
-            if (config.openLoopAuditOnly) {
-                applyConfiguredBaselineKnobs();
-            }
+        // M2-Mob: Joint Mobility-Aware Online Resource Controller (within hard SafetyShield)
+        if (effMode == DtnmaConfig.ManagementMode.M2_MOBILITY_AWARE) {
+            evaluateMobilityAwareController();
             return;
         }
 
-        // M3: Autonomic Shielded CMDP RL (+ Fast 1.0 Hz Safety Guard + SRL invariants)
-        boolean runRlEpoch = (lastRlEpochTime < 0 || (now - lastRlEpochTime) >= rlEpochInterval);
-
-        if (runRlEpoch) {
-            double[] currentState = eddSampler.getNormalizedStateVector();
-            StringBuilder maskReason = new StringBuilder();
-            boolean[] nextMask = safetyShield.computeSafeActionMask(eddSampler, ruleDatabase, maskReason);
-            boolean useMask = (intelligenceMode != DtnmaRouter.IntelligenceMode.UNSHIELDED_RL);
-            double qNow = owner.getBufferOccupancyRatio();
-            this.lastSafeMaskBits = useMask ? encodeMaskBits(nextMask) : 0xFF;
-
-            if (prevEpochState != null && prevExecutedAction >= 0 && rlAgent != null) {
-                if (epochActivityCount > 0 || qNow >= 0.75 || prevExecutedAction <= 1) {
-                    double reward = computeLocalEpochReward(qNow);
-                    double cost = computeLocalEpochCost(qNow);
-                    rlAgent.updateTransition(prevEpochState, prevExecutedAction, reward, cost,
-                            currentState, nextMask, useMask, now);
-                }
-                resetEpochAccumulators();
-            }
-
-            int proposed = (rlAgent != null) ? rlAgent.proposeRawAction(currentState, now) : 4;
-            int greedy = (rlAgent != null) ? rlAgent.proposeGreedyAction(currentState) : proposed;
-            int executed = proposed;
-            int fallbackUsed = proposed;
-            boolean intervened = false;
-            String trigAri = "ARI://DTNMA/RL/DIRECT";
-            String expl = "RL_PROPOSED(" + DtnmaPolicyProfile.get(proposed).getName() + ")";
-
-            if (intelligenceMode != DtnmaRouter.IntelligenceMode.UNSHIELDED_RL) {
-                int rlSafeFallback = (rlAgent != null)
-                        ? rlAgent.selectBestSafeAction(currentState, nextMask, now, false)
-                        : 0;
-                fallbackUsed = rlSafeFallback;
-                DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(
-                        proposed, greedy, rlSafeFallback, eddSampler, ruleDatabase);
-                executed = dec.getExecutedAction();
-                intervened = dec.isIntervened();
-                trigAri = intervened ? dec.getTriggerAri() : DtnmaPolicyProfile.get(executed).getAri();
-                expl = dec.getExplanation();
-
-                if (intervened && intelligenceMode == DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL
-                        && rlAgent != null && !config.openLoopAuditOnly) {
-                    rlAgent.applyShieldPenaltyUpdate(currentState, proposed, executed);
-                }
-            }
-
-            this.lastRlFallbackProfile = fallbackUsed;
-            if (!config.openLoopAuditOnly) {
-                applyPolicyProfile(executed);
-            } else {
-                applyConfiguredBaselineKnobs();
-            }
-            if (profileExecCounts != null && executed >= 0 && executed < profileExecCounts.length) {
-                profileExecCounts[executed]++;
-            }
-            updateAuditState(proposed, executed, intervened, trigAri, expl);
-            this.prevEpochState = currentState;
-            this.prevExecutedAction = executed;
-            this.lastRlEpochTime = now;
-        } else if (intelligenceMode != DtnmaRouter.IntelligenceMode.UNSHIELDED_RL && prevExecutedAction >= 0) {
-            StringBuilder maskReason = new StringBuilder();
-            boolean[] safeMask = safetyShield.computeSafeActionMask(eddSampler, ruleDatabase, maskReason);
-            this.lastSafeMaskBits = encodeMaskBits(safeMask);
-            if (!safeMask[prevExecutedAction]) {
-                double[] currentState = eddSampler.getNormalizedStateVector();
-                int greedy = (rlAgent != null) ? rlAgent.proposeGreedyAction(currentState) : prevExecutedAction;
-                int rlSafeFallback = (rlAgent != null)
-                        ? rlAgent.selectBestSafeAction(currentState, safeMask, now, false)
-                        : 0;
-                this.lastRlFallbackProfile = rlSafeFallback;
-                DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(
-                        prevExecutedAction, greedy, rlSafeFallback, eddSampler, ruleDatabase);
-                int safeAct = dec.getExecutedAction();
-                if (intelligenceMode == DtnmaRouter.IntelligenceMode.SHIELDED_CMDP_RL
-                        && rlAgent != null && !config.openLoopAuditOnly) {
-                    rlAgent.applyShieldPenaltyUpdate(currentState, prevExecutedAction, safeAct);
-                }
-                if (!config.openLoopAuditOnly) {
-                    applyPolicyProfile(safeAct);
-                }
-                if (profileExecCounts != null && safeAct >= 0 && safeAct < profileExecCounts.length) {
-                    profileExecCounts[safeAct]++;
-                }
-                updateAuditState(prevExecutedAction, safeAct, true, dec.getTriggerAri(), dec.getExplanation());
-                this.prevExecutedAction = safeAct;
-            } else if (lastShieldIntervened && !DtnmaSafetyShield.isConstrained(safeMask) && rlAgent != null) {
-                double[] currentState = eddSampler.getNormalizedStateVector();
-                int recovered = rlAgent.selectBestSafeAction(currentState, safeMask, now, false);
-                this.lastRlFallbackProfile = recovered;
-                if (!config.openLoopAuditOnly) {
-                    applyPolicyProfile(recovered);
-                }
-                updateAuditState(recovered, recovered, false,
-                        DtnmaPolicyProfile.get(recovered).getAri(),
-                        "SHIELD_RELEASE(" + DtnmaPolicyProfile.get(recovered).getName() + ")");
-                this.prevExecutedAction = recovered;
-            }
-        }
+        // M2: Autonomic Local SRLs (+ optional Remote Rules)
+        evaluateStaticRulesOnly();
     }
 
     private void evaluateStaticRulesOnly() {
@@ -761,7 +541,7 @@ public class DtnmaAgent {
                         this.currentSprayQuota, this.currentIngressMode, this.backpressureEnabled);
                 this.lastProposedProfile = mapped;
                 this.lastExecutedProfile = mapped;
-                this.lastRlFallbackProfile = mapped;
+                this.lastFallbackProfile = mapped;
                 this.lastSafeMaskBits = 0xFF;
                 if (profileExecCounts != null && mapped >= 0 && mapped < profileExecCounts.length) {
                     profileExecCounts[mapped]++;
@@ -769,6 +549,82 @@ public class DtnmaAgent {
                 break;
             }
         }
+    }
+
+    /**
+     * Evaluates closed-form Mobility-Aware Distributed Resource Coordination (M2_MOBILITY_AWARE).
+     * Jointly coordinates energy-horizon throttling, ICT-scaled buffer protection, and contact-duration-scaled replication.
+     */
+    private void evaluateMobilityAwareController() {
+        double q = owner.getBufferOccupancyRatio();
+        double critQ = getCachedCriticalOccupancyRatio();
+        double dq = eddSampler.getQueueDrift();
+        double soc = owner.getEnergySoc();
+        double dens = eddSampler.getNodeDensity();
+        double encRate = eddSampler.getEncounterRatePerMin();
+        double durMean = eddSampler.getContactDurationMeanSec();
+        double ictEff = eddSampler.getEffectiveInterContactTimeSec();
+        double ttdRatio = eddSampler.getEnergyTtdRatio(config != null ? config.mobHorizonSec : 0.0);
+
+        String ab = (config != null && config.mobAblationMode != null) ? config.mobAblationMode : "JOINT";
+        boolean isJoint = "JOINT".equals(ab);
+        boolean useEnergy = isJoint || "ENERGY_ONLY".equals(ab);
+        boolean useBuf = isJoint || "BUFFER_ONLY".equals(ab);
+        boolean useRep = isJoint || "REPLICA_ONLY".equals(ab);
+
+        double energyMin = (config != null) ? config.shieldEnergyMin : 0.20;
+        double critCritQ = (config != null) ? config.shieldCriticalCritQueue : 0.50;
+        double ttdCrit = (config != null) ? config.mobTtdCritRatio : 0.60;
+        double ttdWarn = (config != null) ? config.mobTtdWarnRatio : 1.10;
+        double ttdThrottle = Math.max(ttdCrit + 0.10, ttdWarn - 0.20);
+        double shortDur = (config != null) ? config.mobShortContactSec : 12.0;
+        double longIct = (config != null) ? config.mobLongIctSec : 180.0;
+
+        double ictFrac = Math.min(1.0, Math.max(0.0, ictEff / Math.max(30.0, longIct)));
+        double qThresh = useBuf ? Math.max(0.78, Math.min(0.88, 0.88 - 0.10 * ictFrac)) : 0.88;
+
+        int proposed;
+        String propAri;
+        if (critQ >= critCritQ || soc < energyMin || (useEnergy && soc < 0.45 && ttdRatio < ttdCrit)) {
+            proposed = 0;
+            propAri = "ARI://DTNMA/MOB/ENERGY_CRIT_HOLD";
+        } else if (useEnergy && soc < 0.55 && ttdRatio < ttdThrottle) {
+            proposed = 1;
+            propAri = "ARI://DTNMA/MOB/ENERGY_HORIZON_THROTTLE";
+        } else if ((useBuf && q >= qThresh && dq >= 0.008) || (q >= 0.88 && dq >= 0.008)) {
+            proposed = 1;
+            propAri = "ARI://DTNMA/MOB/ICT_SURGE_THROTTLE";
+        } else if (useEnergy && soc < 0.70 && ttdRatio < ttdWarn) {
+            proposed = 2;
+            propAri = "ARI://DTNMA/MOB/ENERGY_HORIZON_CAP";
+        } else if ((useRep && durMean < shortDur && q >= 0.55) || (q >= 0.75 && dens >= 5.0)) {
+            proposed = 2;
+            propAri = "ARI://DTNMA/MOB/SHORT_CONTACT_CAP";
+        } else if (useRep && durMean >= 25.0 && encRate < 1.5 && q < 0.60 && (!useEnergy || ttdRatio >= 1.25)) {
+            proposed = 5;
+            propAri = "ARI://DTNMA/MOB/SPARSE_LONG_CONTACT_BOOST";
+        } else {
+            proposed = 3;
+            propAri = "ARI://DTNMA/MOB/NOMINAL_BALANCED";
+        }
+
+        DtnmaSafetyShield.ShieldDecision dec = safetyShield.enforce(
+                proposed, 0, eddSampler, ruleDatabase);
+        int executed = dec.getExecutedAction();
+        boolean intervened = dec.isIntervened();
+        this.lastFallbackProfile = executed;
+        this.lastSafeMaskBits = encodeMaskBits(safetyShield.computeSafeActionMask(eddSampler, ruleDatabase, null));
+
+        applyPolicyProfile(executed);
+        if (profileExecCounts != null && executed >= 0 && executed < profileExecCounts.length) {
+            profileExecCounts[executed]++;
+        }
+        String effAri = intervened ? dec.getTriggerAri() : propAri;
+        String expl = String.format(java.util.Locale.US,
+                "MOB[%s](Q=%.2f,SoC=%.2f,TTD=%.2f,Dur=%.1f,ICT=%.1f,Enc=%.2f)->%s",
+                ab, q, soc, ttdRatio, durMean, ictEff, encRate,
+                DtnmaPolicyProfile.get(executed).getName());
+        updateAuditState(proposed, executed, intervened, effAri, expl);
     }
 
     private static int encodeMaskBits(boolean[] mask) {
@@ -817,53 +673,6 @@ public class DtnmaAgent {
         } else {
             this.activeRegime = DtnmaRouter.REGIME_SPARSE_NOMINAL;
         }
-    }
-
-    private double computeLocalEpochReward(double qNow) {
-        double critQ = getCachedCriticalOccupancyRatio();
-        double soc = owner.getEnergySoc();
-        double drift = (eddSampler != null) ? eddSampler.getQueueDrift() : 0.0;
-        boolean localHazard = (soc < config.shieldEnergyMin)
-                || (critQ >= config.shieldWarnCritQueue)
-                || (qNow >= config.shieldSurgeQueue && drift >= config.shieldSurgeDrift);
-
-        double bufPenalty = 0.50 * Math.pow(Math.max(0.0, critQ - 0.20), 2)
-                + 0.25 * Math.pow(Math.max(0.0, qNow - 0.90), 2);
-        double starvePenalty = 0.35 * Math.min(3, epochStarvationCount);
-        if (!localHazard && prevExecutedAction == 0) {
-            starvePenalty += 1.50;
-        } else if (!localHazard && prevExecutedAction == 1) {
-            starvePenalty += 0.45;
-        }
-        int cappedBulkDrops = Math.min(3, epochBulkDrops);
-        return config.rewardPredProgress * epochPredProgressSum
-             + config.rewardCoverageGain * epochCoverageGain
-             - config.penaltyBulkDrop * cappedBulkDrops
-             - 2.5 * epochCritDrops
-             - 0.20 * epochRedundantForwards
-             - config.penaltyRelayCost * epochRelayTransfers
-             - bufPenalty
-             - starvePenalty;
-    }
-
-    private double computeLocalEpochCost(double qNow) {
-        double dropCost = 0.15 * epochBulkDrops + 1.0 * epochCritDrops;
-        double bufCost = 0.80 * Math.max(0.0, qNow - 0.90) / 0.10;
-        double redCost = 0.20 * epochRedundantForwards + 0.01 * epochRelayTransfers;
-        return Math.min(2.0, dropCost + bufCost + redCost);
-    }
-
-    private void resetEpochAccumulators() {
-        this.epochDirectDeliveries = 0;
-        this.epochAckDeliveries = 0;
-        this.epochPredProgressSum = 0.0;
-        this.epochCoverageGain = 0.0;
-        this.epochRedundantForwards = 0;
-        this.epochRelayTransfers = 0;
-        this.epochBulkDrops = 0;
-        this.epochCritDrops = 0;
-        this.epochStarvationCount = 0;
-        this.epochActivityCount = 0;
     }
 
     // ------------------------------------------------------------------
@@ -918,33 +727,15 @@ public class DtnmaAgent {
     }
 
     public void onAfterCreateNewMessage(Message msg, int initialCopies) {
-        boolean isCrit = DtnmaRouter.isCriticalMessage(msg);
-        if (isCrit) {
+        if (DtnmaRouter.isCriticalMessage(msg)) {
             this.critOccDirty = true;
         }
-        double qNow = owner.getBufferOccupancyRatio();
-        if (!isCrit && qNow < 0.72) {
-            this.epochCoverageGain += 0.50 * (1.0 - qNow) * Math.sqrt(Math.max(1, initialCopies));
-        }
-        if (!isCrit && this.ackFeedbackEnabled && this.forwardedCreditMap != null && eddSampler != null) {
-            this.forwardedCreditMap.put(msg.getId(), new ForwardedCreditRecord(
-                    eddSampler.getNormalizedStateVector(), this.lastExecutedProfile, SimClock.getTime()));
-        }
-        this.epochActivityCount++;
-        this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, qNow);
+        this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, owner.getBufferOccupancyRatio());
     }
 
     public void onDeleteMessage(Message m, boolean drop) {
         if (m != null && DtnmaRouter.isCriticalMessage(m)) {
             this.critOccDirty = true;
-        }
-        if (drop && m != null && m.getTtl() > 0) {
-            this.epochActivityCount++;
-            if (DtnmaRouter.isCriticalMessage(m)) {
-                this.epochCritDrops++;
-            } else {
-                this.epochBulkDrops++;
-            }
         }
     }
 
@@ -1031,13 +822,10 @@ public class DtnmaAgent {
         if (DtnmaRouter.isCriticalMessage(m)) {
             this.critOccDirty = true;
         }
-        this.epochActivityCount++;
         Map<String, Boolean> ackMap = this.ackFeedbackEnabled ? this.deliveredAckSet : null;
         DtnmaRouter.clampPostTransferDeficit(owner.getManagedActiveRouter(), m, copiesPropKey, ackMap);
         this.maxBufferOccupancy = Math.max(this.maxBufferOccupancy, owner.getBufferOccupancyRatio());
-        if (DtnmaRouter.isGroupControlMessage(m)) {
-            applyDownlinkControlBundle(m);
-        } else if (m.getTo() == owner.getManagedHost()) {
+        if (m.getTo() == owner.getManagedHost()) {
             if (this.deliveredAckSet != null) {
                 this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
             }
@@ -1049,50 +837,11 @@ public class DtnmaAgent {
 
     public void onTransferDone(Connection con, Message m, String copiesPropKey, int actualSentCopies) {
         if (m == null) return;
-        this.epochActivityCount++;
         DTNHost host = owner.getManagedHost();
         DTNHost recipient = (con != null && host != null) ? con.getOtherNode(host) : null;
 
-        if (m.getTo() == recipient && !DtnmaRouter.isGroupControlMessage(m)) {
-            this.epochDirectDeliveries++;
-            if (this.deliveredAckSet != null) {
-                this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
-            }
-            return;
-        }
-        this.epochRelayTransfers++;
-
-        if (eddSampler != null && recipient != null) {
-            double myPred = eddSampler.getPredFor(m.getTo());
-            double peerPred = 0.0;
-            if (recipient.getRouter() instanceof DtnmaManagedRouter) {
-                DtnmaAgent peerAgent = ((DtnmaManagedRouter) recipient.getRouter()).getDtnmaAgent();
-                if (peerAgent != null && peerAgent.getEddSampler() != null) {
-                    peerPred = peerAgent.getEddSampler().getPredFor(m.getTo());
-                }
-            } else if (recipient.getRouter() instanceof ProphetRouter) {
-                peerPred = ((ProphetRouter) recipient.getRouter()).getPredFor(m.getTo());
-            } else if (recipient.getRouter() instanceof ProphetV2Router) {
-                peerPred = ((ProphetV2Router) recipient.getRouter()).getPredFor(m.getTo());
-            }
-
-            double deltaP = Math.max(0.0, peerPred - myPred);
-            double peerQ = getBeaconNeighborQueueRatio(recipient);
-
-            if (peerQ < 0.92) {
-                this.epochCoverageGain += 0.35 * (1.0 - 0.50 * peerQ) * Math.sqrt(Math.max(1, actualSentCopies));
-            } else if (!DtnmaRouter.isCriticalMessage(m) && deltaP <= 0.02) {
-                this.epochRedundantForwards++;
-            }
-            if (deltaP > 0.05) {
-                this.epochPredProgressSum += deltaP;
-            }
-        }
-
-        if (this.ackFeedbackEnabled && this.forwardedCreditMap != null
-                && !DtnmaRouter.isCriticalMessage(m) && eddSampler != null) {
-            this.forwardedCreditMap.put(m.getId(), new ForwardedCreditRecord(
-                    eddSampler.getNormalizedStateVector(), this.lastExecutedProfile, SimClock.getTime()));
+        if (m.getTo() == recipient && this.deliveredAckSet != null) {
+            this.deliveredAckSet.put(m.getId(), Boolean.TRUE);
         }
     }
 
@@ -1181,20 +930,8 @@ public class DtnmaAgent {
         return true;
     }
 
-    public void recordStarvationCheck(double peerQueueRatio, int toSend, int naturalSplit) {
-        boolean needlessThrottle = (currentIngressMode > DtnmaRouter.INGRESS_ACCEPT_ALL)
-                && getCachedCriticalOccupancyRatio() < config.shieldWarnCritQueue
-                && owner.getEnergySoc() >= config.shieldEnergyMin
-                && (eddSampler == null || eddSampler.getQueueDrift() < config.shieldSurgeDrift);
-        if ((owner.getBufferOccupancyRatio() < 0.65 && peerQueueRatio < 0.65 && toSend < naturalSplit)
-                || (needlessThrottle && toSend < naturalSplit)) {
-            this.epochStarvationCount++;
-            this.epochActivityCount++;
-        }
-    }
-
     // ------------------------------------------------------------------
-    // RFC 9675 In-Band Downlink Manager Control Adoption (M1 / M2 / M3)
+    // RFC 9675 In-Band Downlink Manager Control Adoption (M1 / M2)
     // ------------------------------------------------------------------
 
     public void applyDownlinkControlBundle(Message m) {
@@ -1203,8 +940,7 @@ public class DtnmaAgent {
         double now = SimClock.getTime();
         DtnmaConfig.ManagementMode effMode = getEffectiveManagementMode();
         boolean mutateAllowed = owner.supportsDynamicControlReconfig()
-                && effMode != DtnmaConfig.ManagementMode.M0_STATIC
-                && (config == null || !config.openLoopAuditOnly);
+                && effMode != DtnmaConfig.ManagementMode.M0_STATIC;
 
         if (id.startsWith("CTRL_UPDATE_V1")) {
             if (this.appliedControlVersion < 1 || m.getCreationTime() > this.lastControlCreatedTime) {
@@ -1246,7 +982,7 @@ public class DtnmaAgent {
                     this.lastExplanation = "DOWNLINK_CTRL_ADOPTED(V2:NOMINAL_RECOVERY)";
                 }
             }
-        } else if (id.contains("CTRL_UPDATE_THROTTLE") || id.contains("CTRL_GROUP_THROTTLE")) {
+        } else if (id.contains("CTRL_UPDATE_THROTTLE")) {
             if (m.getCreationTime() > this.lastControlCreatedTime || this.appliedControlVersion < 1) {
                 this.appliedControlVersion++;
                 this.lastControlAdoptTime = now;
@@ -1271,7 +1007,7 @@ public class DtnmaAgent {
                     this.lastExplanation = "DOWNLINK_CTRL_ADOPTED(THROTTLE)";
                 }
             }
-        } else if (id.contains("CTRL_UPDATE_NOMINAL") || id.contains("CTRL_GROUP_NOMINAL")) {
+        } else if (id.contains("CTRL_UPDATE_NOMINAL")) {
             if (m.getCreationTime() > this.lastControlCreatedTime) {
                 this.appliedControlVersion++;
                 this.lastControlAdoptTime = now;
@@ -1345,18 +1081,13 @@ public class DtnmaAgent {
     public String getActiveRuleAri() { return this.activeRuleAri; }
     public String getLastExplanation() { return this.lastExplanation; }
     public EddTelemetrySampler getEddSampler() { return this.eddSampler; }
-    public DtnmaRouter.IntelligenceMode getIntelligenceMode() { return intelligenceMode; }
-    public boolean isGossipEnabled() { return gossipEnabled; }
     public boolean isAckFeedbackEnabled() { return ackFeedbackEnabled; }
     public int getLastProposedProfile() { return lastProposedProfile; }
     public int getLastExecutedProfile() { return lastExecutedProfile; }
     public boolean isLastShieldIntervened() { return lastShieldIntervened; }
     public String getShieldTriggerAri() { return shieldTriggerAri; }
     public DtnmaSafetyShield getSafetyShield() { return safetyShield; }
-    public ShieldedCmdpRlAgent getRlAgent() { return rlAgent; }
     public long getBeaconOverheadBytes() { return beaconOverheadBytes; }
-    public long getGossipExchanges() { return gossipExchanges; }
-    public long getGossipOverheadBytes() { return gossipOverheadBytes; }
     public long getAckExchanges() { return ackExchanges; }
     public long getAckOverheadBytes() { return ackOverheadBytes; }
     public double getMaxBufferOccupancy() { return maxBufferOccupancy; }
@@ -1372,7 +1103,7 @@ public class DtnmaAgent {
     public double getCurrentFocusMinPred() { return currentFocusMinPred; }
     public double getCurrentFocusMargin() { return currentFocusMargin; }
     public List<StateBasedRule> getRuleDatabase() { return Collections.unmodifiableList(ruleDatabase); }
-    public int getLastRlFallbackProfile() { return lastRlFallbackProfile; }
+    public int getLastFallbackProfile() { return lastFallbackProfile; }
     public int getLastSafeMaskBits() { return lastSafeMaskBits; }
     public int getAppliedControlVersion() { return appliedControlVersion; }
     public double getLastControlAdoptTime() { return lastControlAdoptTime; }
@@ -1392,4 +1123,12 @@ public class DtnmaAgent {
     public double getLastDecisionShieldWarnCritQ() { return lastDecisionShieldWarnCritQ; }
     public DtnmaConfig getConfig() { return config; }
     public Map<String, Boolean> getDeliveredAckSet() { return deliveredAckSet; }
+
+    public long estimateAgentStateBytes() {
+        long fixedBytes = 512L;
+        long beaconBytes = 48L * (neighborBeacons != null ? neighborBeacons.size() : 0);
+        long ackBytes = 24L * (deliveredAckSet != null ? deliveredAckSet.size() : 0);
+        long samplerBytes = (eddSampler != null) ? eddSampler.estimateStateBytes() : 0L;
+        return fixedBytes + beaconBytes + ackBytes + samplerBytes;
+    }
 }

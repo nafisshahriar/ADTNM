@@ -41,8 +41,8 @@ Notice the key distinction: **routing algorithms answer *"who should carry this 
 
 In an ordinary cloud cluster (`SNMP` / `RESTCONF`), a central **Manager** continuously polls switches every few seconds and pushes fixes immediately. In a DTN, trying to manage nodes solely from a central ground station hits a physics wall:
 
-1. **Timescale Mismatch (Stale Control Loops):** When a remote Manager sits behind opportunistic relays, its control bundle takes **hundreds to thousands of seconds** to reach agents (e.g., `T50 = 483 s` even with group-flooded dissemination in exploratory controls, or `T90 = 3336 s` with unicast in confirmatory stress). By the time a *"slow down!"* command arrives for a `300 s` traffic surge (`Event A`), the surge is over — causing **stale throttling** during calm traffic.
-2. **Control Storm Overhead:** Flooding individual unicast control updates across a dense wireless DTN consumes massive radio energy (`118.7 kJ` in `M1-F` vs `2.58 kJ` in `M2`), killing nodes via management traffic itself.
+1. **Timescale Mismatch (Stale Control Loops):** When a remote Manager sits behind opportunistic relays, its unicast `CTRL_UPDATE_*` control bundles take **hundreds to thousands of seconds** to traverse multi-hop trajectories. In `Env 1` Stress (`n = 19`), `M1-Remote` suffers a collapse during sustained `Event C` overload (`50.07%` Event C bulk vs `67.22%` under local `M2-Mob`, `-17.14 pp`), because delayed throttle/recovery waves arrive well out of phase with local queue surges.
+2. **Energy & Critical-Safety Trade-Offs:** Conversely, unconstrained flooding (`Epidemic` drops to `6.05/126` survivors and `23.76%` critical delivery) or unmanaged encounter heuristics (`CongestionAwareSnW` preserves `126/126` nodes but loses `58.63` unique critical faults, `71.06%` CritDel) fail to coordinate battery longevity with critical alert protection.
 
 Two IETF/IRTF specifications define the conceptual solution ADTNM adapts:
 - **IETF RFC 9675 (*Delay-Tolerant Networking Management Architecture*, Birrane et al., Nov 2024):** Replaces synchronous polling with asynchronous **Agents** executing local **State-Based Rules (SRL)** parameterized by locally observable **Externally Defined Data (EDD)**, emitting compact **Application Resource Identifier (ARI)** audit records and executing **Controls** autonomously when disconnected from a **Manager**.
@@ -61,19 +61,18 @@ Two IETF/IRTF specifications define the conceptual solution ADTNM adapts:
 2. **Every `0.1 s` Simulation Tick:**
    - Nodes advance along roads/trajectories; radios discover neighbors within range and open/close `Connection` objects.
    - Active transfers advance byte-by-byte at `transmitSpeed`; completed transfers fire `MessageListener` hooks and energy consumption debits (`scanEnergy`, `transmitEnergy`, `receiveEnergy`).
-   - Each node's router executes `update()` (`DtnmaRouter.update()` delegates to `DtnmaAgent.update(...)`), which runs fast per-tick protection + `30 s`-interval autonomic decision epochs.
-3. **End-of-Simulation Reporting:** Registered `Report` classes flush raw `.txt` files into the scenario's `reports/` folder (`MessageStatsReport`, `DtnmaRlMetricsReport`, `DtnmaAuditReport`, `DtnmaRecoveryTimelineReport`).
+   - Each node's router executes `update()` (`DtnmaRouter.update()` delegates to `DtnmaAgent.onBeforeUpdate(...)`), which runs fast per-tick protection + autonomic decision epochs.
+3. **End-of-Simulation Reporting:** Registered `Report` classes flush raw `.txt` files into the scenario's `reports/` folder (`MessageStatsReport`, `DtnmaMetricsReport`, `DtnmaAuditReport`, `DtnmaRecoveryTimelineReport`).
 
 ---
 
-## 5. Five Real Failure Modes That Motivated ADTNM
+## 5. Core Challenges That Motivated ADTNM
 
-Every mechanism in Chapters `04a`–`04d` traces directly to five failure behaviors observed directly in simulator experiments:
+Every mechanism in Chapters `04a`–`04d` traces directly to four failure behaviors observed in simulator experiments:
 
-1. **Silent Critical Drop Under Congestion:** Without explicit priority classification and reserve enforcement, critical `CRIT_` fault alerts are dropped FIFO/cost-wise alongside bulk traffic (`Epidemic` loses `100%` of unique critical messages in `vDTN Overload`).
-2. **Stale Redundant Replicas Starving Live Traffic:** Once a critical bundle reaches its destination, redundant copies still in relay buffers keep displacing fresh un-ACKed payloads until explicit delivery acknowledgments (`ACKs`) prune them.
-3. **Battery Blackout Collapse:** Aggressive routers (`Epidemic`, `MaxProp`) transmit bulk relays until `SoC -> 0`, knocking out `87%–89%` of the fleet (`14–16/126` survivors) and severing connectivity for future critical dispatches.
-4. **Delayed Remote Stale-Throttling:** Unicast/flooded Manager rules (`M1-U`, `M1-F`) suffer delayed delivery, throttling nodes after short surges recover and crippling benign/post-event throughput (`389.1` stale throttle node-s/N in Event A).
-5. **Unsafe Exploration & Voluntary Hold Bugs:** Early unshielded RL policies (`M3` predecessors) explored aggressive `HIGH_SPRAY_OPEN` during dense storms (`41%` critical occupancy buildup) or stalled on `P0` when mis-rewarded — fixed via hard shield `S1–S4` and reward recalibration (`M3` still remains optional and secondary to `M2`).
+1. **Silent Critical Drop Under Congestion:** Without explicit priority classification and reserve enforcement, critical `CRIT_` fault alerts are dropped alongside bulk traffic under buffer contention.
+2. **Stale Redundant Replicas Starving Live Traffic:** Once a critical bundle reaches its destination, redundant copies still in relay buffers keep displacing fresh un-ACKed payloads until explicit delivery acknowledgments (`4 B` `ACK`s) prune them.
+3. **Battery Blackout Collapse:** Aggressive routers (`Epidemic`, `MaxProp`) transmit bulk relays until `SoC -> 0`, knocking out nodes and severing connectivity unless energy-horizon or local battery guards engage cleanly.
+4. **Delayed Remote Stale-Throttling & Rigid Thresholds:** Remote Manager commands arrive too slowly for transient bursts, while rigid static thresholds fail to adapt to contact duration and inter-contact intervals — motivating closed-form `M2_MOBILITY_AWARE` coordination inside hard `S1–S4` Shield limits.
 
 ![The ONE Swing GUI Live Capture at t=360s on Helsinki Map](../screenshots/annotated/01_the_one_gui_annotated.png)

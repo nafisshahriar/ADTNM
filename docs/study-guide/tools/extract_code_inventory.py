@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Programmatic read-only inventory extractor for the ADTNM repository.
 
-Scans every file in ADTNM (at commit d4a159f) to record:
+Scans every file in ADTNM to record:
 - exact file sizes, total lines, non-comment LOC
 - Java packages, imports, classes/interfaces/enums, methods + exact line ranges
 - DtnmaConfig parameters, defaults, clamp ranges
 - EddTelemetrySampler EDD constants, ControlAction types, DtnmaPolicyProfile presets
 - Declarative rule files (rules_*.txt) and ONE scenarios (*.txt)
-- Python scripts & functions, DtnmaUnitTests cases, patches, and CI files
+- Python scripts & functions, DtnmaUnitTests cases, and CI files
 
 Writes:
 - docs/study-guide/data/code_inventory.json
@@ -27,11 +27,8 @@ GUIDE_DIR = SCRIPT_DIR.parent
 ADTNM_ROOT = GUIDE_DIR.parent.parent
 DATA_DIR = GUIDE_DIR / "data"
 
-DOC_DATE = "2026-11-25"
-FREEZE_TAG = "v1.0-freeze"
-FREEZE_TAG_OBJ = "c820752c27683f070ec72664c68bb0112a91d1b8"
-FREEZE_COMMIT = "ca5d9acccf6b4f606df5a586ecb80d4842179e4d"
-EXP_CAMPAIGN = "v1.0-exp-controls"
+DOC_DATE = "2026-11-28"
+CAMPAIGN_ID = "mobility_suite_1216_plus_sensitivity_176"
 
 
 def run_git(args: List[str]) -> str:
@@ -340,10 +337,7 @@ def main() -> None:
         "documented_commit": head_full,
         "documented_commit_short": head_short,
         "branch": branch,
-        "freeze_tag": FREEZE_TAG,
-        "freeze_tag_object": FREEZE_TAG_OBJ,
-        "freeze_commit": FREEZE_COMMIT,
-        "exploratory_campaign": EXP_CAMPAIGN,
+        "campaign_id": CAMPAIGN_ID,
         "doc_date": DOC_DATE,
         "file_count": len(files_inv),
         "files": files_inv,

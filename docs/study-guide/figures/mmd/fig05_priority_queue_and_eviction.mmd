@@ -1,0 +1,6 @@
+flowchart TB
+  F0["Forward 0: CRIT_ (L>1)"] --> F1["Forward 1: CRIT_ (L<=1)"]
+  F1 --> F2["Forward 2: BULK_ (L>1)"]
+  F2 --> F3["Forward 3: BULK_ (L<=1)"]
+  E0["Evict 1st: deliveredAckSet CRIT_ Replicas (LRU 512)"] --> E1["Evict 2nd: Oldest BULK_ (Safe Lock)"]
+  E1 --> E2["Evict Last: Live Un-ACKed CRIT_"]

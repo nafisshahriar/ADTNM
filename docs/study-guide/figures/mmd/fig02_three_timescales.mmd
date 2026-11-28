@@ -1,7 +1,7 @@
 sequenceDiagram
-  participant Fast as Fast Protection (0.1s Tick)
-  participant Local as Local SRL (1s/30s Eval)
+  participant Fast as Fast Protection (0.1s-0.5s Tick)
+  participant Local as Local Coordinator (1.0s Eval)
   participant Remote as Remote Manager (min-hr)
-  Fast->>Fast: checkReceiving / 5-tier ACK eviction / ingressMode
-  Local->>Fast: Sample 11 EDDs -> Match SRL -> Safety Shield S1..S4
-  Remote-->>Local: Delayed CTRL_UPDATE_ / CTRL_GROUP_ Overlay (PRIO 100)
+  Fast->>Fast: checkReceiving / ACK-first critical-safe eviction / ingressMode
+  Local->>Fast: Sample 15 EDDs -> M2-Mob or SRL -> Safety Shield S1..S4
+  Remote-->>Local: Delayed CTRL_UPDATE_ Overlay (PRIO 110)

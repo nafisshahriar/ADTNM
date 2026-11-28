@@ -1,32 +1,30 @@
 # ADTNM One-Page Developer & Researcher Cheat Sheet
 
-> **Commit `d4a159f` | Freeze `v1.0-freeze` (`ca5d9ac`) | Framing: Management layer over managed DTN substrates (`RFC 9675 / 7575`-inspired)**
+> **Mobility-Aware Autonomic DTN Management (`M2_MOBILITY_AWARE`) over `Managed*Router` Substrates (`RFC 9675 / 7575`-inspired)**
 
-## 1. Quick Commands (PowerShell)
+## 1. Install, Test & Smoke Commands (PowerShell)
 ```powershell
-$env:PYTHONDONTWRITEBYTECODE='1'; $THE_ONE="n:\R&D\cog\the-one"; $ADTNM="n:\R&D\cog\ADTNM"
-javac -cp "$THE_ONE\target;$THE_ONE\lib\*" -d "$THE_ONE\target" "$ADTNM\src\routing\*.java" "$ADTNM\src\report\*.java" "$ADTNM\tests\DtnmaUnitTests.java"
-java -cp "$THE_ONE\target;$THE_ONE\lib\*" DtnmaUnitTests   # 27 tests, 30 check() assertions
-python "$ADTNM\tools\parallel_batch_runner.py" --scenario "$ADTNM\scenarios\compB_exp_controls_stress.txt" --dry-run
+$env:PYTHONDONTWRITEBYTECODE='1'; $THE_ONE="..\the-one"
+python install.py --one-dir "$THE_ONE"
+javac -cp "$THE_ONE\target;$THE_ONE\lib\*" -d "$THE_ONE\target" tests\DtnmaUnitTests.java
+java -cp "$THE_ONE\target;$THE_ONE\lib\*" DtnmaUnitTests          # Expect: 21 passed, 0 failed.
+python tools\validate_mobility_scenarios.py --one-dir "$THE_ONE" --smoke
 ```
 
-## 2. Core Data Flow & Hard Shield (`S1–S4`)
-`11 EDDs (EddTelemetrySampler)` -> `SRL Rules / [Opt. M3 RL]` -> `DtnmaSafetyShield` (`mask[0]=true`) -> `P0..P7` -> `DtnmaManagedRouter` -> `DtnmaAuditReport (ARI://...)`
-- **S1 Critical Buffer:** `CritQ >= 0.50 || (Q >= 0.94 && dQ >= 0.015)` -> `{P0}` | `CritQ >= 0.35 || (Q >= 0.82 && dQ > 0.015)` -> `{P0, P1, P2}`
-- **S2 Battery:** `SoC < shieldEnergyMin (0.20 / 0.25)` -> `{P0, P1}` | **S3 Dense Storm:** `Q >= 0.78 && Dens >= 5.0` -> block `{P6, P7}` | **S4 Remote Clamp**
+## 2. Core Pipeline (`15 EDDs -> M2-Mob / SRL -> Shield -> P0..P7`)
+`15 EDDs (EddTelemetrySampler)` -> `M2_MOBILITY_AWARE / SRL` -> `DtnmaSafetyShield (S1..S4, mask[0]=true)` -> `P0..P7` -> `DtnmaManagedRouter` -> `DtnmaAuditReport (21-col ARI)`
+- **S1 Critical/Surge:** `CritQ >= 0.50 || (Q >= 0.94 && dQ >= 0.015)` -> `{P0}` | `CritQ >= 0.35 || (Q >= 0.82 && dQ > 0.015)` -> `{P0, P1, P2}`
+- **S2 Battery:** `SoC < shieldEnergyMin (0.20/0.25)` -> `{P0, P1}` | **S3 Storm:** `Q >= 0.78 && Dens >= 5.0` -> block `{P6, P7}` | **S4 Remote Clamp**
+- **M2-Mob Anchors:** `mobHorizonSec=600`, `mobTtdCritRatio=0.60`, `mobTtdWarnRatio=1.10`, `mobShortContactSec=12`, `mobLongIctSec=180` ($\theta_Q \in [0.78, 0.88]$)
 
-## 3. Control Profiles (`DtnmaPolicyProfile`) & Queue Eviction Order (`O(N)`)
-`P0 SAFE_EMERGENCY_HOLD (L=1, ing=2, bp=.05)` | `P1 SAFE_THROTTLE_STRICT (L=2, ing=1, bp=.08)` | `P2..P3 BALANCED (L=4..6, ing=0, bp=.10..12)` | `P4 STANDARD (L=6, bpOff)` | `P5..P7 SPRAY (L=8..12)`
-- **Evict First -> Last:** `Tier 0 BULK_` -> `Tier 1 ACKed CRIT_` -> `Tier 2 Stale` -> `Tier 3 Active CTRL_` -> `Tier 4 Live CRIT_`
+## 3. Control Profiles (`P0..P7`) & Queue / ACK Rules
+`P0 HOLD (L=1, ing=2, bp=.05)` | `P1 THROTTLE (L=2, ing=1, bp=.08)` | `P2 CONSERVATIVE (L=4, ing=0, bp=.10)` | `P3 AGILE (L=6, bp=.12)` | `P4 STD (L=6, bpOff)` | `P5 SPRAY (L=8)` | `P6..P7 (L=10..12)`
+- **Forward:** 4-tier $O(N)$ `CRIT_(L>1) -> CRIT_(L<=1) -> BULK_(L>1) -> BULK_(L<=1)` | **Evict:** `deliveredAckSet CRIT_` (`4 B` ACKs, `<=32/contact`) -> worst `BULK_` -> Protected live `CRIT_`
 
-## 4. Rule Syntax (`rules_vdtn.txt`) & Key Config Keys
+## 4. Rule Syntax (`rules_vdtn.txt`) & Key Metrics (`DtnmaMetricsReport`)
 ```text
-RULE: ARI://DTNMA/SRL/ID | PRIORITY: 80 | DESC: ...
+RULE: ARI://DTNMA/SRL/VDTN_SURGE_THROTTLE | PRIORITY: 80 | DESC: Throttle bulk spray during active surges
 IF: (EDD_QUEUE_RATIO >= 0.88) && (EDD_QUEUE_DRIFT >= 0.008)
 THEN: CTRL_SET_SPRAY_QUOTA(2); CTRL_SET_INGRESS_MODE(1); CTRL_SET_TELEMETRY_INTERVAL(300); CTRL_SET_BACKPRESSURE(true)
 ```
-Keys: `Group.rulesFile`, `DtnmaRouter.configFile`, `interventionTier` (`TIER1..TIER3`), `intelligenceMode` (`STATIC_RULES` vs `SHIELDED_CMDP_RL`), `shieldEnergyMin`.
-
-## 5. Headline Numbers (`provenance_ledger.json`) & Cautions
-- **Confirmatory `v1.0` (`627` runs, `7103..7207`):** `0` crit lost across `132` CompA runs; `E1` `11/11` `MessageStats` exact; `H1 -389.06` (`p=1.51e-5`), `H2 +19.21 pp` (`p=1.58e-6`), `H3 +23.59 pp`, `H4 +28.13 pp`; `100.00%` replay (`27.1M` rows).
-- **Negatives & Exploratory (`7211..7307`, `p_unadj`):** `H2_orig` survival NI **failed** (`-5.48 pp`, `0/11`); `M3` RL lost to `M2`; `M0e-25` tied `M2` stress survival (`83.8 vs 83.8`, `M2-LocalOnly = 80.0`); `M1-F-Group` (`201.6 J`, `99.5` alive, `T50=483 s`) misses `Event A` (`300 s`).
+Reports: `DtnmaMetricsReport` (`unique_critical_lost`, `critical_delivery_prob`, `bulk_delivery_prob`, `eventA/B/C_*`, `alive_nodes_end`, `shield_decisions_total`, `control_bytes_total`), `DtnmaAuditReport` (`traceable_ari_ratio: 1.0000`), `DtnmaRecoveryTimelineReport`.

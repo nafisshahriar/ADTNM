@@ -2,7 +2,7 @@
  * ManagedMaxPropRouter.java
  * Stock ONE MaxPropRouter wrapped with DtnmaAgent by composition.
  * Preserves MaxProp Dijkstra path-cost & hop-threshold ordering while adding
- * critical preservation, rule/RL energy/congestion throttling, critical-first
+ * critical preservation, rule/mobility-aware energy/congestion throttling, critical-first
  * scheduling, and delayed ACK pruning.
  */
 package routing;
@@ -226,7 +226,7 @@ public class ManagedMaxPropRouter extends MaxPropRouter implements DtnmaManagedR
 
         for (Message m : msgCollection) {
             if (isSending(m.getId()) || this.agent.isAcked(m)) continue;
-            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m) || this.agent.isEpidemicControlPriority(m);
+            boolean isCritOrCtrl = DtnmaRouter.isCriticalMessage(m);
             if (!isCritOrCtrl && critOnly) continue;
 
             for (int i = 0; i < nReady; i++) {
